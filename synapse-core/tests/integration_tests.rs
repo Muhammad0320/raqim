@@ -38,7 +38,6 @@ fn test_zero_copy_swarm_speed() {
                 warmed_up = true 
             }
       }
-
     // ============================
 
     println!("Bismillah. Starting Zero-Copy Swarm Benchmark...");
