@@ -1,12 +1,8 @@
 pub mod cortex;
 pub mod state;
+pub mod nucleus;
 
 use rkyv::{Archive, Deserialize, Serialize};
-use tokio::sync::{mpsc, oneshot};
-use tokio::fs::OpenOptions;
-use tokio::io::AsyncWriteExt;
-
-use rkyv::to_bytes;
 
 // The fundamental unit of our Flight Recorder.
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
@@ -39,3 +35,4 @@ pub struct OpLog {
     pub payload_size:  u32, 
 
 }
+

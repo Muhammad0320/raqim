@@ -1,6 +1,5 @@
 use tokio::sync::mpsc;
 use tokio::fs::OpenOptions;
-use tokio::io::AsyncWriteExt;
 use rkyv::to_bytes;
 use crate::OpLog;
 
