@@ -1,4 +1,5 @@
 pub mod cortex;
+pub mod state;
 
 use rkyv::{Archive, Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
@@ -116,7 +117,7 @@ impl WalEngine {
             }
         } );
 
-        WalEngine {sender: tx}
+        Self {sender: tx}
     }
 
     /// The function the Agent calls to save its thought

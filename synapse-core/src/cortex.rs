@@ -27,7 +27,7 @@ impl CortexDataPlane {
 
         let service_name = ServiceName::new(topic).expect("Invalid topic name");
 
-        CortexDataPlane { service_name }
+        Self { service_name }
     }
 
     // Creates a publisher that writes zero-copy data
