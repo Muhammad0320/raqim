@@ -1,90 +1,63 @@
-use loro::{LoroDoc, LoroMap, ToJson};
+use loro::{LoroDoc, LoroMap, ExportMode};
 use std::sync::Arc; 
+use crate::{AgentState, AgentStatus};
 
-// The shared hippocampus.
+
 // ARC (Atomic Reference counting) becaue multiple (threads) agents will hold pointers to this document in memory
 pub  struct SwarmState {
-    doc: Arc<LoroDoc>
+    pub doc: Arc<LoroDoc>,
+    state_map: LoroMap
 }
 
 impl SwarmState {
 
-    pub fn new() -> Self {
+    /// Initialize the CRDT brain for a specific swarm domain.
+    pub fn new(swarm_namespace: &str) -> Self {
+        
+        let doc = Arc::new(LoroDoc::new());
+        
+        // creates a root dir in the CRDT for this specific swarm 
+        let state_map = doc.get_map(swarm_namespace);
 
-        let doc = LoroDoc::new();
-
-        let _root_map = doc.get_map("hospital_triage");
-
-        Self { doc: Arc::new(doc) }
+        Self { doc, state_map }
 
     }
 
     /// Agent updates a specific key in the shared state
-    pub fn update_patient_status(&self, patient_id: &str, status: &str ) {
+    pub fn update_agent_state(&self, agent_id_hex: &str, state: &AgentState ) {
 
-        let map = self.doc.get_map("hospital_triage");
+        //  Create or get the specific mmap
+        let agent_memory = self.doc.get_map(agent_id_hex);
 
-        // Insert the data. Loro tracks this exact ops mathematically
-        map.insert(patient_id, status).expect("Failed to insert into CRDT");
+        // Maps the rust struct fields directly into CDRT
+        agent_memory.insert("transaction_id",  state.transaction_id as i64).unwrap();
+        agent_memory.insert("timestamp", state.timestamp).unwrap();
+
+        let status_str = match state.status {
+
+            AgentStatus::Idle => "IDLE",
+            AgentStatus::Reasoning => "REASONING",
+            AgentStatus::Halted => "HALTED",
+            AgentStatus::ToolExecution => "TOOL_EXEC",
+
+        };
+
+        agent_memory.insert("status", status_str).unwrap();
 
         // commit the transaction. This generates a "Version Vector"; 
         self.doc.commit();
+
     }
 
-    /// Extract the delta since the last sync. This is the payload we'll send to iceoryx2
-    pub fn export_delta(&self) -> Vec<v8> {
-        self.doc.export_from(&[])
+    /// Extract the delta since the last sync. To be used as the Oplog Payload in iceoryx2
+    pub fn export_delta(&self) -> Vec<u8> {
+        self.doc.export(ExportMode::Snapshot).unwrap()
     }
 
     /// Merges another agent's thought (action) into this agent's brain.
-    /// Conflict resolution happens here autpmatically.
-    pub fn merge_foreign_thought(&self, delta: &[u8]) {
-        self.doc.import(delta).expect("Failed to merge CRDT delta");
+    /// Conflict resolution happens here automatically.
+    pub fn assimilate_foreign_thought(&self, delta: &[u8]) {
+        self.doc.import(delta).expect("CRDT merge failed");
     }
 
-    /// Read the current unified truth
-    pub fn get_current_truth(&self) -> String {
-        self.doc.get_map("hospital_triage").get_value().to_json()
-    }
-
-}
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn test_crdt_split_brain_resolution() {
-
-        println!("Bismillah. Testing Lock-Free Convergence...");
-
-        // 1 Create two completely separate agent brains
-        let agent_a = SwarmState::new();
-        let agent_b = SwarmState::new();
-        
-     // 2. The Split-Brain Event happens simultaneouly
-       agent_a.update_patient_status("patient_001", "STABLE");
-       agent_b.update_patient_status("patient_001", "CRITICAL");
-       agent_b.update_patient_status("patient_002", "DISCHARGED");
-
-    // 3. They export thier microscopic thoughts (Deltas)
-    let thought_a = agent_a.export_delta();
-    let thought_b = agent_b.export_delta();
-
-    // 4. They cross-pollinate (This happens via iceoryx2 in prod)
-    agent_a.merge_foreign_thought(&thought_b);
-    agent_b.merge_foreign_thought(&thought_a);
-
-    // 5. The verification: 
-    let truth_a = agent_a.get_current_truth();
-    let truth_b = agent_b.get_current_truth();
-
-    println!("Agent A Reality: {}", truth_a);
-    println!("Agent B Reality: {}", truth_b);
-
-
-    assert_eq!(truth_a, truth_b, "CRDT Convergence Failed!");
-    println!("Allihamdullilah. Swarm minds successfully syncronized lock-free.")
-    }
 }

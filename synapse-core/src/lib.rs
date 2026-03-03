@@ -42,7 +42,7 @@ pub struct OpLog {
 
 // ---------------------- WAL
 pub struct WalMessage {
-
+    
     pub log: OpLog,
 
     pub callback: oneshot::Sender<()>,
@@ -107,7 +107,7 @@ impl WalEngine {
                         continue;
 
                     }
-
+                     
                     // 3. Wake up all the agents!
                     for cb in callbacks.drain(..) {
                         let _ = cb.send(());
@@ -120,18 +120,11 @@ impl WalEngine {
         Self {sender: tx}
     }
 
-    /// The function the Agent calls to save its thought
+    /// The function the Agent calls to save its thought (Shadow mode)
     pub async fn append(&self, log: OpLog) {
 
-        let (tx, rx) = oneshot::channel();
 
-        let msg = WalMessage {log, callback: tx};
 
-        // Send to the WAL thread
-        let _ = self.sender.send(msg).await;
-
-        // The agent pauses here *only* until the disk write is confirmed
-        let _ = rx.await;
     }
 
 }
