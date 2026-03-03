@@ -31,8 +31,9 @@ pub struct OpLog {
     pub agent_id: [u8; 16],
     pub state: AgentState,
 
-    // This payload will hold the actual memory delta (the thought or action)
     pub payload_size:  u32, 
-
+    // The DAG Links: 32-bytes Blake3 hashes
+    pub previous_hash: [u8; 32],
+    pub current_hash: [u8; 32],
 }
 
