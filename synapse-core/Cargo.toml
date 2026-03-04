@@ -17,3 +17,5 @@ loro = "1.0"
 tokio = {version = "1", features = ["full"]}
 
 blake3 =  "1.5"
+
+zenoh = "1.7.2"

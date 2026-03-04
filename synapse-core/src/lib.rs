@@ -2,6 +2,7 @@ pub mod cortex;
 pub mod state;
 pub mod nucleus;
 pub mod axon;
+pub mod network;
 
 use rkyv::{Archive, Deserialize, Serialize};
 
