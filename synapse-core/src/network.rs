@@ -4,8 +4,6 @@ use crate::OpLog;
 use rkyv::to_bytes;
 use zenoh::config::Config;
 use zenoh::Session;
-use tokio::io::AsyncWriteExt;
-use tokio;
 
 
 
@@ -73,7 +71,7 @@ impl GlobalNetworkBridge {
 
             }
 
-        })
+        });
 
     }
 

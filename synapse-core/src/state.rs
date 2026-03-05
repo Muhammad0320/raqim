@@ -1,4 +1,4 @@
-use loro::{LoroDoc, LoroMap, ExportMode};
+use loro::{LoroDoc, ExportMode};
 use std::sync::Arc; 
 use crate::{AgentState, AgentStatus};
 
@@ -6,7 +6,7 @@ use crate::{AgentState, AgentStatus};
 // ARC (Atomic Reference counting) becaue multiple (threads) agents will hold pointers to this document in memory
 pub  struct SwarmState {
     pub doc: Arc<LoroDoc>,
-    state_map: LoroMap
+    // state_map: LoroMap
 }
 
 impl SwarmState {
@@ -19,7 +19,7 @@ impl SwarmState {
         // creates a root dir in the CRDT for this specific swarm 
         let state_map = doc.get_map(swarm_namespace);
 
-        Self { doc, state_map }
+        Self { doc }
 
     }
 
