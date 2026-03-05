@@ -20,7 +20,7 @@ impl WalEngine {
         let mut file = OpenOptions::new().create(true)
                 .append(true).open(file_path).await.expect("Failed to open WAL file");
 
-        tokio::spawn(async move {
+        tokio::spawn(async move { 
 
             let mut batch = Vec::new();
 
@@ -38,13 +38,24 @@ impl WalEngine {
                 // Zero-copy serialize the entire batch instantly
                 let bytes = to_bytes::<rkyv::rancor::Error>(&batch).expect("Failed to serrialize batch");
 
-                // 1. Write to the OS buffer
+                // Frame it: Calculate the 4-byte length prefix (Little Endian format)
+                let len_prefix = (bytes.len() as u32).to_le_bytes();
+
+
+
+                // 1. Write the 4-byte prefix then the actual byte
+                if let Err(e) = file.write_all(&len_prefix).await {
+                    eprintln!("WAL Length write Error: {}", e); continue; 
+                    
+                }
+
+
                 if let Err(e) = file.write_all(&bytes).await {
-                    eprintln!("EAL Write Error: {}", e); 
+                    eprintln!("WAL Payload Write Error: {}", e); 
                     continue;
                 }
 
-                // 2. Force to metal (The durability guarrantee)
+                // 2. Force to metal once the entire framed batch is written (The durability guarrantee)
                 if let Err(e) = file.sync_data().await {
                     eprintln!("WAL sync Error: {}", e); 
                     continue;
@@ -69,3 +80,4 @@ impl WalEngine {
     }
 
 }
+

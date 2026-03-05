@@ -1,12 +1,10 @@
 use rkyv::access;
-use synapse_core::{OpLog, AgentState};
+use synapse_core::OpLog;
 use memmap2::MmapOptions;
 use clap::{Parser, Subcommand};
 use synapse_core::state::SwarmState;
 use synapse_core::axon::AxonGateKeeper;
-use std::env;
 use std::fs::File;
-use std::io::Read;
 use std::path::PathBuf;
 
 /// Synapse Control Plane: Time Travel & Forensic Audit API
@@ -48,11 +46,6 @@ fn main() {
 
 }
 
-// Helper to simulate extracting loggs from raw bytes.
-fn extract_logs_from_buffer(_buffer: &[u8]) -> Vec<OpLog> {
-    vec![]
-}
-
 fn execute_time_travel(wal_path: &PathBuf, target_tx_id: Option<u64>) {
 
     println!("Bismillah. Initializing Project Synapse Time Machine...");
@@ -78,19 +71,23 @@ fn execute_time_travel(wal_path: &PathBuf, target_tx_id: Option<u64>) {
 
         // Read the 4-bytes length prefix  
         if offset + 4 > mmap.len() {break}
-        let mut len_bytes = [0u8, 4];
+        let mut len_bytes = [0u8; 4];
         len_bytes.copy_from_slice(&mmap[offset..offset+4]);
         let entry_len = u32::from_le_bytes(len_bytes) as usize;
         offset+=4;
+
+        
 
         // Cast the exact memory slide directly to the ArchivedOpLog using rkyv
         let entry_slice = &mmap[offset..offset + entry_len];
 
         // Instant 0(1) pointer casting. Zero parsing
-        let archived_log = access::<OpLog, rkyv::rancor::Error>(entry_slice).expect("Failed to cast memory to OpLog"); 
+        let archived_log = unsafe {
+            rkyv::access_unchecked::<OpLog>(entry_slice)
+        };
 
         // Convert archived to native strucut for axon verfication
-        let log: OpLog = rkyv::Deserialize::<OpLog, rkyv::rancor::Error>(archived_log).expect("Failed to deserialize");;
+        let log: OpLog = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log).expect("Failed to deserialize");
 
         // 4. Verfication: Did someone tamper with the past?
         if !auditor.verify_foreign_thoughts(&log) {
@@ -109,7 +106,7 @@ fn execute_time_travel(wal_path: &PathBuf, target_tx_id: Option<u64>) {
         }   
 
         // 6. Push the verfied thought into crdt
-        // forensic_brain.assimilate_foreign_thought(&log.payload_size);
+        forensic_brain.assimilate_foreign_thought(&log.delta);  
 
         valid_thoughts +=1;
         offset += entry_len;

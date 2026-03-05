@@ -30,7 +30,7 @@ impl AxonGateKeeper {
         log.previous_hash = *chain_lock;
 
         // 3. Hash the payloadsize, agent_id and previous hash
-        hasher.update(&log.payload_size.to_le_bytes());
+        hasher.update(&log.delta);
         hasher.update(&log.agent_id);
         hasher.update(&log.previous_hash);
 
@@ -49,7 +49,7 @@ impl AxonGateKeeper {
 
         let mut hasher = Hasher::new();
 
-        hasher.update(&log.payload_size.to_le_bytes());
+        hasher.update(&log.delta);
         hasher.update(&log.agent_id);
         hasher.update(&log.previous_hash);
 
