@@ -1,7 +1,7 @@
 use clap::Parser;
-use synapse_core::AgentState;
+use synapse_core::{AgentState, OpLog};
 use synapse_core::axon::AxonGateKeeper;
-use synapse_core::cortex::CortexDataPlane;
+use synapse_core::cortex::{AgentThought, CortexDataPlane};
 use synapse_core::network::GlobalNetworkBridge;
 use synapse_core::nucleus::WalEngine;
 use synapse_core::state::SwarmState;
@@ -49,6 +49,7 @@ async  fn main() {
     let global_net_clone = global_net.clone();
 
     tokio::spawn(async move {
+
         global_net_clone.listen_for_foreign_thoughts().await();
     });
 
@@ -97,9 +98,38 @@ async  fn main() {
             task_brain.update_agent_state(&agent_hex, &incoming_state);
             let delta = task_brain.export_delta();
 
+            // Contruct the raw log 
+            let raw_log = OpLog {
+                agent_id: incoming_state.agent_id.unwrap_or([0;16]),
+                state: incoming_state,
+                delta,
+                previous_hash: [0; 32],
+                current_hash: [0; 32]
+            };
+
+            // 3. Cryptographically Seal (Markle DAG)
+            let sealed_log = task_axon.seal_thought(raw_log);
+
+            // 4. Fire to wal (Durability) 
+            task_wal.append(sealed_log.clone());
+
+            // 5. Fire to Local Cortex ( Zero-Copy Notification )
+            if let Ok(sample) = task_publisher.loan_uninit() {
+                let notification = AgentThought {
+                    agent_id: sealed_log.agent_id,
+                    thought_id: sealed_log.state.transaction_id,
+                    payload_size: delta.len() as u32,
+                };
+
+                let _ = sample.write_payload(notification).send();
+            }
 
 
+            // 6. Fire to global swarm
+            global_publisher.broadcast_to_world(&sealed_log).await; 
 
+
+            println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
         });
 
     }

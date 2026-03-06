@@ -48,7 +48,7 @@ fn test_zero_copy_swarm_speed() {
         payload_size: 1024,
     };
 
-
+    
     // Start the timer
     let start_time = Instant::now();
 
