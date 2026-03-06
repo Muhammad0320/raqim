@@ -4,7 +4,8 @@ pub mod nucleus;
 pub mod axon;
 pub mod network;
 
-use rkyv::{Archive, Deserialize, Portable, Serialize};
+
+use rkyv::{Archive, Deserialize, Serialize};
 
 // The fundamental unit of our Flight Recorder.
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
