@@ -19,3 +19,4 @@ tokio = {version = "1", features = ["full"]}
 blake3 =  "1.5"
 
 zenoh = "1.7.2"
+clap = {version = "4.4", features = ["derive"]}

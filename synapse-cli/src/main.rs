@@ -1,4 +1,4 @@
-use rkyv::access;
+use rkyv::Archive;
 use synapse_core::OpLog;
 use memmap2::MmapOptions;
 use clap::{Parser, Subcommand};
@@ -83,7 +83,7 @@ fn execute_time_travel(wal_path: &PathBuf, target_tx_id: Option<u64>) {
 
         // Instant 0(1) pointer casting. Zero parsing
         let archived_log = unsafe {
-            rkyv::access_unchecked::<OpLog>(entry_slice)
+            rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice)
         };
 
         // Convert archived to native strucut for axon verfication
