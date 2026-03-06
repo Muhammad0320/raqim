@@ -10,7 +10,9 @@ use rkyv::{Archive, Deserialize, Serialize};
 // The fundamental unit of our Flight Recorder.
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
 pub struct AgentState {
+    pub agent_id: Option<[u8; 16]>,
     pub transaction_id: u64,
+
     pub timestamp: i64,
     pub status: AgentStatus, 
 

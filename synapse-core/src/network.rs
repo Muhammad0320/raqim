@@ -20,7 +20,7 @@ impl GlobalNetworkBridge {
     pub async fn new (swarm_name: &str) -> Self {
 
         println!("Bismillah. Initialializing Zenoh Global Network Bridge...");
-
+        
         // Config::default() automatically discovers other nodes on LAN/WAN
         let config = Config::default();
         let session = zenoh::open(config).await.expect("Failed to start zenoh");

@@ -42,13 +42,11 @@ impl WalEngine {
                 let len_prefix = (bytes.len() as u32).to_le_bytes();
 
 
-
                 // 1. Write the 4-byte prefix then the actual byte
                 if let Err(e) = file.write_all(&len_prefix).await {
-                    eprintln!("WAL Length write Error: {}", e); continue; 
-                    
+                    eprintln!("WAL Length write Error: {}", e); continue;    
                 }
-
+                
 
                 if let Err(e) = file.write_all(&bytes).await {
                     eprintln!("WAL Payload Write Error: {}", e); 
