@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use crate::OpLog;
-use rkyv::to_bytes;
+use crate::axon::AxonGateKeeper;
+use crate::state::SwarmState;
+use rkyv::{Archive, to_bytes};
 use zenoh::config::Config;
 use zenoh::Session;
 
@@ -46,7 +48,7 @@ impl GlobalNetworkBridge {
     }
 
     /// Listens for foreign thoughts from the global network
-    pub async fn listen_for_foreign_thoughts(&self) {
+    pub async fn listen_for_foreign_thoughts(&self, brain: Arc<SwarmState>, axon: Arc<AxonGateKeeper>) {
 
         let key_expr = format!("{}/thoughts", self.workspace_prefix);
 
@@ -54,7 +56,6 @@ impl GlobalNetworkBridge {
         let session_clone = self.session.clone();
 
         println!("Listening for global swarm synchronization on: {} ...", key_expr);
-
         tokio::spawn(async move {
 
             let subscriber = session_clone.declare_subscriber(key_expr).await.unwrap();
@@ -64,10 +65,20 @@ impl GlobalNetworkBridge {
                 // Payload extraction 
                 let payload_bytes = sample.payload().to_bytes();
 
-                // 1. Deseialize back to opLog
-                // 2. Pass to AxonGatekeeper for crypto verification
-                // 3. If valid, push to Loro CRDT to merge the reality
-                println!("Received foreign thoughts from global swarm. Bytes: {}", payload_bytes.len()); 
+                // Zero-Copy Deserialize
+                let archived_log = unsafe {
+                    rkyv::access_unchecked::<<OpLog as Archive>::Archived>(&payload_bytes)
+                };
+                let log: OpLog = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log).expect("Network Deserialization Failed");
+
+
+                // Cryptographic verification (The Circuit Breaker)
+                if axon.verify_foreign_thoughts(&log) {
+                    brain.assimilate_foreign_thought(&log.delta);
+                    println!("Assimilated foreign thought from Agent: {:?} ", log.agent_id)
+                } else {
+                    eprintln!("SECURITY BREACH: Forged thought detected on network. Droppingg.")
+                }
 
             }
 

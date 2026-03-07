@@ -47,10 +47,25 @@ async  fn main() {
 
     // 2 Background Listeners (Zenoh Global network)
     let global_net_clone = global_net.clone();
-
+    let network_axon = axon.clone();
+    let global_brain = brain.clone();
     tokio::spawn(async move {
 
-        global_net_clone.listen_for_foreign_thoughts().await();
+        global_net_clone.listen_for_foreign_thoughts(brain, axon).await();
+    });
+
+    // 2b. Background listener (Iceoryx Local shared memory)
+    cortex_axon = axon.clone();
+    cortex_brain = brain.clone();
+    tokio::spawn(async move {
+
+        loop {
+
+            // Poll local shared memory.
+            
+
+        }
+
     });
 
     // 3. The Production TCP ingress. 
@@ -70,16 +85,15 @@ async  fn main() {
         let global_publisher = global_net.clone();
 
 
-
         tokio::spawn(async move {
 
             //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
             let mut len_buf = [0u8; 4];
-            if socket.read_exact(&mut len_buf).await.is_err() {return};
+            if socket.read_exact(&mut len_buf).await.is_err() {return;}
             let payload_len = u32::from_le_bytes(len_buf) as usize;
 
             // Prevent malicious massive memory allocation attacks ( Max 1mb per thought )
-            if payload_len > 1024 * 1024 {return};
+            if payload_len > 1024 * 1024 {return;}
 
             // Read the exact payload bytes
             let mut payload_buf = vec![0u8; payload_len];
@@ -106,7 +120,7 @@ async  fn main() {
                 previous_hash: [0; 32],
                 current_hash: [0; 32]
             };
-
+            
             // 3. Cryptographically Seal (Markle DAG)
             let sealed_log = task_axon.seal_thought(raw_log);
 
@@ -124,15 +138,12 @@ async  fn main() {
                 let _ = sample.write_payload(notification).send();
             }
 
-
             // 6. Fire to global swarm
             global_publisher.broadcast_to_world(&sealed_log).await; 
-
 
             println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
         });
 
     }
-
 
 }

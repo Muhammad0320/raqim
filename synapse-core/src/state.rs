@@ -27,8 +27,8 @@ impl SwarmState {
     pub fn update_agent_state(&self, agent_id_hex: &str, state: &AgentState ) {
 
         //  Create or get the specific mmap
-        let agent_memory = self.doc.get_map(agent_id_hex);
-
+        let agent_memory = self.state_map.insert_container(agent_id_hex, LoroMap::new()).expect("Failed to create agent memory map");
+        
         // Maps the rust struct fields directly into CDRT
         agent_memory.insert("transaction_id",  state.transaction_id as i64).unwrap();
         agent_memory.insert("timestamp", state.timestamp).unwrap();
