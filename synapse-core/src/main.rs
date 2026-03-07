@@ -47,22 +47,22 @@ async  fn main() {
 
     // 2 Background Listeners (Zenoh Global network)
     let global_net_clone = global_net.clone();
-    let network_axon = axon.clone();
+    let global_axon = axon.clone();
     let global_brain = brain.clone();
     tokio::spawn(async move {
 
-        global_net_clone.listen_for_foreign_thoughts(brain, axon).await();
+        global_net_clone.listen_for_foreign_thoughts(global_brain, global_axon).await;
     });
 
     // 2b. Background listener (Iceoryx Local shared memory)
-    cortex_axon = axon.clone();
-    cortex_brain = brain.clone();
+    // cortex_axon = axon.clone();
+    // cortex_brain = brain.clone();
     tokio::spawn(async move {
 
         loop {
 
             // Poll local shared memory.
-            
+
 
         }
 
