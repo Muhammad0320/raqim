@@ -6,8 +6,10 @@ use synapse_core::network::GlobalNetworkBridge;
 use synapse_core::nucleus::WalEngine;
 use synapse_core::state::SwarmState;
 use tokio::net::TcpListener;
-use tokio::io::AsyncReadExt; 
-use std::sync::Arc;
+use tokio::io::AsyncReadExt;
+use tokio::sync::mpsc;
+use uuid::Uuid; 
+use std::sync::{Arc};
 
 /// Synapse Daemon: The Agentic Control Plane
 #[derive(Parser, Debug)]
@@ -40,12 +42,27 @@ async  fn main() {
     let axon = Arc::new(AxonGateKeeper::new());
     let wal = Arc::new(WalEngine::start(&config.wal_path).await);
 
+    // The Local cortex actor
     let cortex = CortexDataPlane::new(&config.topic);
+    cortex.listen_for_local_thoughts(brain.clone(), axon.clone());
+
     let local_publisher = Arc::new(cortex.create_publisher().expect("Failed to map publisher"));
     
-    let global_net = Arc::new(GlobalNetworkBridge::new(&config.topic).await);
+    // Channel to talk to the publisher safely accross threads
+    let (cortex_tx, mut cortex_rx) = mpsc::channel::<AgentThought>(10_000);
+    
+    std::thread::spawn(move || {
+
+        while let Some(thought) = cortex_rx.blocking_recv() {
+            if let Ok(sample) = local_publisher.loan_uninit() {
+                let _ = sample.write_payload(thought).send();
+            } 
+        }
+
+    });
 
     // 2 Background Listeners (Zenoh Global network)
+    let global_net = Arc::new(GlobalNetworkBridge::new(&config.topic).await);
     let global_net_clone = global_net.clone();
     let global_axon = axon.clone();
     let global_brain = brain.clone();
@@ -54,25 +71,11 @@ async  fn main() {
         global_net_clone.listen_for_foreign_thoughts(global_brain, global_axon).await;
     });
 
-    // 2b. Background listener (Iceoryx Local shared memory)
-    // cortex_axon = axon.clone();
-    // cortex_brain = brain.clone();
-    tokio::spawn(async move {
-
-        loop {
-
-            // Poll local shared memory.
-
-
-        }
-
-    });
 
     // 3. The Production TCP ingress. 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port)).await.unwrap();
     println!("Organism live. Awaiting LLM Agent TCP Connections...");
-
-
+    
     loop {
 
         let (mut socket, addr) = listener.accept().await.unwrap();
@@ -80,8 +83,9 @@ async  fn main() {
 
         let task_brain = brain.clone();
         let task_axon = axon.clone();
+        let task_cortex_tx = cortex_tx.clone();
         let task_wal = wal.clone();
-        let task_publisher = local_publisher.clone();
+        let task_publisher =   publisher.clone();
         let global_publisher = global_net.clone();
 
 
@@ -105,12 +109,16 @@ async  fn main() {
             };
             let incoming_state: AgentState = rkyv::deserialize::<AgentState, rkyv::rancor::Error>(archived_state).expect("Failed to deserialize agent state");
 
+            
+            
             // --- The Synaptic Cascade ---
             
             // 1. Mutate the brain
-            let agent_hex = hex::encode(incoming_state.agent_id.unwrap_or([0;16]));
+            let agent_uuid_bytes = Uuid::new_v4().into_bytes();
+            let agent_hex = hex::encode( agent_uuid_bytes );
             task_brain.update_agent_state(&agent_hex, &incoming_state);
             let delta = task_brain.export_delta();
+            let delta_len = delta.len() as u32;
 
             // Contruct the raw log 
             let raw_log = OpLog {
@@ -128,15 +136,13 @@ async  fn main() {
             task_wal.append(sealed_log.clone());
 
             // 5. Fire to Local Cortex ( Zero-Copy Notification )
-            if let Ok(sample) = task_publisher.loan_uninit() {
                 let notification = AgentThought {
                     agent_id: sealed_log.agent_id,
                     thought_id: sealed_log.state.transaction_id,
-                    payload_size: delta.len() as u32,
+                    payload_size: delta_len,
                 };
 
-                let _ = sample.write_payload(notification).send();
-            }
+                let _ = task_cortex_tx.send(notification).await;
 
             // 6. Fire to global swarm
             global_publisher.broadcast_to_world(&sealed_log).await; 

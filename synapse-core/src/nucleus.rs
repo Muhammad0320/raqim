@@ -46,8 +46,8 @@ impl WalEngine {
                 if let Err(e) = file.write_all(&len_prefix).await {
                     eprintln!("WAL Length write Error: {}", e); continue;    
                 }
-                
 
+                
                 if let Err(e) = file.write_all(&bytes).await {
                     eprintln!("WAL Payload Write Error: {}", e); 
                     continue;
