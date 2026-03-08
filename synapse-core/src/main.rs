@@ -85,7 +85,7 @@ async  fn main() {
         let task_axon = axon.clone();
         let task_cortex_tx = cortex_tx.clone();
         let task_wal = wal.clone();
-        let task_publisher =   publisher.clone();
+        let task_publisher =   local_publisher.clone();
         let global_publisher = global_net.clone();
 
 
