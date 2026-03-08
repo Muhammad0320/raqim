@@ -25,7 +25,8 @@ fn test_zero_copy_swarm_speed() {
         let warmup_thought = AgentThought {
             agent_id: [0; 16],
             thought_id: 0, 
-            payload_size: 0 
+            payload_size: 0,
+            // delta_payload: [0; 4096]
         };
 
         let init_sample = publisher.loan_uninit().expect("Failed to loan init memory");
@@ -46,6 +47,8 @@ fn test_zero_copy_swarm_speed() {
         agent_id: [1; 16], // Mock Agent UUID
         thought_id: 999,
         payload_size: 1024,
+
+        // delta_payload: [18; 4096]
     };
 
     

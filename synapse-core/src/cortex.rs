@@ -15,6 +15,7 @@ pub struct AgentThought {
     pub thought_id: u64,
     pub payload_size: u32,
 
+    // Flat memory allocation for zero-copy. This allows up to 4kb of CRDT delta per thought.
 }
 
 // Explicitely tells the compiler that this struct is safe for zero-copy transmission. // It has no heap pointer, only flat primitives 
@@ -71,19 +72,18 @@ impl CortexDataPlane {
 
         println!("Cortx Data Plane: Listening for zero-copy local thoughts...");
 
-        // std::thread::spawn(move || {
+        std::thread::spawn(move || {
 
-        //     loop {
+            loop {
 
-        //         if let Ok(Some(sample)) = subscriber.receive() {
+                //  Read from shared physical RAM
+                
 
+                std::thread::yield_now(); 
 
+            }
 
-        //         }
-        //         std::thread::yield_now(); // Prevent CPU pinning
-        //     }
-
-        // });
+        });
 
     }
 
