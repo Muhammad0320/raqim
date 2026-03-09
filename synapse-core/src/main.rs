@@ -12,7 +12,7 @@ use uuid::Uuid;
 use std::sync::{Arc};
 
 /// Synapse Daemon: The Agentic Control Plane
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about)]
 struct DameonConfig {
 
@@ -46,23 +46,31 @@ async  fn main() {
     let cortex = CortexDataPlane::new(&config.topic);
     cortex.listen_for_local_thoughts(brain.clone(), axon.clone());
 
-    let local_publisher = Arc::new(cortex.create_publisher().expect("Failed to map publisher"));
     
     // Channel to talk to the publisher safely accross threads
-    let (cortex_tx, mut cortex_rx) = mpsc::channel::<AgentThought>(10_000);
+    let (cortex_tx, mut cortex_rx) = mpsc::channel::<Vec<u8>>(1000);
     
-    std::thread::spawn(move || {
+    let topic_clone = config.topic.clone(); 
 
-        while let Some(thought) = cortex_rx.blocking_recv() {
-            if let Ok(sample) = local_publisher.loan_uninit() {
-                let _ = sample.write_payload(thought).send();
+    // Dedicated physical thread !Send publisher. 
+    std::thread::spawn(move || {
+        // Initialize publisher inside the thread
+        let cortex = CortexDataPlane::new(&topic_clone);
+        let local_publisher = Arc::new(cortex.create_publisher().expect("Failed to map publisher"));
+
+        // blocking_rev() halts the thread until data arrives, no yield_now() needed
+        while let Some(bytes) = cortex_rx.blocking_recv() {
+            // Loan exactly the numbe rof bytes we need
+            if let Ok(sample) = local_publisher.loan_slice_uninit(bytes.len()) {
+                let _ = sample.write_from_slice(&bytes).send();
+                
             } 
         }
-
     });
 
+
     // 2 Background Listeners (Zenoh Global network)
-    let global_net = Arc::new(GlobalNetworkBridge::new(&config.topic).await);
+    let global_net = Arc::new(GlobalNetworkBridge::new(&topic_clone).await);
     let global_net_clone = global_net.clone();
     let global_axon = axon.clone();
     let global_brain = brain.clone();
@@ -135,14 +143,9 @@ async  fn main() {
             // 4. Fire to wal (Durability) 
             task_wal.append(sealed_log.clone());
 
-            // 5. Fire to Local Cortex ( Zero-Copy Notification )
-                let notification = AgentThought {
-                    agent_id: sealed_log.agent_id,
-                    thought_id: sealed_log.state.transaction_id,
-                    payload_size: delta_len,
-                };
-
-                let _ = task_cortex_tx.send(notification).await;
+            // 5. Fire to Local Cortex (Zero-Copy)
+            let serialized_log = rkyv::to_bytes::<rkyv::rancor::Error>(&sealed_log).expect("Failed to serialize opLog for cortex");
+            let _ = task_cortex_tx.send(serialized_log.into_vec()).await;
 
             // 6. Fire to global swarm
             global_publisher.broadcast_to_world(&sealed_log).await; 
