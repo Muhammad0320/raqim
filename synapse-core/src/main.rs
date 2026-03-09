@@ -1,4 +1,6 @@
 use clap::Parser;
+use synapse_core::compactor::WalCompactor;
+use synapse_core::lancedb_store::LanceEngine;
 use synapse_core::{AgentState, OpLog};
 use synapse_core::axon::AxonGateKeeper;
 use synapse_core::cortex::{AgentThought, CortexDataPlane};
@@ -41,12 +43,16 @@ async  fn main() {
     let brain = Arc::new(SwarmState::new(&config.topic));
     let axon = Arc::new(AxonGateKeeper::new());
     let wal = Arc::new(WalEngine::start(&config.wal_path).await);
+    let lance_engine = Arc::new(LanceEngine::new(&format!("{}_semantic.lancedb", &config.topic), "agent_history", 384).await);
+
+    // The Autonomous compactor (WAL reaper)
+    let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone());
+    compactor.start_daemon();
 
     // The Local cortex actor
     let cortex = CortexDataPlane::new(&config.topic);
     cortex.listen_for_local_thoughts(brain.clone(), axon.clone());
-
-    
+   
     // Channel to talk to the publisher safely accross threads
     let (cortex_tx, mut cortex_rx) = mpsc::channel::<Vec<u8>>(1000);
     
@@ -67,6 +73,8 @@ async  fn main() {
             } 
         }
     });
+
+
 
 
     // 2 Background Listeners (Zenoh Global network)
