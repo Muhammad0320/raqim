@@ -130,7 +130,7 @@ async  fn main() {
 
             // Contruct the raw log 
             let raw_log = OpLog {
-                agent_id: incoming_state.agent_id.unwrap_or([0;16]),
+                agent_id: agent_uuid_bytes,
                 state: incoming_state,
                 delta,
                 previous_hash: [0; 32],

@@ -3,7 +3,7 @@ pub mod state;
 pub mod nucleus;
 pub mod axon;
 pub mod network;
-
+pub mod lancedb_store;
 
 use rkyv::{Archive, Deserialize, Serialize};
 
@@ -37,8 +37,9 @@ pub struct OpLog {
     pub state: AgentState,
 
     pub delta:  Vec<u8>, 
-    // The DAG Links: 32-bytes Blake3 hashes
+
     pub previous_hash: [u8; 32],
     pub current_hash: [u8; 32],
 }
+
 
