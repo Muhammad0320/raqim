@@ -33,7 +33,6 @@ enum Commands {
 }
 
 
-
 fn main() {
 
    let cli = Cli::parse();
@@ -75,7 +74,6 @@ fn execute_time_travel(wal_path: &PathBuf, target_tx_id: Option<u64>) {
         len_bytes.copy_from_slice(&mmap[offset..offset+4]);
         let entry_len = u32::from_le_bytes(len_bytes) as usize;
         offset+=4;
-
         
 
         // Cast the exact memory slide directly to the ArchivedOpLog using rkyv

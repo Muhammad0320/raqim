@@ -77,7 +77,7 @@ impl GlobalNetworkBridge {
                     brain.assimilate_foreign_thought(&log.delta);
                     println!("Assimilated foreign thought from Agent: {:?} ", log.agent_id)
                 } else {
-                    eprintln!("SECURITY BREACH: Forged thought detected on network. Droppingg.")
+                    eprintln!("SECURITY BREACH: Forged thought detected on network. Dropping.")
                 }
 
             }

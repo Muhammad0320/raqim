@@ -4,22 +4,27 @@ use iceoryx2::prelude::*;
 use iceoryx2::port::publisher::Publisher;
 use iceoryx2::port::subscriber::Subscriber;
 
+use rkyv::{Archive, to_bytes};
+
+
+use crate::OpLog;
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmState;
 
-#[repr(C)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct AgentThought {
+// #[repr(C)]
+// #[derive(Debug, Default, Clone, Copy)]
+// pub struct AgentThought {
 
-    pub agent_id: [u8; 16],
-    pub thought_id: u64,
-    pub payload_size: u32,
+//     pub agent_id: [u8; 16],
+//     pub thought_id: u64,
+//     pub payload_size: u32,
 
-    // Flat memory allocation for zero-copy. This allows up to 4kb of CRDT delta per thought.
-}
+//     // The HFT flat buffer. Holds the entire zero-copy serialized Oplog.
+//     pub serialized_oplog: [u8; 8192]
+// }
 
-// Explicitely tells the compiler that this struct is safe for zero-copy transmission. // It has no heap pointer, only flat primitives 
-unsafe impl ZeroCopySend for AgentThought {}
+// // Explicitely tells the compiler that this struct is safe for zero-copy transmission. // It has no heap pointer, only flat primitives 
+// unsafe impl ZeroCopySend for AgentThought {}
 
 pub  struct CortexDataPlane  {
   
@@ -36,13 +41,14 @@ impl CortexDataPlane {
         Self { service_name }
     }
 
-    // Creates a publisher that writes zero-copy data
-    pub fn create_publisher(&self) -> Result<Publisher<ipc::Service, AgentThought, ()>, Box<dyn std::error::Error>> {
+    // Notice we use [u8]  a dynamic byte slice instead of a fixed struct!
+
+    pub fn create_publisher(&self) -> Result<Publisher<ipc::Service, [u8], ()>, Box<dyn std::error::Error>> {
 
         let node = NodeBuilder::new().create::<ipc::Service>()?; 
 
         let service = node.service_builder(&self.service_name)
-                    .publish_subscribe::<AgentThought>()
+                    .publish_subscribe::<[u8]>()
                     .open_or_create()?;
                     
 
@@ -51,12 +57,12 @@ impl CortexDataPlane {
         Ok(publisher)
     }
 
-    pub fn create_subscriber(&self) -> Result<Subscriber<ipc::Service, AgentThought, ()>, Box<dyn std::error::Error>> {
+    pub fn create_subscriber(&self) -> Result<Subscriber<ipc::Service, [u8], ()>, Box<dyn std::error::Error>> {
 
         let node = NodeBuilder::new().create::<ipc::Service>()?;
 
         let service = node.service_builder(&self.service_name)
-        .publish_subscribe::<AgentThought>()
+        .publish_subscribe::<[u8]>()
         .open_or_create()?;
 
         let subscriber = service.subscriber_builder().create()?; 
@@ -72,11 +78,31 @@ impl CortexDataPlane {
 
         println!("Cortx Data Plane: Listening for zero-copy local thoughts...");
 
+        //  Read from shared physical RAM
         std::thread::spawn(move || {
 
             loop {
 
-                //  Read from shared physical RAM
+                if let Ok(Some(sample)) = subscriber.receive() {
+
+                    let payload_bytes = sample.payload();
+
+                    // Zero copy deserialization of the dynamic bytes
+                    let archived_log = unsafe {
+                        rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload_bytes)
+                    };
+
+                    let log: OpLog = rkyv::deserialize::<Oplog, rkyv::rancor::Error>(archived_log).expect("Cortex deserialization failed");
+
+                    // The Circuit Breaker
+                    if axon.verify_foreign_thoughts(&log) {
+                        brain.assimilate_foreign_thought(&log.delta);
+                        println!("Cortex: Assimilated thought from Agent: {:?}", log.agent_id);
+                    } else {
+                        println!("CRITICAL ALERT: Local tampering detected. Dropping thoughts.")
+                    }
+                    
+                }
                 
 
                 std::thread::yield_now(); 
