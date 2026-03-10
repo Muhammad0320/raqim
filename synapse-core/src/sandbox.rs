@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Ok;
+use uuid::Uuid;
 use wasmtime::*;
 
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
@@ -57,6 +58,7 @@ impl WasmEngine {
                     Some(Extern::Memory(mem)) => mem,
                     _ => return Err(Trap::new("Failed to find WASM memory")),
                 };
+
                 let agent_uuid_bytes = Uuid::new_v4().into_bytes();
 
                 // 2. Read the raw bytes safely from the WASM linear memory

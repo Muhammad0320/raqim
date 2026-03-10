@@ -1,7 +1,6 @@
 use crate::OpLog;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
-    types::Float32Type,
 };
 use arrow_schema::{DataType, Field, Schema};
 use lancedb::connect;
