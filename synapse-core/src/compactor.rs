@@ -47,7 +47,7 @@ impl WalCompactor {
                         self.execute_compaction().await;
                     },
 
-                }
+            }
 
             }
 

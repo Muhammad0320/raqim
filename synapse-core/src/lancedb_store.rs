@@ -12,7 +12,7 @@ pub struct LanceEngine {
     db: Connection,
     table_name: String,
     // The Size of LLM's embedding vector (e.g., 384 or 1536)
-   pub dims: i32
+   dims: i32
 }
 
 impl LanceEngine {
@@ -25,7 +25,7 @@ impl LanceEngine {
             Self {
                 db, 
                 table_name: table_name.to_string(),
-                dims: vector_dims,
+                dims: vector_dim,
             }
     }
 

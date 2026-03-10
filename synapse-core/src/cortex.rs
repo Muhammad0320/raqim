@@ -4,8 +4,6 @@ use iceoryx2::prelude::*;
 use iceoryx2::port::publisher::Publisher;
 use iceoryx2::port::subscriber::Subscriber;
 
-use rkyv::{Archive, to_bytes};
-
 
 use crate::OpLog;
 use crate::axon::AxonGateKeeper;
@@ -92,7 +90,7 @@ impl CortexDataPlane {
                         rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload_bytes)
                     };
 
-                    let log: OpLog = rkyv::deserialize::<Oplog, rkyv::rancor::Error>(archived_log).expect("Cortex deserialization failed");
+                    let log: OpLog = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log).expect("Cortex deserialization failed");
 
                     // The Circuit Breaker
                     if axon.verify_foreign_thoughts(&log) {
