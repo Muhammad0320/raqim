@@ -26,3 +26,6 @@ uuid = { version = "1.8", features = ["v4"] }
 lancedb = "0.9"
 arrow-array = "51.0"
 arrow-schema = "51.0"
+
+wasmtime = "18.0"
+anyhow = "1.0"
