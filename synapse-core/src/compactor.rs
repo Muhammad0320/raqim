@@ -4,7 +4,7 @@ use tokio::time::{interval, Duration};
 
 pub struct WalCompactor {
     wal_path: String, 
-    lance_engine: Arc<LanceEngine>
+    pub lance_engine: Arc<LanceEngine>
 }
 
 impl WalCompactor {

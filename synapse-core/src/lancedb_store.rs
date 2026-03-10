@@ -67,18 +67,18 @@ impl LanceEngine {
 
         // 3. Assemble the RecordBatch 
         let batch = RecordBatch::try_new(self.schema(), vec![
-            tx_id_array as Arc<dyn arrow_array::Array>,
-            agent_id_array as Arc<dyn arrow_array::Array>,
-            payload_array as Arc<dyn arrow_array::Array>,
-            vector_array as Arc<dyn arrow_array::Array>
+            tx_id_array as Arc<dyn lancedb::arrow::array>,
+            agent_id_array as Arc<dyn lancedb::arrow::array>,
+            payload_array as Arc<dyn lancedb::arrow::array>,
+            vector_array as Arc<dyn lancedb::arrow::array>
         ]).expect("Failed to build Arrow RecordBatch");
-
+        
         // 4. Commit to the DB
         let table_names = self.db.table_names().execute().await.unwrap();
         if table_names.contains(&self.table_name) {
 
             let table = self.db.open_table(&self.table_name).execute().await.unwrap();
-            table.add(vac![batch]).execute().await.unwrap()
+            table.add(vec![batch]).execute().await.unwrap()
 
         } else {
             let batches = RecordBatchIterator::new(vec![Ok(batch)], self.schema());
