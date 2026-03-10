@@ -4,7 +4,6 @@ use arrow_array::{
     types::Float32Type,
 };
 use arrow_schema::{DataType, Field, Schema};
-use lancedb::arrow::arrow_schema::{DataType, Field, Schema};
 use lancedb::connect;
 use lancedb::connection::Connection;
 use std::sync::Arc;
@@ -72,7 +71,7 @@ impl LanceEngine {
         let tx_id_array = Arc::new(Int64Array::from(tx_ids));
         let agent_id_array = Arc::new(StringArray::from(agent_ids));
         let payload_array = Arc::new(BinaryArray::from(payloads));
-        let timestamp_array = Arc::new(BinaryArray::from(timestmaps));
+        let timestamp_array = Arc::new(Int64Array::from(timestmaps));
         let status_array = Arc::new(StringArray::from(statuses));
 
         let vector_array = Arc::new(FixedSizeListArray::from_iter_primitive(
@@ -86,12 +85,12 @@ impl LanceEngine {
         let batch = RecordBatch::try_new(
             self.schema(),
             vec![
-                tx_id_array as Arc<dyn lancedb::arrow::array>,
-                agent_id_array as Arc<dyn lancedb::arrow::array>,
-                timestamp_array as Arc<dyn lancedb::arrow::array>,
-                status_array as Arc<dyn lancedb::arrow::array>,
-                payload_array as Arc<dyn lancedb::arrow::array>,
-                vector_array as Arc<dyn lancedb::arrow::array>,
+                tx_id_array as Arc<dyn arrow_array>,
+                agent_id_array as Arc<dyn arrow_array>,
+                timestamp_array as Arc<dyn arrow_array>,
+                status_array as Arc<dyn arrow_array>,
+                payload_array as Arc<dyn arrow_array>,
+                vector_array as Arc<dyn arrow_array>,
             ],
         )
         .expect("Failed to build Arrow RecordBatch");

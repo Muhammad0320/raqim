@@ -1,6 +1,7 @@
 use crate::{OpLog, lancedb_store::LanceEngine};
+use rkyv::Archive;
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::Read,
     sync::Arc,
 };
@@ -43,7 +44,7 @@ impl WalCompactor {
 
                         _ = daily_interval.tick() => {
 
-                            println!("24-hour cycle reached. Routine compaction...")
+                            println!("24-hour cycle reached. Routine compaction...");
                             self.execute_compaction().await;
                         },
 
@@ -101,7 +102,7 @@ impl WalCompactor {
         }
 
         if !logs_to_archive.is_empty() {
-            self.lance_engine.archive_batch(&logs_to_archive, &vectors);
+            self.lance_engine.archive_batch(&logs_to_archive, &vector);
             println!("Archived {} thoughts to lanceDB", logs_to_archive.len());
         }
 

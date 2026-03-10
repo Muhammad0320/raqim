@@ -4,6 +4,7 @@ pub mod cortex;
 pub mod lancedb_store;
 pub mod network;
 pub mod nucleus;
+pub mod sandbox;
 pub mod state;
 
 use rkyv::{Archive, Deserialize, Serialize};
