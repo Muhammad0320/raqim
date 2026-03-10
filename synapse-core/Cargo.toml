@@ -24,4 +24,3 @@ hex =  "0.4"
 uuid = { version = "1.8", features = ["v4"] }
 
 lancedb = "0.9"
-arrow-array = "51.0"

@@ -1,5 +1,7 @@
-use arrow_array::{BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray};
-use arrow_array::{types::Float32Type};
+use lancedb::arrow::array::{
+    BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, StringArray,
+};
+use lancedb::arrow::datatypes::{DataType, Field, Float32Type, Schema};
 use lancedb::arrow::arrow_schema::{DataType, Field, Schema};
 use lancedb::connection::Connection;
 use lancedb::connect;

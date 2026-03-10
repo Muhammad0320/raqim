@@ -39,13 +39,13 @@ impl WalCompactor {
                             }
                         }
 
-                    }
+                    },
 
                     _ = daily_interval.tick() => {
 
                         println!("24-hour cycle reached. Routine compaction...")
                         self.execute_compaction().await;
-                    }
+                    },
 
                 }
 
