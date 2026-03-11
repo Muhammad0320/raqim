@@ -8,21 +8,6 @@ use crate::OpLog;
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmState;
 
-// #[repr(C)]
-// #[derive(Debug, Default, Clone, Copy)]
-// pub struct AgentThought {
-
-//     pub agent_id: [u8; 16],
-//     pub thought_id: u64,
-//     pub payload_size: u32,
-
-//     // The HFT flat buffer. Holds the entire zero-copy serialized Oplog.
-//     pub serialized_oplog: [u8; 8192]
-// }
-
-// // Explicitely tells the compiler that this struct is safe for zero-copy transmission. // It has no heap pointer, only flat primitives
-// unsafe impl ZeroCopySend for AgentThought {}
-
 pub struct CortexDataPlane {
     service_name: ServiceName,
 }
@@ -69,14 +54,14 @@ impl CortexDataPlane {
     /// The uncomprormising local listener. Runs in a dedicated background thread.
     pub fn listen_for_local_thoughts(&self, brain: Arc<SwarmState>, axon: Arc<AxonGateKeeper>) {
         //  Subscriber is created on this specific thrad, so it doesn't cross boundaries.
-        let subscriber = self
-            .create_subscriber()
-            .expect("Failed to create lcoal subscriber");
-
-        println!("Cortx Data Plane: Listening for zero-copy local thoughts...");
-
-        //  Read from shared physical RAM
         std::thread::spawn(move || {
+            let subscriber = self
+                .create_subscriber()
+                .expect("Failed to create lcoal subscriber");
+
+            println!("Cortx Data Plane: Listening for zero-copy local thoughts...");
+
+            //  Read from shared physical RAM
             loop {
                 if let Ok(Some(sample)) = subscriber.receive() {
                     let payload_bytes = sample.payload();

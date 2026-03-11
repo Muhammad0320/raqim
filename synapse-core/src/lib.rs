@@ -79,7 +79,7 @@ pub async fn execute_synapse_cascade(
 
     // 5. Fire to Local Cortex (Zero-Copy)
     let serialized_log = rkyv::to_bytes::<rkyv::rancor::Error>(&sealed_log).unwrap();
-    let _ = cortex_tx.send(serialized_log.into_vec()).await;
+    let _ = cortex_tx.send(serialized_log.into_vec());
 
     // 6. Fire to global swarm
     global_net.broadcast_to_world(&sealed_log).await;
