@@ -67,17 +67,20 @@ impl WasmEngine {
                     .get(ptr as usize..(ptr + len) as usize)
                     .ok_or_else(|| anyhow!("Memory access out of bounds"))?;
 
-                // Zero-copy desetialize the AgentState from the WASM memory. 
-                let archived_state = unsafe {
-                    rkyv::access_unchecked::<< AgentState as Archive >::Archived>(data)
-                };
+                // Zero-copy desetialize the AgentState from the WASM memory.
+                let archived_state =
+                    unsafe { rkyv::access_unchecked::<<AgentState as Archive>::Archived>(data) };
 
-                let incoming_state: AgentState = rkyv::deserialize::<AgentState, rkyv::rancor::Error>(archived_state).expect("Failed to deserialize from WASM");
-                
+                let incoming_state: AgentState =
+                    rkyv::deserialize::<AgentState, rkyv::rancor::Error>(archived_state)
+                        .expect("Failed to deserialize from WASM");
+
                 // 4. Trigger the synapse cascade
 
-
-                println!("WASM sandbox successfully parsed state for TxID: {}", )
+                println!(
+                    "WASM sandbox successfully parsed state for TxID: {}",
+                    incoming_state.transaction_id
+                );
 
                 Ok(())
             },
