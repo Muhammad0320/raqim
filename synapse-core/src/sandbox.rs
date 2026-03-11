@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use anyhow::Ok;
+use anyhow::anyhow;
+use rkyv::Archive;
 use uuid::Uuid;
 use wasmtime::*;
 
@@ -56,36 +58,26 @@ impl WasmEngine {
                 // 1. Get the Isolated memory of the WASM cage
                 let mem = match caller.get_export("memory") {
                     Some(Extern::Memory(mem)) => mem,
-                    _ => return Err(Trap::new("Failed to find WASM memory")),
+                    _ => return Err(anyhow!("Failed to find WASM memory")),
                 };
-
-                let agent_uuid_bytes = Uuid::new_v4().into_bytes();
 
                 // 2. Read the raw bytes safely from the WASM linear memory
                 let data = mem
                     .data(&caller)
                     .get(ptr as usize..(ptr + len) as usize)
-                    .ok_or_else(|| Trap::new("Memory access out of bounds"))?;
+                    .ok_or_else(|| anyhow!("Memory access out of bounds"))?;
 
-                // 3. Convert bytes to string (The Agent's Thought )
-                let thought = std::str::from_utf8(data)
-                    .map_err(|_| Trap::new("Invalid UTF-8 in thought payload"))?;
-
-                // 4. Trigger the synapse cascade
-                // The WASM agents doesn't touch the CRDT or WAL directly. We do it for them safely.
-                let state = AgentState {
-                    transaction_id: 0,
-                    timestamp: 0,
-                    status: crate::AgentStatus::Reasoning,
-                    memory_offset: 0,
-                    agent_id: agent_uuid_bytes,
+                // Zero-copy desetialize the AgentState from the WASM memory. 
+                let archived_state = unsafe {
+                    rkyv::access_unchecked::<< AgentState as Archive >::Archived>(data)
                 };
 
-                caller
-                    .data()
-                    .brain
-                    .update_agent_state(&caller.data().agent_id_hex, &state);
-                // The rest of the Axon/WAL cascade happens seamlessly
+                let incoming_state: AgentState = rkyv::deserialize::<AgentState, rkyv::rancor::Error>(archived_state).expect("Failed to deserialize from WASM");
+                
+                // 4. Trigger the synapse cascade
+
+
+                println!("WASM sandbox successfully parsed state for TxID: {}", )
 
                 Ok(())
             },
@@ -114,7 +106,7 @@ impl WasmEngine {
 
         println!("Execting Agent {} in the isolated sandbox...", agent_id_hex);
         match agent_main.call(&mut store, ()) {
-            Ok(_) => println!("Agent execution completed successfully."),
+            std::result::Result::Ok(_) => println!("Agent execution completed successfully."),
             Err(e) => eprintln!("Agent execution trapped/terminated: {}", e),
         }
 

@@ -25,13 +25,13 @@ impl WalCompactor {
             println!("Bismillah. WAL compactor Daemon Active. Monitoring Disk...");
 
             let one_gb: u64 = 1024 * 1024 * 1024;
-            let check_interval = interval(Duration::from_secs(60));
-            let daily_interval = interval(Duration::from_secs(24 * 60 * 60));
+            let mut check_interval = interval(Duration::from_secs(60));
+            let mut daily_interval = interval(Duration::from_secs(24 * 60 * 60));
 
             loop {
                 tokio::select! {
 
-                        _ = check_interval.tick() => {
+                    _ = check_interval.tick() => {
 
                             if let Ok(metadata) = fs::metadata(&self.wal_path) {
                                 if metadata.len() >= one_gb {
@@ -89,7 +89,7 @@ impl WalCompactor {
 
             let entry_slice = &buffer[offset..offset + entry_len];
             let archived_log =
-                unsafe { rkvy::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice) };
+                unsafe { rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice) };
 
             if let Ok(log) = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log) {
                 let simulated_vector = vec![0.01_f32; self.lance_engine.dims as usize];

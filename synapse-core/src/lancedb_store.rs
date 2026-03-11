@@ -1,4 +1,5 @@
 use crate::OpLog;
+use anyhow::Ok;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
 };
@@ -84,17 +85,20 @@ impl LanceEngine {
         let batch = RecordBatch::try_new(
             self.schema(),
             vec![
-                tx_id_array as Arc<dyn arrow_array>,
-                agent_id_array as Arc<dyn arrow_array>,
-                timestamp_array as Arc<dyn arrow_array>,
-                status_array as Arc<dyn arrow_array>,
-                payload_array as Arc<dyn arrow_array>,
-                vector_array as Arc<dyn arrow_array>,
+                tx_id_array as Arc<dyn arrow_array::Array>,
+                agent_id_array as Arc<dyn arrow_array::Array>,
+                timestamp_array as Arc<dyn arrow_array::Array>,
+                status_array as Arc<dyn arrow_array::Array>,
+                payload_array as Arc<dyn arrow_array::Array>,
+                vector_array as Arc<dyn arrow_array::Array>,
             ],
         )
         .expect("Failed to build Arrow RecordBatch");
 
         // 4. Commit to the DB
+        let schema = self.schema();
+        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema.clone());
+
         let table_names = self.db.table_names().execute().await.unwrap();
         if table_names.contains(&self.table_name) {
             let table = self
@@ -103,9 +107,9 @@ impl LanceEngine {
                 .execute()
                 .await
                 .unwrap();
-            table.add(vec![batch]).execute().await.unwrap()
+
+            table.add(batches).execute().await.unwrap()
         } else {
-            let batches = RecordBatchIterator::new(vec![Ok(batch)], self.schema());
             self.db
                 .create_table(&self.table_name, batches)
                 .execute()
