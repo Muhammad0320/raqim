@@ -1,12 +1,13 @@
 use clap::Parser;
 use std::sync::Arc;
-use std::task;
+use std::{fs, task};
 use synapse_core::axon::AxonGateKeeper;
 use synapse_core::compactor::WalCompactor;
 use synapse_core::cortex::{AgentThought, CortexDataPlane, listen_for_local_thoughts};
 use synapse_core::lancedb_store::LanceEngine;
 use synapse_core::network::GlobalNetworkBridge;
 use synapse_core::nucleus::WalEngine;
+use synapse_core::sandbox::WasmEngine;
 use synapse_core::state::SwarmState;
 use synapse_core::{AgentState, OpLog, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
@@ -52,9 +53,7 @@ async fn main() {
         )
         .await,
     );
-
-    The WASM Engine
-    // let wasm_engine = synapse_core::sandbox::WasmEngine::new();
+    let wasm_engine = Arc::new(WasmEngine::new());
 
     // The Autonomous compactor (WAL reaper)
     let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone());
@@ -68,6 +67,67 @@ async fn main() {
     let (cortex_tx, mut cortex_rx) = mpsc::channel::<Vec<u8>>(1000);
 
     let topic_clone = config.topic.clone();
+
+    // The WASM plugign Orchestrator
+    let plugin_dir = "./plugins";
+    fs::create_dir_all(plugin_dir).expect("Failed to create plugins dir");
+
+    let w_brain = brain.clone();
+    let w_axon = axon.clone();
+    let w_wal = wal.clone();
+    let w_cortex_tx = cortex_tx.clone();
+    let w_global_net = global_net.clone();
+    let w_wasm_engine = wasm_engine.clone();
+
+    // Spawns a dedicated background thread to monitor the plugins folder
+    tokio::spawn(async move {
+        println!(
+            "WASM Orchestratoro monitoring {} for a new edge plugins...",
+            plugin_dir
+        );
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+
+        loop {
+            interval.tick.await;
+
+            if let Ok(entries) = fs::read_dir(plugin_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+
+                    // If a new .wasm file is found we execute it.
+                    if path.extension().and_then(|s| s.to_str()) == Some("wasm") {
+                        println!("Discovered a new WASM Plugin: {:?}", path);
+
+                        let wasm_bytes = fs::read(&path).unwrap();
+
+                        // We must clone the layers for the specific execution
+                        let a_clone = w_axon.clone();
+                        let b_clone = w_brain.clone();
+                        let w_clone = w_wal.clone();
+                        let c_clone = w_cortex_tx.clone();
+                        let g_clone = w_global_net.clone();
+
+                        // Execute the untrusted logic in the WASM cage
+                        if let Err(e) = w_wasm_engine.execute_agent(
+                            &wasm_bytes,
+                            b_clone,
+                            a_clone,
+                            w_clone,
+                            c_clone,
+                            g_clone,
+                        ) {
+                            eprintln!("Plugin {:?} trapped/failed: {} ", &path, e);
+                        }
+
+                        // Rename this file again so we don't execute it again in the next loop
+                        let mut new_path = path.clone();
+                        new_path.set_extension("wasm.running");
+                        let _ = fs::rename(path, new_path);
+                    }
+                }
+            }
+        }
+    });
 
     // Dedicated physical thread !Send publisher.
     std::thread::spawn(move || {
@@ -152,4 +212,3 @@ async fn main() {
         });
     }
 }
-
