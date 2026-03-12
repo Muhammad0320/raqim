@@ -43,7 +43,9 @@ impl WasmEngine {
         wasm_binary: &[u8],
         brain: Arc<SwarmState>,
         axon: Arc<AxonGateKeeper>,
-        agent_id_hex: &str,
+        wal: Arc<WalEngine>,
+        cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
+        global_net: Arc<GlobalNetworkBridge>,
     ) -> Result<(), anyhow::Error> {
         let mut linker = Linker::new(&self.engine);
 
