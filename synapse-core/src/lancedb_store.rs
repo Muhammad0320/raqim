@@ -3,6 +3,7 @@ use anyhow::Ok;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
 };
+use arrow_schema::ArrowError;
 use arrow_schema::{DataType, Field, Schema};
 use lancedb::connect;
 use lancedb::connection::Connection;
@@ -97,7 +98,8 @@ impl LanceEngine {
 
         // 4. Commit to the DB
         let schema = self.schema();
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], schema.clone());
+        let batches =
+            RecordBatchIterator::new(vec![Ok::<RecordBatch, ArrowError>(batch)], schema.clone());
 
         let table_names = self.db.table_names().execute().await.unwrap();
         if table_names.contains(&self.table_name) {

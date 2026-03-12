@@ -1,13 +1,14 @@
 use clap::Parser;
 use std::sync::Arc;
+use std::task;
 use synapse_core::axon::AxonGateKeeper;
 use synapse_core::compactor::WalCompactor;
-use synapse_core::cortex::{AgentThought, CortexDataPlane};
+use synapse_core::cortex::{AgentThought, CortexDataPlane, listen_for_local_thoughts};
 use synapse_core::lancedb_store::LanceEngine;
 use synapse_core::network::GlobalNetworkBridge;
 use synapse_core::nucleus::WalEngine;
 use synapse_core::state::SwarmState;
-use synapse_core::{AgentState, OpLog};
+use synapse_core::{AgentState, OpLog, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -42,6 +43,7 @@ async fn main() {
     let brain = Arc::new(SwarmState::new(&config.topic));
     let axon = Arc::new(AxonGateKeeper::new());
     let wal = Arc::new(WalEngine::start(&config.wal_path).await);
+    let global_net = Arc::new(GlobalNetworkBridge::new(&topic_clone).await);
     let lance_engine = Arc::new(
         LanceEngine::new(
             &format!("{}_semantic.lancedb", &config.topic),
@@ -51,13 +53,18 @@ async fn main() {
         .await,
     );
 
+    // The WASM Engine
+    // let wasm_engine = synapse_core::sandbox::WasmEngine::new();
+
+
+
     // The Autonomous compactor (WAL reaper)
     let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone());
     compactor.start_daemon();
 
     // The Local cortex actor
-    let cortex = CortexDataPlane::new(&config.topic);
-    cortex.listen_for_local_thoughts(brain.clone(), axon.clone());
+    let topic_clone = &config.topic;
+    listen_for_local_thoughts(topic_clone.to_string(), brain.clone(), axon.clone());
 
     // Channel to talk to the publisher safely accross threads
     let (cortex_tx, mut cortex_rx) = mpsc::channel::<Vec<u8>>(1000);
@@ -80,7 +87,6 @@ async fn main() {
     });
 
     // 2 Background Listeners (Zenoh Global network)
-    let global_net = Arc::new(GlobalNetworkBridge::new(&topic_clone).await);
     let global_net_clone = global_net.clone();
     let global_axon = axon.clone();
     let global_brain = brain.clone();
@@ -89,6 +95,8 @@ async fn main() {
             .listen_for_foreign_thoughts(global_brain, global_axon)
             .await;
     });
+
+    
 
     // 3. The Production TCP ingress.
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port))
@@ -104,7 +112,6 @@ async fn main() {
         let task_axon = axon.clone();
         let task_cortex_tx = cortex_tx.clone();
         let task_wal = wal.clone();
-        let task_publisher = local_publisher.clone();
         let global_publisher = global_net.clone();
 
         tokio::spawn(async move {
@@ -135,36 +142,15 @@ async fn main() {
                     .expect("Failed to deserialize agent state");
 
             // --- The Synaptic Cascade ---
-
-            // 1. Mutate the brain
-            let agent_uuid_bytes = Uuid::new_v4().into_bytes();
-            let agent_hex = hex::encode(agent_uuid_bytes);
-            task_brain.update_agent_state(&agent_hex, &incoming_state);
-            let delta = task_brain.export_delta();
-            let delta_len = delta.len() as u32;
-
-            // Contruct the raw log
-            let raw_log = OpLog {
-                agent_id: agent_uuid_bytes,
-                state: incoming_state,
-                delta,
-                previous_hash: [0; 32],
-                current_hash: [0; 32],
-            };
-
-            // 3. Cryptographically Seal (Markle DAG)
-            let sealed_log = task_axon.seal_thought(raw_log);
-
-            // 4. Fire to wal (Durability)
-            task_wal.append(sealed_log.clone());
-
-            // 5. Fire to Local Cortex (Zero-Copy)
-            let serialized_log = rkyv::to_bytes::<rkyv::rancor::Error>(&sealed_log)
-                .expect("Failed to serialize opLog for cortex");
-            let _ = task_cortex_tx.send(serialized_log.into_vec()).await;
-
-            // 6. Fire to global swarm
-            global_publisher.broadcast_to_world(&sealed_log).await;
+            execute_synapse_cascade(
+                incoming_state,
+                task_brain,
+                task_axon,
+                task_wal,
+                task_cortex_tx,
+                global_publisher,
+            )
+            .await;
 
             println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
         });

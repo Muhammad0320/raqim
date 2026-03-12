@@ -5,7 +5,7 @@ use anyhow::anyhow;
 use rkyv::Archive;
 use uuid::Uuid;
 use wasmtime::*;
-
+use tokio::sync::mpsc;
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 
 ///  The internal state we pass into sandbox,
@@ -13,8 +13,9 @@ use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 struct SandboxContent {
     axon: Arc<AxonGateKeeper>,
     brain: Arc<SwarmState>,
-    agent_id_hex: String,
-    fuel_consumed: u64,
+   wal: Arc<WalEngine>,
+   cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
+   global_net: Arc<GlobalNetworkBridge>
 }
 
 pub struct WasmEngine {
@@ -67,6 +68,7 @@ impl WasmEngine {
                     .get(ptr as usize..(ptr + len) as usize)
                     .ok_or_else(|| anyhow!("Memory access out of bounds"))?;
 
+
                 // Zero-copy desetialize the AgentState from the WASM memory.
                 let archived_state =
                     unsafe { rkyv::access_unchecked::<<AgentState as Archive>::Archived>(data) };
@@ -75,11 +77,26 @@ impl WasmEngine {
                     rkyv::deserialize::<AgentState, rkyv::rancor::Error>(archived_state)
                         .expect("Failed to deserialize from WASM");
 
-                // 4. Trigger the synapse cascade
+                        
+            // used tokio::spawn to bridge syncronous WASM call to out async cascade
+                
+            let brain_clone = data.brain.clone();
+            let axon_clone = data.axon.clone();
+            let wal_clone = data.wal.clone();
+            let cortex_tx_clone = data.cortex_tx.clone();
+            let global_net_clone = data.global_net.clone();
+            let incoming_state_tx_id = &incoming_state.transaction_id;
+                        
+                tokio::spawn(async move {
+                            
+                   // 4. Trigger the synapse cascade
+                  crate::execute_synapse_cascade(incoming_state, brain_clone, axon_clone, wal_clone, cortex_tx_clone, global_net_clone ).await;
+
+                });
 
                 println!(
                     "WASM sandbox successfully parsed state for TxID: {}",
-                    incoming_state.transaction_id
+                    incoming_state_tx_id
                 );
 
                 Ok(())

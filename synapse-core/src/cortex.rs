@@ -50,41 +50,48 @@ impl CortexDataPlane {
 
         Ok(subscriber)
     }
+}
 
-    /// The uncomprormising local listener. Runs in a dedicated background thread.
-    pub fn listen_for_local_thoughts(&self, brain: Arc<SwarmState>, axon: Arc<AxonGateKeeper>) {
-        //  Subscriber is created on this specific thrad, so it doesn't cross boundaries.
-        std::thread::spawn(move || {
-            let subscriber = self
-                .create_subscriber()
-                .expect("Failed to create lcoal subscriber");
+/// The uncomprormising local listener. Runs in a dedicated background thread.
+pub fn listen_for_local_thoughts(
+    topic_name: String,
+    brain: Arc<SwarmState>,
+    axon: Arc<AxonGateKeeper>,
+) {
+    //  Subscriber is created on this specific thrad, so it doesn't cross boundaries.
+    std::thread::spawn(move || {
+        //  Initialize inside the thread
+        let cortex = CortexDataPlane::new(&topic_name);
 
-            println!("Cortx Data Plane: Listening for zero-copy local thoughts...");
+        let subscriber = cortex
+            .create_subscriber()
+            .expect("Failed to create lcoal subscriber");
 
-            //  Read from shared physical RAM
-            loop {
-                if let Ok(Some(sample)) = subscriber.receive() {
-                    let payload_bytes = sample.payload();
+        println!("Cortx Data Planae: Listening for zero-copy local thoughts...");
 
-                    // Zero copy deserialization of the dynamic bytes
-                    let archived_log = unsafe {
-                        rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload_bytes)
-                    };
+        //  Read from shared physical RAM
+        loop {
+            if let Ok(Some(sample)) = subscriber.receive() {
+                let payload_bytes = sample.payload();
 
-                    let log: OpLog = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
-                        .expect("Cortex deserialization failed");
+                // Zero copy deserialization of the dynamic bytes
+                let archived_log = unsafe {
+                    rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload_bytes)
+                };
 
-                    // The Circuit Breaker
-                    if axon.verify_foreign_thoughts(&log) {
-                        brain.assimilate_foreign_thought(&log.delta);
-                        println!("Cortex: Assimilated thought from Agent: {:?}", log.agent_id);
-                    } else {
-                        println!("CRITICAL ALERT: Local tampering detected. Dropping thoughts.")
-                    }
+                let log: OpLog = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
+                    .expect("Cortex deserialization failed");
+
+                // The Circuit Breaker
+                if axon.verify_foreign_thoughts(&log) {
+                    brain.assimilate_foreign_thought(&log.delta);
+                    println!("Cortex: Assimilated thought from Agent: {:?}", log.agent_id);
+                } else {
+                    println!("CRITICAL ALERT: Local tampering detected. Dropping thoughts.")
                 }
-
-                std::thread::yield_now();
             }
-        });
-    }
+
+            std::thread::yield_now();
+        }
+    });
 }

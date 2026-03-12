@@ -7,8 +7,8 @@ pub mod nucleus;
 pub mod sandbox;
 pub mod state;
 
-use std::sync::{Arc, mpsc};
-
+use std::sync::{Arc};
+use uuid:Uuid;
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{
@@ -50,15 +50,26 @@ pub struct OpLog {
 }
 
 pub async fn execute_synapse_cascade(
-    incoming_state: AgentState,
+    mut incoming_state: AgentState,
     brain: Arc<SwarmState>,
     axon: Arc<AxonGateKeeper>,
     wal: Arc<WalEngine>,
-    cortex_tx: mpsc::Sender<Vec<u8>>,
+    cortex_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
 ) {
-    let agent_hex = hex::encode(incoming_state.agent_id.unwrap_or([0; 16]));
+    // Security: Validate or generate agent_id
 
+    let empty_id = [0u8; 16];
+
+    let final_agent_id = match incoming_state.agent_id {
+        Some(id) if id != empty_id => id,
+        _ => Uuid::new_v4().into_bytes(), 
+    }
+
+    incoming_state.agent_id = Some(final_agent_id);
+
+    let agent_hex = hex::encode(final_agent_id);
+    
     brain.update_agent_state(&agent_hex, &incoming_state);
     let delta = brain.export_delta();
 
