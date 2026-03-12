@@ -97,9 +97,9 @@ impl LanceEngine {
         .expect("Failed to build Arrow RecordBatch");
 
         // 4. Commit to the DB
-        let result = std::result::Result<RecordBatch, arrow_schema::ArrowError> = std::result::Result::Ok(batch);
-        let batches =
-            RecordBatchIterator::new(vec![result], self.schema());
+        let result: std::result::Result<RecordBatch, arrow_schema::ArrowError> =
+            std::result::Result::Ok(batch);
+        let batches = RecordBatchIterator::new(vec![result], self.schema());
 
         let table_names = self.db.table_names().execute().await.unwrap();
         if table_names.contains(&self.table_name) {
