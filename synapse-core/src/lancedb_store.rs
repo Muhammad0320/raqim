@@ -1,9 +1,7 @@
 use crate::OpLog;
-use anyhow::Ok;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
 };
-use arrow_schema::ArrowError;
 use arrow_schema::{DataType, Field, Schema};
 use lancedb::connect;
 use lancedb::connection::Connection;
@@ -75,12 +73,14 @@ impl LanceEngine {
         let timestamp_array = Arc::new(Int64Array::from(timestmaps));
         let status_array = Arc::new(StringArray::from(statuses));
 
-        let vector_array = Arc::new(FixedSizeListArray::from_iter_primitive(
-            vectors
-                .iter()
-                .map(|v| Some(v.iter().map(|&f| Some(f)).collect::<Vec<_>>())),
-            self.dims,
-        ));
+        let vector_array = Arc::new(
+            FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+                vectors
+                    .iter()
+                    .map(|v| Some(v.iter().map(|&f| Some(f)).collect::<Vec<_>>())),
+                self.dims,
+            ),
+        );
 
         // 3. Assemble the RecordBatch
         let batch = RecordBatch::try_new(

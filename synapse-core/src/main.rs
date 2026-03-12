@@ -64,7 +64,7 @@ async fn main() {
     listen_for_local_thoughts(topic_clone.to_string(), brain.clone(), axon.clone());
 
     // Channel to talk to the publisher safely accross threads
-    let (cortex_tx, mut cortex_rx) = mpsc::channel::<Vec<u8>>(1000);
+    let (cortex_tx, mut cortex_rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
     let topic_clone = config.topic.clone();
 
