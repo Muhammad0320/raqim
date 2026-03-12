@@ -5,7 +5,6 @@ use crate::nucleus::WalEngine;
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 use anyhow::Ok;
 use anyhow::anyhow;
-use hex::encode;
 use rkyv::Archive;
 use tokio::sync::mpsc;
 use wasmtime::*;
@@ -90,7 +89,7 @@ impl WasmEngine {
                 let cortex_tx_clone = layers.cortex_tx.clone();
                 let global_net_clone = layers.global_net.clone();
                 let incoming_state_tx_id = &incoming_state.transaction_id;
-                let agent_id = hex::encode(&incoming_state.agent_id);
+                let agent_id_hex = hex::encode(&incoming_state.agent_id.unwrap_or([0; 16]));
 
                 tokio::spawn(async move {
                     // 4. Trigger the synapse cascade
@@ -106,8 +105,8 @@ impl WasmEngine {
                 });
 
                 println!(
-                    "WASM sandbox successfully parsed state for TxID: {}",
-                    incoming_state_tx_id
+                    "WASM sandbox successfully parsed state from {} : {}",
+                    agent_id_hex, incoming_state_tx_id
                 );
 
                 Ok(())
@@ -136,7 +135,6 @@ impl WasmEngine {
         // Retreive the  'main' function of AI agent and execute it
         let agent_main = instance.get_typed_func::<(), ()>(&mut store, "agent_main")?;
 
-        println!("Execting Agent {} in the isolated sandbox...", agent_id);
         match agent_main.call(&mut store, ()) {
             std::result::Result::Ok(_) => println!("Agent execution completed successfully."),
             Err(e) => eprintln!("Agent execution trapped/terminated: {}", e),

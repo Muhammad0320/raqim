@@ -53,7 +53,7 @@ async fn main() {
         .await,
     );
 
-    // The WASM Engine
+    The WASM Engine
     // let wasm_engine = synapse_core::sandbox::WasmEngine::new();
 
     // The Autonomous compactor (WAL reaper)
@@ -152,3 +152,4 @@ async fn main() {
         });
     }
 }
+
