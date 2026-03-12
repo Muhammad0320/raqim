@@ -88,8 +88,8 @@ impl WasmEngine {
                 let wal_clone = layers.wal.clone();
                 let cortex_tx_clone = layers.cortex_tx.clone();
                 let global_net_clone = layers.global_net.clone();
-                let incoming_state_tx_id = &incoming_state.transaction_id;
-                let agent_id_hex = hex::encode(&incoming_state.agent_id.unwrap_or([0; 16]));
+                let incoming_state_tx_id = incoming_state.transaction_id;
+                let agent_id_hex = hex::encode(incoming_state.agent_id.clone().unwrap_or([0; 16]));
 
                 tokio::spawn(async move {
                     // 4. Trigger the synapse cascade
