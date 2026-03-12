@@ -1,21 +1,22 @@
 use std::sync::Arc;
 
+use crate::network::GlobalNetworkBridge;
+use crate::nucleus::WalEngine;
+use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 use anyhow::Ok;
 use anyhow::anyhow;
 use rkyv::Archive;
-use uuid::Uuid;
-use wasmtime::*;
 use tokio::sync::mpsc;
-use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
+use wasmtime::*;
 
 ///  The internal state we pass into sandbox,
 ///  so that the host fxns can interact with the rest of the synpase organism.
 struct SandboxContent {
     axon: Arc<AxonGateKeeper>,
     brain: Arc<SwarmState>,
-   wal: Arc<WalEngine>,
-   cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
-   global_net: Arc<GlobalNetworkBridge>
+    wal: Arc<WalEngine>,
+    cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
+    global_net: Arc<GlobalNetworkBridge>,
 }
 
 pub struct WasmEngine {
@@ -68,7 +69,6 @@ impl WasmEngine {
                     .get(ptr as usize..(ptr + len) as usize)
                     .ok_or_else(|| anyhow!("Memory access out of bounds"))?;
 
-
                 // Zero-copy desetialize the AgentState from the WASM memory.
                 let archived_state =
                     unsafe { rkyv::access_unchecked::<<AgentState as Archive>::Archived>(data) };
@@ -77,21 +77,28 @@ impl WasmEngine {
                     rkyv::deserialize::<AgentState, rkyv::rancor::Error>(archived_state)
                         .expect("Failed to deserialize from WASM");
 
-                        
-            // used tokio::spawn to bridge syncronous WASM call to out async cascade
-                
-            let brain_clone = data.brain.clone();
-            let axon_clone = data.axon.clone();
-            let wal_clone = data.wal.clone();
-            let cortex_tx_clone = data.cortex_tx.clone();
-            let global_net_clone = data.global_net.clone();
-            let incoming_state_tx_id = &incoming_state.transaction_id;
-                        
-                tokio::spawn(async move {
-                            
-                   // 4. Trigger the synapse cascade
-                  crate::execute_synapse_cascade(incoming_state, brain_clone, axon_clone, wal_clone, cortex_tx_clone, global_net_clone ).await;
+                let layers = caller.data();
 
+                // used tokio::spawn to bridge syncronous WASM call to out async cascade
+
+                let brain_clone = layers.brain.clone();
+                let axon_clone = layers.axon.clone();
+                let wal_clone = layers.wal.clone();
+                let cortex_tx_clone = layers.cortex_tx.clone();
+                let global_net_clone = layers.global_net.clone();
+                let incoming_state_tx_id = &incoming_state.transaction_id;
+
+                tokio::spawn(async move {
+                    // 4. Trigger the synapse cascade
+                    crate::execute_synapse_cascade(
+                        incoming_state,
+                        brain_clone,
+                        axon_clone,
+                        wal_clone,
+                        cortex_tx_clone,
+                        global_net_clone,
+                    )
+                    .await;
                 });
 
                 println!(
@@ -107,10 +114,11 @@ impl WasmEngine {
         let mut store = Store::new(
             &self.engine,
             SandboxContent {
-                agent_id_hex: agent_id_hex.to_string(),
                 axon,
                 brain,
-                fuel_consumed: 0,
+                wal,
+                cortex_tx,
+                global_net,
             },
         );
 

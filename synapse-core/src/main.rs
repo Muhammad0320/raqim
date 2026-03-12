@@ -56,8 +56,6 @@ async fn main() {
     // The WASM Engine
     // let wasm_engine = synapse_core::sandbox::WasmEngine::new();
 
-
-
     // The Autonomous compactor (WAL reaper)
     let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone());
     compactor.start_daemon();
@@ -95,8 +93,6 @@ async fn main() {
             .listen_for_foreign_thoughts(global_brain, global_axon)
             .await;
     });
-
-    
 
     // 3. The Production TCP ingress.
     let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port))

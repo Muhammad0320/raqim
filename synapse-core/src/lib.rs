@@ -7,9 +7,9 @@ pub mod nucleus;
 pub mod sandbox;
 pub mod state;
 
-use std::sync::{Arc};
-use uuid:Uuid;
 use rkyv::{Archive, Deserialize, Serialize};
+use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::{
     axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine, state::SwarmState,
@@ -63,13 +63,13 @@ pub async fn execute_synapse_cascade(
 
     let final_agent_id = match incoming_state.agent_id {
         Some(id) if id != empty_id => id,
-        _ => Uuid::new_v4().into_bytes(), 
-    }
+        _ => Uuid::new_v4().into_bytes(),
+    };
 
     incoming_state.agent_id = Some(final_agent_id);
 
     let agent_hex = hex::encode(final_agent_id);
-    
+
     brain.update_agent_state(&agent_hex, &incoming_state);
     let delta = brain.export_delta();
 
