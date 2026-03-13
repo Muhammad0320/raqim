@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             // Zero-copy serialize the state
-            let serialized_state = rkvy::to_bytes::<rkyv::rancor::Error>(&state).unwrap();
+            let serialized_state = rkyv::to_bytes::<rkyv::rancor::Error>(&state).unwrap();
             let payload_len = (serialized_state.len() as u32).to_le_bytes();
 
             // Fire to the running synapse daemon Over TCP

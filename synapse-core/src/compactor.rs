@@ -102,7 +102,9 @@ impl WalCompactor {
         }
 
         if !logs_to_archive.is_empty() {
-            self.lance_engine.archive_batch(&logs_to_archive, &vector);
+            self.lance_engine
+                .archive_batch(&logs_to_archive, &vector)
+                .await;
             println!("Archived {} thoughts to lanceDB", logs_to_archive.len());
         }
 
