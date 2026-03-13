@@ -130,7 +130,7 @@ async fn main() {
 
                         // Move the processed files into an archive folder
                         let archive_dir = "./plugins_archive";
-                        fs::create_dir_all(archive_dir);
+                        let _ = fs::create_dir_all(archive_dir);
 
                         let file_name = path.file_name().unwrap();
                         let archive_path = std::path::Path::new(archive_dir).join(file_name);
