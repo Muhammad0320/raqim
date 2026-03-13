@@ -35,12 +35,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // 3. Register the Tool Handler
-    server.register_tool(commit_tool, |args| {
+    server.register_tool(commit_tool, |args: serde_json::Value| {
         Box::pin(async move {
             let text = args.get("thought_text").unwrap().as_str().unwrap();
             let status_str = args.get("status").unwrap().as_str().unwrap();
-            let agent_id = args.get("agent_id_hex").and_then(|id| id.as_str() ).and_then(|hex_str| hex::decode(hex_str).ok() ).and_then(|bytes| bytes.try_into().ok() )
-
+            let agent_id = args
+                .get("agent_id_hex")
+                .and_then(|id| id.as_str())
+                .and_then(|hex_str| hex::decode(hex_str).ok())
+                .and_then(|bytes| bytes.try_into().ok());
 
             let status = match status_str {
                 "Reasoning" => AgentStatus::Reasoning,
@@ -58,7 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap()
                     .as_secs() as i64,
                 status,
-                text: text
+                text: text.to_string(),
             };
 
             // Zero-copy serialize the state
