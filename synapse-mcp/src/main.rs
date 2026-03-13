@@ -2,13 +2,11 @@ use mcp_rust_sdk::server::Server;
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{CallToolResult, Tool};
 use serde_json::json;
-use std::fmt::Error;
 use std::net::TcpStream;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use synapse_core::{AgentState, AgentStatus};
 use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
+// use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,7 +26,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "properties": {
 
                 "thought_text": {"type": "string", "description": "The exact thought or memory to commit"},
-                "status": {"type": "string", "enum": ["Reasoning", "Halted", "Idle", "ToolExecution"] }
+                "status": {"type": "string", "enum": ["Reasoning", "Halted", "Idle", "ToolExecution"] },
+                "agent_id_hex": {"type": "string", "description:": "Your 32-character Hex ID. Omit if new. "}
 
             },
             "required": ["thought_text", "status"]
@@ -38,8 +37,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Register the Tool Handler
     server.register_tool(commit_tool, |args| {
         Box::pin(async move {
-            let texts = args.get("thought_text").unwrap().as_str().unwrap();
-            let status_str = arg.get("status").unwrap().as_string().unwrap();
+            let text = args.get("thought_text").unwrap().as_str().unwrap();
+            let status_str = args.get("status").unwrap().as_str().unwrap();
+            let agent_id = args.get("agent_id_hex").and_then(|id| id.as_str() ).and_then(|hex_str| hex::decode(hex_str).ok() ).and_then(|bytes| bytes.try_into().ok() )
+
 
             let status = match status_str {
                 "Reasoning" => AgentStatus::Reasoning,
@@ -50,14 +51,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Translate into synapse core logic
             let state = AgentState {
-                agent_id: None,
+                agent_id,
                 transaction_id: 0,
                 timestamp: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_secs() as i64,
                 status,
-                memory_offset: 0,
+                text: text
             };
 
             // Zero-copy serialize the state

@@ -9,6 +9,7 @@ pub mod state;
 
 use rkyv::{Archive, Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use uuid::Uuid;
 
 use crate::{
@@ -24,8 +25,7 @@ pub struct AgentState {
     pub timestamp: i64,
     pub status: AgentStatus,
 
-    // We will map this to Loro's CRDTs later to track var
-    pub memory_offset: u32,
+    pub text: String,
 }
 
 // The current execution state of the agent in the swarm.
@@ -56,6 +56,7 @@ pub async fn execute_synapse_cascade(
     wal: Arc<WalEngine>,
     cortex_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
+    global_tx_counter: Arc<AtomicU64>,
 ) {
     // Security: Validate or generate agent_id
 
@@ -67,6 +68,7 @@ pub async fn execute_synapse_cascade(
     };
 
     incoming_state.agent_id = Some(final_agent_id);
+    incoming_state.transaction_id = global_tx_counter.fetch_add(1, Ordering::SeqCst);
 
     let agent_hex = hex::encode(final_agent_id);
 

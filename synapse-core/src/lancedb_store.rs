@@ -37,6 +37,7 @@ impl LanceEngine {
             Field::new("agent_id", DataType::Utf8, false),
             Field::new("timestamp", DataType::Int64, false),
             Field::new("status", DataType::Utf8, false),
+            Field::new("text", DataType::Utf8, false),
             // We store the raw binary delta
             Field::new("payload", DataType::Binary, false),
             Field::new(
@@ -66,6 +67,7 @@ impl LanceEngine {
             .collect();
         let timestmaps: Vec<i64> = logs.iter().map(|l| l.state.timestamp as i64).collect();
         let payloads: Vec<&[u8]> = logs.iter().map(|l| l.delta.as_slice()).collect();
+        let texts: Vec<String> = logs.iter().map(|l| l.state.text.clone()).collect();
 
         // 2. Build the Zero-Copy Arrow Arrays
         let tx_id_array = Arc::new(Int64Array::from(tx_ids));
@@ -73,6 +75,7 @@ impl LanceEngine {
         let payload_array = Arc::new(BinaryArray::from(payloads));
         let timestamp_array = Arc::new(Int64Array::from(timestmaps));
         let status_array = Arc::new(StringArray::from(statuses));
+        let text_array = Arc::new(StringArray::from(texts));
 
         let vector_array = Arc::new(
             FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
@@ -91,6 +94,7 @@ impl LanceEngine {
                 agent_id_array as Arc<dyn arrow_array::Array>,
                 timestamp_array as Arc<dyn arrow_array::Array>,
                 status_array as Arc<dyn arrow_array::Array>,
+                text_array as Arc<dyn arrow_array::Array>,
                 payload_array as Arc<dyn arrow_array::Array>,
                 vector_array as Arc<dyn arrow_array::Array>,
             ],

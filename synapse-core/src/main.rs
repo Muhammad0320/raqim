@@ -1,6 +1,7 @@
 use clap::Parser;
+use std::fs;
 use std::sync::Arc;
-use std::{fs, task};
+use std::sync::atomic::AtomicU64;
 use synapse_core::axon::AxonGateKeeper;
 use synapse_core::compactor::WalCompactor;
 use synapse_core::cortex::{AgentThought, CortexDataPlane, listen_for_local_thoughts};
@@ -13,7 +14,6 @@ use synapse_core::{AgentState, OpLog, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 /// Synapse Daemon: The Agentic Control Plane
 #[derive(Parser, Debug, Clone)]
@@ -44,7 +44,7 @@ async fn main() {
     let brain = Arc::new(SwarmState::new(&config.topic));
     let axon = Arc::new(AxonGateKeeper::new());
     let wal = Arc::new(WalEngine::start(&config.wal_path).await);
-    let global_net = Arc::new(GlobalNetworkBridge::new(&topic_clone).await);
+    let global_net = Arc::new(GlobalNetworkBridge::new(&config.topic).await);
     let lance_engine = Arc::new(
         LanceEngine::new(
             &format!("{}_semantic.lancedb", &config.topic),
@@ -54,6 +54,7 @@ async fn main() {
         .await,
     );
     let wasm_engine = Arc::new(WasmEngine::new());
+    let tx_counter = Arc::new(AtomicU64::new(1));
 
     // The Autonomous compactor (WAL reaper)
     let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone());
@@ -78,6 +79,7 @@ async fn main() {
     let w_cortex_tx = cortex_tx.clone();
     let w_global_net = global_net.clone();
     let w_wasm_engine = wasm_engine.clone();
+    let w_tx_couter = tx_counter.clone();
 
     // Spawns a dedicated background thread to monitor the plugins folder
     tokio::spawn(async move {
@@ -106,6 +108,7 @@ async fn main() {
                         let w_clone = w_wal.clone();
                         let c_clone = w_cortex_tx.clone();
                         let g_clone = w_global_net.clone();
+                        let t_clone = w_tx_couter.clone();
 
                         // Execute the untrusted logic in the WASM cage
                         if let Err(e) = w_wasm_engine.execute_agent(
@@ -115,6 +118,7 @@ async fn main() {
                             w_clone,
                             c_clone,
                             g_clone,
+                            t_clone,
                         ) {
                             eprintln!("Plugin {:?} trapped/failed: {} ", &path, e);
                         }
@@ -179,6 +183,7 @@ async fn main() {
         let task_cortex_tx = cortex_tx.clone();
         let task_wal = wal.clone();
         let global_publisher = global_net.clone();
+        let task_tx_couter = tx_counter.clone();
 
         tokio::spawn(async move {
             //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
@@ -215,6 +220,7 @@ async fn main() {
                 task_wal,
                 task_cortex_tx,
                 global_publisher,
+                task_tx_couter,
             )
             .await;
 

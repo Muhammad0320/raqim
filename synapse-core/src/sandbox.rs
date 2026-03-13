@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
@@ -46,6 +47,7 @@ impl WasmEngine {
         wal: Arc<WalEngine>,
         cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
         global_net: Arc<GlobalNetworkBridge>,
+        tx_counter: Arc<AtomicU64>,
     ) -> Result<(), anyhow::Error> {
         let mut linker = Linker::new(&self.engine);
 
@@ -58,7 +60,7 @@ impl WasmEngine {
         linker.func_wrap(
             "synapse_env",
             "host_emit_thought",
-            |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {
+            move |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {
                 // 1. Get the Isolated memory of the WASM cage
                 let mem = match caller.get_export("memory") {
                     Some(Extern::Memory(mem)) => mem,
@@ -88,7 +90,8 @@ impl WasmEngine {
                 let wal_clone = layers.wal.clone();
                 let cortex_tx_clone = layers.cortex_tx.clone();
                 let global_net_clone = layers.global_net.clone();
-                let incoming_state_tx_id = incoming_state.transaction_id;
+                let counter_clone = tx_counter.clone();
+
                 let agent_id_hex = hex::encode(incoming_state.agent_id.clone().unwrap_or([0; 16]));
 
                 tokio::spawn(async move {
@@ -100,13 +103,14 @@ impl WasmEngine {
                         wal_clone,
                         cortex_tx_clone,
                         global_net_clone,
+                        counter_clone,
                     )
                     .await;
                 });
 
                 println!(
-                    "WASM sandbox successfully parsed state from {} : {}",
-                    agent_id_hex, incoming_state_tx_id
+                    "WASM sandbox successfully parsed state from agent {} ",
+                    agent_id_hex
                 );
 
                 Ok(())
