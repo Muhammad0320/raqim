@@ -90,7 +90,7 @@ async fn main() {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
 
         loop {
-            interval::tick().await;
+            interval.tick().await;
 
             if let Ok(entries) = fs::read_dir(plugin_dir) {
                 for entry in entries.flatten() {
