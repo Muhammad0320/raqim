@@ -1,12 +1,11 @@
-use mcp_rust_sdk::server::Server;
-use mcp_rust_sdk::transport::stdio::StdioTransport;
-use mcp_rust_sdk::types::{CallToolResult, Tool};
+use rust_mcp_sdk::server::Server;
+use rust_mcp_sdk::transport::stdio::StdioTransport;
+use rust_mcp_sdk::types::{CallToolResult, Tool};
 use serde_json::json;
-use std::net::TcpStream;
 use std::time::{SystemTime, UNIX_EPOCH};
 use synapse_core::{AgentState, AgentStatus};
 use tokio::io::AsyncWriteExt;
-// use tokio::net::TcpStream;
+use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,7 +42,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .get("agent_id_hex")
                 .and_then(|id| id.as_str())
                 .and_then(|hex_str| hex::decode(hex_str).ok())
-                .and_then(|bytes| bytes.try_into().ok());
+                .and_then(|bytes: Vec<u8>| bytes.try_into().ok());
 
             let status = match status_str {
                 "Reasoning" => AgentStatus::Reasoning,
