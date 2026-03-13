@@ -1,6 +1,7 @@
-use rust_mcp_sdk::server::Server;
-use rust_mcp_sdk::transport::stdio::StdioTransport;
-use rust_mcp_sdk::types::{CallToolResult, Tool};
+use mcp_rust_sdk::server::Server;
+use mcp_rust_sdk::transport::stdio::StdioTransport;
+use mcp_rust_sdk::types::{CallToolResult, Tool};
+
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use synapse_core::{AgentState, AgentStatus};
@@ -9,7 +10,7 @@ use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Bismillah. Booting Synapse MPC Universal Translator... ");
+    println!("Bismillah. Booting Synapse MPC Umainniversal Translator... ");
 
     // 1. Initialize the MCP server
     let mut server = Server::new("synapse-mcp-gateway", "1.0.0");
