@@ -88,7 +88,7 @@ async fn main() {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
 
         loop {
-            interval.tick.await;
+            interval::tick.await;
 
             if let Ok(entries) = fs::read_dir(plugin_dir) {
                 for entry in entries.flatten() {
@@ -122,7 +122,17 @@ async fn main() {
                         // Rename this file again so we don't execute it again in the next loop
                         let mut new_path = path.clone();
                         new_path.set_extension("wasm.running");
-                        let _ = fs::rename(path, new_path);
+                        let _ = fs::rename(&path, new_path);
+
+                        // Move the processed files into an archive folder
+                        let archive_dir = "./plugins_archive";
+                        fs::create_dir_all(archive_dir);
+
+                        let file_name = path.file_name().unwrap();
+                        let archive_path = std::path::Path::new(archive_dir).join(file_name);
+
+                        // Move the file our of the active dir to preserve the forensic tail
+                        let _ = fs::rename(&path, archive_path);
                     }
                 }
             }

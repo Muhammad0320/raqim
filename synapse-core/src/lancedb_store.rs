@@ -1,4 +1,5 @@
 use crate::OpLog;
+use arrow_array::types::Float32Type;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
 };
