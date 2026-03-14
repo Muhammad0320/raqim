@@ -3,6 +3,7 @@ use mcp_rust_sdk::transport::Transport;
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -41,49 +42,119 @@ impl RaqimHandler {
 #[async_trait]
 impl ServerHandler for RaqimHandler {
     // 1. The Boot sequence
-    fn initialize<'a>(
-        &'a self,
+    async fn initialize(
+        &self,
         _client_info: Implementation,
         _client_caps: ClientCapabilities,
-    ) -> Pin<Box<dyn Future<Output = Result<ServerCapabilities, mcp_rust_sdk::Error>> + Send + 'a>>
+    ) -> Result<ServerCapabilities, mcp_rust_sdk::Error>
     {
-        Box::pin(async move {
-            Ok(ServerCapabilities {
-                custom: Some(json!({"listChanged": false})), // We tell the LLm we have tools
-                ..Default::default()
-            })
-        })
+
+       let mut tool_cap = HashMap::new();
+       tool_cap.insert("listChanged".to_string(), json!(false));
+
+       Ok(ServerCapabilities { 
+
+            custom: Some(tool_cap),
+            ..Default::default()
+
+        }) 
+       
     }
+
+    // 2.The Router, handles Tool Discovery
+    fn handle_method<'a>(&self, method: &str, params: Option<Value>) -> Result<Value, mcp_rust_sdk::Error> {
+        
+
+
+        Box::pin(async move {
+
+            match method {
+                // LLM asks: "What tools do you have?"
+                "tools/list" => {
+                    Ok(json!({"tools": [self.commit_tool.clone()]}))
+                }
+
+                // LLM says: "Execute this tool!"
+                "tools/call" => {
+                    // 3. The Execution phase
+                    let p = params.ok_or_else(|| mcp_rust_sdk::Error::protocol("Missing params".into()))?;
+                    let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
+
+                    if name != "commit_thought" {
+                        return Err(mcp_rust_sdk::Error::protocol("Unknown tool".into()));
+                    }
+
+                    let args = p.get("arguments").ok_or_else(|| mcp_rust_sdk::Error::protocol("Missinf args".into()))?;
+
+                    // --- Tranlation layer ----   
+                    let text = args.get("thought_text").unwrap().as_str().unwrap();
+                    let status_str = args.get("status").unwrap().as_str().unwrap();
+                    let agent_id = args
+                        .get("agent_id_hex")
+                        .and_then(|id| id.as_str())
+                        .and_then(|hex_str| hex::decode(hex_str).ok())
+                        .and_then(|bytes: Vec<u8>| bytes.try_into().ok());
+
+                    let status = match status_str {
+                        "Reasoning" => AgentStatus::Reasoning,
+                        "ToolExecution" => AgentStatus::ToolExecution,
+                        "Halted" => AgentStatus::Halted,
+                        _ => AgentStatus::Idle,
+                    };
+
+                    // Translate into synapse core logic
+                    let state = AgentState {
+                        agent_id,
+                        transaction_id: 0,
+                        timestamp: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs() as i64,
+                        status,
+                        text: text.clone(),
+                    };
+
+                    // Zero-copy serialize the state
+                    let serialized_state = rkyv::to_bytes::<rkyv::rancor::Error>(&state).unwrap();
+                    let payload_len = (serialized_state.len() as u32).to_le_bytes();
+
+                    // Fire to the running synapse daemon Over TCP
+                    if let Ok(mut stream) = TcpStream::connect("127.0.0.1:8080").await {
+                        let _ = stream.write_all(&payload_len).await;
+                        let _ = stream.write_all(&serialized_state).await;
+                    }
+
+                   //  Twll the LLM it succeeded
+                     Ok(json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Successfully commited to Roqim OS: {}", text)
+                        }]
+                     }))
+                }
+                _ => Err(mcp_rust_sdk::Error::protocol("Method not supported".into())),
+            }
+        
+    });
+    
+    // 4. Clean shutdowm 
+    fn shutdowm<'a>(&'a self) -> Pin< Box<dyn Future< Output = Result<(), mcp_rust_sdk::Error>> + Send + 'a >> {
+        Box::pin(async move { Ok(()) })
+    }
+
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Bismillah. Booting RQM MPC Universal Translator... ");
 
-    let transport = Arc::new(StdioTransport::new());
-    let handler = Arc::new(RaqimHandler);
+    let (transport, _message_sender) = StdioTransport::new();
+    
+    let handler = Arc::new(RaqimHandler::new());
+    let server = Server::new(Arc::new(transport), handler); 
 
-    // API Compliant server initialization
-    let mut server = Server::new(
-        transport.clone() as Arc<dyn Transport>,
-        handler as Arc<dyn ServerHandler>,
-    );
 
-    let commit_tool = Tool {
-        name: "commit_thought".to_string(),
-        description: "Commits a verified thought to the Raqim OS".to_string(),
-        schema: json!({
-            "type": "object",
-            "properties": {
-                "thought_text": {"type": "string"},
-                "status": {"type": "string"},
-                "agent_hex_id": {"type": "string"}
-            },
-            "required": ["thought_text", "status"]
-        }),
-    };
-
-    server.register_tool(commit_tool);
+    server.run().await?;
 
     Ok(())
 }
