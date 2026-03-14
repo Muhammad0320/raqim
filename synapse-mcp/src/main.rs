@@ -64,10 +64,6 @@ impl ServerHandler for RaqimHandler {
     // 2.The Router, handles Tool Discovery
     fn handle_method<'a>(&self, method: &str, params: Option<Value>) -> Result<Value, mcp_rust_sdk::Error> {
         
-
-
-        Box::pin(async move {
-
             match method {
                 // LLM asks: "What tools do you have?"
                 "tools/list" => {
@@ -135,7 +131,6 @@ impl ServerHandler for RaqimHandler {
                 _ => Err(mcp_rust_sdk::Error::protocol("Method not supported".into())),
             }
         
-    });
     
     // 4. Clean shutdowm 
     fn shutdowm<'a>(&'a self) -> Pin< Box<dyn Future< Output = Result<(), mcp_rust_sdk::Error>> + Send + 'a >> {
