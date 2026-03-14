@@ -1,3 +1,4 @@
+use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::Transport;
 use mcp_rust_sdk::transport::stdio::StdioTransport;
@@ -50,14 +51,11 @@ impl ServerHandler for RaqimHandler {
         let mut tool_cap = HashMap::new();
         tool_cap.insert("listChanged".to_string(), json!(false));
 
-        Ok(ServerCapabilities {
-            custom: Some(tool_cap),
-            ..Default::default()
-        })
+        Ok(ServerCapabilities { custom: None })
     }
 
     // 2.The Router, handles Tool Discovery
-    fn handle_method(
+    async fn handle_method(
         &self,
         method: &str,
         params: Option<Value>,
@@ -68,21 +66,29 @@ impl ServerHandler for RaqimHandler {
 
             // LLM says: "Execute this tool!"
             "tools/call" => {
-                // 3. The Execution phase
-                let p =
-                    params.ok_or_else(|| mcp_rust_sdk::Error::protocol("Missing params".into()))?;
+                let p = params.ok_or_else(|| {
+                    mcp_rust_sdk::Error::protocol(ErrorCode::InvalidParams, "Missing params")
+                })?;
                 let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
 
                 if name != "commit_thought" {
-                    return Err(mcp_rust_sdk::Error::protocol("Unknown tool".into()));
+                    return Err(mcp_rust_sdk::Error::protocol(
+                        ErrorCode::MethodNotFound,
+                        "Unknown tool".into(),
+                    ));
                 }
 
-                let args = p
-                    .get("arguments")
-                    .ok_or_else(|| mcp_rust_sdk::Error::protocol("Missinf args".into()))?;
+                let args = p.get("arguments").ok_or_else(|| {
+                    mcp_rust_sdk::Error::protocol(ErrorCode::InvalidParams, "Missing args")
+                })?;
 
                 // --- Tranlation layer ----
-                let text = args.get("thought_text").unwrap().as_str().unwrap();
+                let text = args
+                    .get("thought_text")
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_string();
                 let status_str = args.get("status").unwrap().as_str().unwrap();
                 let agent_id = args
                     .get("agent_id_hex")
@@ -127,14 +133,16 @@ impl ServerHandler for RaqimHandler {
                    }]
                 }))
             }
-            _ => Err(mcp_rust_sdk::Error::protocol("Method not supported".into())),
+
+            _ => Err(mcp_rust_sdk::Error::protocol(
+                ErrorCode::MethodNotFound,
+                "Method not supported".into(),
+            )),
         }
 
         // 4. Clean shutdowm
-        fn shutdowm(
-            &self,
-        ) -> Pin<Box<dyn Future<Output = Result<(), mcp_rust_sdk::Error>> + Send + 'a>> {
-            Box::pin(async move { Ok(()) })
+        fn shutdowm(&self) -> Result<(), mcp_rust_sdk::Error> {
+            Ok(())
         }
     }
 }
@@ -148,7 +156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let handler = Arc::new(RaqimHandler::new());
     let server = Server::new(Arc::new(transport), handler);
 
-    server.run().await?;
+    server.start().await?;
 
     Ok(())
 }
