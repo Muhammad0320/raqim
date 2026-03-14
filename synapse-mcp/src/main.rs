@@ -1,6 +1,5 @@
 use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
-use mcp_rust_sdk::transport::Transport;
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
 use serde_json::{Value, json};
@@ -8,8 +7,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use std::future::Future;
-use std::pin::Pin;
 use std::time::{SystemTime, UNIX_EPOCH};
 use synapse_core::{AgentState, AgentStatus};
 use tokio::io::AsyncWriteExt;
