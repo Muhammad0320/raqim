@@ -139,11 +139,11 @@ impl ServerHandler for RaqimHandler {
                 "Method not supported",
             )),
         }
+    }
 
-        // 4. Clean shutdowm
-        fn shutdowm(&self) -> Result<(), mcp_rust_sdk::Error> {
-            Ok(())
-        }
+    // 4. Clean shutdowm
+    async fn shutdowm(&self) -> Result<(), mcp_rust_sdk::Error> {
+        Ok(())
     }
 }
 
