@@ -1,12 +1,20 @@
-use mcp_rust_sdk::server::Server;
+use mcp_rust_sdk::server::{Server, ServerHandler};
+use mcp_rust_sdk::transport::Transport;
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{CallToolResult, Tool};
+use serde_json::{Value, json};
 
-use serde_json::json;
+use async_trait::async_trait;
 use std::time::{SystemTime, UNIX_EPOCH};
 use synapse_core::{AgentState, AgentStatus};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+
+// 1. Define our custom handler struct
+struct RaqimHandler;
+
+#[async_trait]
+impl ServerHandler for RaqimHandler {}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
