@@ -74,7 +74,7 @@ impl ServerHandler for RaqimHandler {
                 if name != "commit_thought" {
                     return Err(mcp_rust_sdk::Error::protocol(
                         ErrorCode::MethodNotFound,
-                        "Unknown tool".into(),
+                        "Unknown tool",
                     ));
                 }
 
@@ -142,7 +142,7 @@ impl ServerHandler for RaqimHandler {
     }
 
     // 4. Clean shutdowm
-    async fn shutdowm(&self) -> Result<(), mcp_rust_sdk::Error> {
+    async fn shutdown(&self) -> Result<(), mcp_rust_sdk::Error> {
         Ok(())
     }
 }
