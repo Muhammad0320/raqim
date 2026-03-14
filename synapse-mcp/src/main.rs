@@ -136,7 +136,7 @@ impl ServerHandler for RaqimHandler {
 
             _ => Err(mcp_rust_sdk::Error::protocol(
                 ErrorCode::MethodNotFound,
-                "Method not supported".into(),
+                "Method not supported",
             )),
         }
 
