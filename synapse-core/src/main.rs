@@ -10,10 +10,10 @@ use synapse_core::network::GlobalNetworkBridge;
 use synapse_core::nucleus::WalEngine;
 use synapse_core::sandbox::WasmEngine;
 use synapse_core::state::SwarmState;
-use synapse_core::{AgentState, execute_synapse_cascade};
+use synapse_core::{AgentState, SystemEvent, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 
 /// Synapse Daemon: The Agentic Control Plane
 #[derive(Parser, Debug, Clone)]
@@ -39,6 +39,33 @@ async fn main() {
         "Bismillah. Booting Synapse Daemon on port {}...",
         config.port
     );
+
+    // ==============================
+    // THE INTERNAL EVENT bUS
+
+    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(1000);
+
+    // 2. The Telemetry bridge ( Forwarding Internal events to iceoryx 2 )
+    let tele_crtx = CortexDataPlane::new("rqm_telemetry");
+
+    std::thread::spawn(move || {
+        let publisher = tele_crtx
+            .create_publisher()
+            .expect("Failed to create telemetry pub");
+
+        // Listen to internal tokio events and publish them to zero-copy memory
+
+        while let Ok(event) = event_rx.blocking_recv() {
+            let serialized_event = rkyv::to_bytes::<rkyv::rancor::Error>(&event).unwrap();
+
+            if let Ok(sample) = publisher.loan_slice_uninit(serialized_event.len()) {
+                let sample = sample.write_from_slice(&serialized_event);
+                let _ = sample.send();
+            }
+        }
+    });
+
+    // ===============================
 
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain = Arc::new(SwarmState::new(&config.topic));
@@ -144,9 +171,9 @@ async fn main() {
     });
 
     // Dedicated physical thread !Send publisher.
+    let cortex = CortexDataPlane::new(&topic_clone);
     std::thread::spawn(move || {
         // Initialize publisher inside the thread
-        let cortex = CortexDataPlane::new(&topic_clone);
         let local_publisher = Arc::new(cortex.create_publisher().expect("Failed to map publisher"));
 
         // blocking_rev() halts the thread until data arrives, no yield_now() needed
