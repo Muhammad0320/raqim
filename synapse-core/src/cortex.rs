@@ -3,10 +3,11 @@ use std::sync::Arc;
 use iceoryx2::port::publisher::Publisher;
 use iceoryx2::port::subscriber::Subscriber;
 use iceoryx2::prelude::*;
+use tokio::sync::broadcast::Sender;
 
-use crate::OpLog;
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmState;
+use crate::{OpLog, SystemEvent};
 
 pub struct CortexDataPlane {
     service_name: ServiceName,
@@ -57,6 +58,7 @@ pub fn listen_for_local_thoughts(
     topic_name: String,
     brain: Arc<SwarmState>,
     axon: Arc<AxonGateKeeper>,
+    tx: Sender<SystemEvent>,
 ) {
     //  Subscriber is created on this specific thrad, so it doesn't cross boundaries.
     std::thread::spawn(move || {
@@ -67,7 +69,7 @@ pub fn listen_for_local_thoughts(
             .create_subscriber()
             .expect("Failed to create lcoal subscriber");
 
-        println!("Cortx Data Planae: Listening for zero-copy local thoughts...");
+        println!("Cortx Data Plane: Listening for zero-copy local thoughts...");
 
         //  Read from shared physical RAM
         loop {
@@ -87,7 +89,11 @@ pub fn listen_for_local_thoughts(
                     brain.assimilate_foreign_thought(&log.delta);
                     println!("Cortex: Assimilated thought from Agent: {:?}", log.agent_id);
                 } else {
-                    println!("CRITICAL ALERT: Local tampering detected. Dropping thoughts.")
+                    println!("CRITICAL ALERT: Local tampering detected. Dropping thoughts.");
+                    let _ = tx.send(SystemEvent::SecurityBreach {
+                        agent_id: hex::encode(&log.agent_id),
+                        reason: "Local tampering detected".to_string(),
+                    });
                 }
             }
 

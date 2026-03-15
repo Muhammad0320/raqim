@@ -43,7 +43,7 @@ async fn main() {
     // ==============================
     // THE INTERNAL EVENT bUS
 
-    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(1000);
+    let (event_tx, mut event_rx) = Arc::new(broadcast::channel::<SystemEvent>(1000));
 
     let telemetry_topic = format!("{}_telemetry", config.topic);
 
@@ -95,7 +95,12 @@ async fn main() {
 
     // The Local cortex actor
     let topic_clone = &config.topic;
-    listen_for_local_thoughts(topic_clone.to_string(), brain.clone(), axon.clone());
+    listen_for_local_thoughts(
+        topic_clone.to_string(),
+        brain.clone(),
+        axon.clone(),
+        event_tx.clone(),
+    );
 
     // Channel to talk to the publisher safely accross threads
     let (cortex_tx, mut cortex_rx) = mpsc::unbounded_channel::<Vec<u8>>();
@@ -200,9 +205,10 @@ async fn main() {
     let global_net_clone = global_net.clone();
     let global_axon = axon.clone();
     let global_brain = brain.clone();
+    let global_tx = event_tx.clone();
     tokio::spawn(async move {
         global_net_clone
-            .listen_for_foreign_thoughts(global_brain, global_axon)
+            .listen_for_foreign_thoughts(global_brain, global_axon, global_tx)
             .await;
     });
 
