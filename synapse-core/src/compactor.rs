@@ -1,22 +1,27 @@
-use crate::{OpLog, lancedb_store::LanceEngine};
+use crate::{OpLog, SystemEvent, lancedb_store::LanceEngine};
 use rkyv::Archive;
 use std::{
     fs::{self, File},
     io::Read,
     sync::Arc,
 };
-use tokio::time::{Duration, interval};
+use tokio::{
+    sync::broadcast::Sender,
+    time::{Duration, interval},
+};
 
 pub struct WalCompactor {
     wal_path: String,
     lance_engine: Arc<LanceEngine>,
+    tx: Sender<SystemEvent>,
 }
 
 impl WalCompactor {
-    pub fn new(wal_path: &str, lance_engine: Arc<LanceEngine>) -> Self {
+    pub fn new(wal_path: &str, lance_engine: Arc<LanceEngine>, tx: Sender<SystemEvent>) -> Self {
         Self {
             wal_path: wal_path.to_string(),
             lance_engine,
+            tx,
         }
     }
 
@@ -110,5 +115,9 @@ impl WalCompactor {
 
         // 5. Delete the processed file to reclaim disk space
         let _ = fs::remove_file(processing_path);
+
+        let _ = self.tx.send(SystemEvent::CompactionTriggered {
+            archived_count: logs_to_archive.len(),
+        });
     }
 }

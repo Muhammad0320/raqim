@@ -1,12 +1,14 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
+use crate::SystemEvent;
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 use anyhow::Ok;
 use anyhow::anyhow;
 use rkyv::Archive;
+use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 use wasmtime::*;
 
@@ -48,6 +50,7 @@ impl WasmEngine {
         cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
         global_net: Arc<GlobalNetworkBridge>,
         tx_counter: Arc<AtomicU64>,
+        tx: Sender<SystemEvent>,
     ) -> Result<(), anyhow::Error> {
         let mut linker = Linker::new(&self.engine);
 
@@ -104,6 +107,7 @@ impl WasmEngine {
                         cortex_tx_clone,
                         global_net_clone,
                         counter_clone,
+                        tx,
                     )
                     .await;
                 });

@@ -10,6 +10,7 @@ pub mod state;
 use rkyv::{Archive, Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::sync::broadcast::Sender;
 use uuid::Uuid;
 
 use crate::{
@@ -57,9 +58,9 @@ pub async fn execute_synapse_cascade(
     cortex_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
     global_tx_counter: Arc<AtomicU64>,
+    tx: Sender<SystemEvent>,
 ) {
     // Security: Validate or generate agent_id
-
     let empty_id = [0u8; 16];
 
     let final_agent_id = match incoming_state.agent_id {
@@ -78,7 +79,7 @@ pub async fn execute_synapse_cascade(
     // Contruct the raw log
     let raw_log = OpLog {
         agent_id: incoming_state.agent_id.unwrap_or([0; 16]),
-        state: incoming_state,
+        state: incoming_state.clone(),
         delta,
         previous_hash: [0; 32],
         current_hash: [0; 32],
@@ -96,6 +97,11 @@ pub async fn execute_synapse_cascade(
 
     // 6. Fire to global swarm
     global_net.broadcast_to_world(&sealed_log).await;
+
+    let _ = tx.send(SystemEvent::ThoughtCommited {
+        agent_id: agent_hex.clone(),
+        tx_id: incoming_state.transaction_id,
+    });
 }
 
 #[derive(Clone, Debug, Archive, Serialize, Deserialize)]

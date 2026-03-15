@@ -45,16 +45,22 @@ async fn main() {
 
     let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(1000);
 
-    // 2. The Telemetry bridge ( Forwarding Internal events to iceoryx 2 )
-    let tele_crtx = CortexDataPlane::new("rqm_telemetry");
+    let telemetry_topic = format!("{}_telemetry", config.topic);
 
+    // 2. Spawns a dedicated Zero-copy telemetry thread ( Forwarding Internal events to iceoryx 2 )
     std::thread::spawn(move || {
-        let publisher = tele_crtx
+        println!(
+            "Bismillah. Booting IPC Telemetry Emitter on topic: {} ",
+            telemetry_topic
+        );
+
+        //  Initialize Publisher INSIDE thread ( !Send Compliance )
+        let cortex = CortexDataPlane::new("rqm_telemetry");
+        let publisher = cortex
             .create_publisher()
             .expect("Failed to create telemetry pub");
 
         // Listen to internal tokio events and publish them to zero-copy memory
-
         while let Ok(event) = event_rx.blocking_recv() {
             let serialized_event = rkyv::to_bytes::<rkyv::rancor::Error>(&event).unwrap();
 
@@ -84,7 +90,7 @@ async fn main() {
     let tx_counter = Arc::new(AtomicU64::new(1));
 
     // The Autonomous compactor (WAL reaper)
-    let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone());
+    let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone(), event_tx.clone());
     compactor.start_daemon();
 
     // The Local cortex actor
@@ -146,6 +152,7 @@ async fn main() {
                             c_clone,
                             g_clone,
                             t_clone,
+                            event_tx.clone(),
                         ) {
                             eprintln!("Plugin {:?} trapped/failed: {} ", &path, e);
                         }
@@ -248,6 +255,7 @@ async fn main() {
                 task_cortex_tx,
                 global_publisher,
                 task_tx_couter,
+                event_tx.clone(),
             )
             .await;
 
