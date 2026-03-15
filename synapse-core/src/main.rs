@@ -117,9 +117,10 @@ async fn main() {
     // Spawns a dedicated background thread to monitor the plugins folder
     tokio::spawn(async move {
         println!(
-            "WASM Orchestratoro monitoring {} for a new edge plugins...",
+            "WASM Orchestrator monitoring {} for a new edge plugins...",
             plugin_dir
         );
+
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
 
         loop {
@@ -134,6 +135,9 @@ async fn main() {
                         println!("Discovered a new WASM Plugin: {:?}", path);
 
                         let wasm_bytes = fs::read(&path).unwrap();
+                        let _ = event_tx.send(SystemEvent::PluginLoaded {
+                            plugin_name: entry.to_string(),
+                        });
 
                         // We must clone the layers for the specific execution
                         let a_clone = w_axon.clone();
