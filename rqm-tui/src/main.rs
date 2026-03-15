@@ -5,11 +5,11 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
-    prelude::*,
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    prelude::*, symbols::block, widgets::{Block, Borders, Clear, List, ListItem, Paragraph}
 };
-use std::io::{Result, stdout};
-use std::time::Duration;
+use tokio::sync::mpsc::unbounded_channel;
+use std::{fmt::format, io::{Result, stdout}, time::Duration};
+use synapse_core::SystemEvent;
 
 // 1. The State machine
 enum AppMode {
@@ -19,19 +19,23 @@ enum AppMode {
 
 struct AppState {
     mode: AppMode,
-    live_logs: Vec<String>,
+    ledger_stream: Vec<String>,
     active_agents: Vec<String>,
-    search_input: String,
+    aegis_alert: Vec<String>, 
+    replay_input_text: String, 
+    replay_result: String,
+
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
             mode: AppMode::LiveLedger,
-            live_logs: vec!["[SYSTEM] Raqim OS TUI Initialized...".to_string()],
-            active_agents: vec![],
-
-            search_input: String::new(),
+            ledger_stream: vec!["[SYSTEM] Raqim OS Mission Control Initialized...".to_string()],
+            active_agents: Vec::new(),
+            aegis_alert: Vec::new(), 
+            replay_input_text: String::new(), 
+            replay_result: "Enter a TxID to query the WAL".to_string(),
         }
     }
 }
@@ -44,9 +48,41 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
     let mut app = AppState::new();
+    let (tx, mut rx) = unbounded_channel::<SystemEvent>();
 
     // 3. The Infinite Render Loop
     loop {
+
+        while let Ok(event) = rx.try_recv() {
+
+            match  event {
+                SystemEvent::ThoughtCommited { agent_id, tx_id } => {
+                    app.ledger_stream.push(format!("[TxID: {}] Agent {} commited.", tx_id, &agent_id[0..8]));
+                    let short_id = format!("Agent {}", &agent_id[0..8]);
+                    if !app.active_agents.contains(&short_id) {app.active_agents.push(short_id);}
+
+                },
+
+                SystemEvent::SecurityBreach { agent_id, reason } => {
+
+                    app.aegis_alert.push(format!("[ALERT]: {}: {}", &agent_id[0..8], reason));
+                },
+                
+                SystemEvent::PluginLoaded { plugin_name } => {
+
+                    app.ledger_stream(format!("[SYSTEM] WASM Plugin Loaded: {} ", plugin_name));
+
+                },
+
+                SystemEvent::CompactionTriggered { archived_count } => {
+                    app.ledger_stream.push(format!("[SYSTEM] LanceDB Archived: {} thoughts.", archived_count));
+                }
+            }
+
+            if app.ledger_stream.len() > 100 {app.ledger_stream.remove(0);}
+
+        }
+
         //  --- THE RENDERER ---
         terminal.draw(|f| {
             let size = f.size();
@@ -73,7 +109,12 @@ async fn main() -> Result<()> {
 
             // ---------- Painting the Widgets -----------------
             // The header
-            let header_text = Paragraph::new(" RQM :: ZERO-COPY AGENT OS :: MISSION CONTROL ")
+            let mode_str = match app.mode {
+                AppMode::LiveLedger => "LIVE MONITOR",
+                AppMode::TimeMachineReplay => "FORENSIC REPLAY MODE"
+            };
+
+            let header_text = Paragraph::new(format!(" RQM :: ZERO-COPY AGENT OS :: {} ", mode_str))
                 .style(
                     Style::default()
                         .fg(Color::Cyan)
@@ -82,8 +123,72 @@ async fn main() -> Result<()> {
                 .block(Block::default().borders(Borders::ALL));
             f.render_widget(header_text, main_chunks[0]);
 
-            // The Ledger ( Primary Focus )
-        })
+            // Mode Switching Logic 
+            match app.mode {
+                AppMode::LiveLedger => {
+                    let ledger_items: Vec<ListItem> = app.ledger_stream.iter().map(|s| ListItem::new(s.as_str()) ).collect();
+                    f.render_widget(List::new(ledger_items).block(Block::default().title(" Ledger ").borders(Borders::ALL)) , body_chunk[0]);
+                
+                    let roster_items: Vec<ListItem> = app.active_agents.iter().map(|s| ListItem::new(s.as_str())).collect();
+                    f.render_widget(List::new(roster_items).block(Block::default().title(" Swarm Roster ").borders(Borders::ALL)), sidebar_chunks[0]);
+
+                    let aegis_items: Vec<ListItem> = app.aegis_alert.iter().map(|s| ListItem::new(s.as_str())).collect(); 
+                    f.render_widget(List::new(aegis_items).block(Block::default().title(" Aegis Monitor ").borders(Borders::ALL)), sidebar_chunks[1] );
+
+
+                }
+
+                AppMode::TimeMachineReplay => {
+
+                    let replay_chunk = Layout::default().direction(Direction::Vertical).constraints([Constraint::Length(3), Constraint::Min(0)]).split(main_chunks[1]); 
+
+                    let input = Paragraph::new(format!(" Query TxID: {}_ ", app.replay_input_text)).block(Block::default().title(" Time Machine ").borders(Borders::ALL).style(Style::default().fg(Color::Yellow)));
+                    f.render_widget(input, replay_chunk[0]);
+
+                    let result = Paragraph::new(app.replay_result.as_str()).block(Block::default().title(" Cryptographic State Viewer ").borders(Borders::ALL));
+                    f.render_widget(result, replay_chunk[1]);
+
+                }
+                
+            }
+
+        })?;
+
+        // 3. Event Handling
+        if event::poll(Duration::from_millis(50))? {
+
+            if let Event::Key(key) = event::read()? {
+
+                match app.mode {
+
+                    AppMode::LiveLedger => {
+                        if key.code == KeyCode::Char('q') {break}
+                        if key.code == KeyCode::Tab {app.mode = AppMode::TimeMachineReplay}
+                    }
+                    
+                    AppMode::TimeMachineReplay => {
+
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Tab => app.mode = AppMode::LiveLedger,
+                            KeyCode::Char(c) => app.replay_input_text.push(c),
+                            KeyCode::Backspace => app.replay_input_text.pop(),
+                            KeyCode::Enter => {
+                                app.replay_result = format!("Fetching state for TxID from WAL... ( Integration Pending ) ", app.replay_input_text)
+                                app.replay_input_text.clear();
+                            }
+
+                            _ => {}
+
+                        }
+
+                    }
+
+                }
+
+            }
+
+        }
+
     }
 
     // 6. CLEANUP ( Returning the terminal to normal )

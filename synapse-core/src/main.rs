@@ -43,7 +43,7 @@ async fn main() {
     // ==============================
     // THE INTERNAL EVENT bUS
 
-    let (event_tx, mut event_rx) = Arc::new(broadcast::channel::<SystemEvent>(1000));
+    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(1000);
 
     let telemetry_topic = format!("{}_telemetry", config.topic);
 
