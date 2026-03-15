@@ -98,7 +98,7 @@ pub async fn execute_synapse_cascade(
     global_net.broadcast_to_world(&sealed_log).await;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Archive, Serialize, Deserialize)]
 pub enum SystemEvent {
     ThoughtCommited { agent_id: String, tx_id: u64 },
     SecurityBreach { agent_id: String, reason: String },
