@@ -136,7 +136,7 @@ async fn main() {
 
                         let wasm_bytes = fs::read(&path).unwrap();
                         let _ = event_tx.send(SystemEvent::PluginLoaded {
-                            plugin_name: entry.to_string(),
+                            plugin_name: entry.file_name().to_str(),
                         });
 
                         // We must clone the layers for the specific execution
