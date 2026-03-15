@@ -222,6 +222,7 @@ async fn main() {
         let task_wal = wal.clone();
         let global_publisher = global_net.clone();
         let task_tx_couter = tx_counter.clone();
+        let task_event_tx = event_tx.clone();
 
         tokio::spawn(async move {
             //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
@@ -259,7 +260,7 @@ async fn main() {
                 task_cortex_tx,
                 global_publisher,
                 task_tx_couter,
-                event_tx.clone(),
+                task_event_tx,
             )
             .await;
 

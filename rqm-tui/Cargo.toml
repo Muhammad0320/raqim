@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+synapse-core = { path = "../synapse-core" }
 crossterm = "0.27"
 ratatui = "0.26"
 tokio = { version = "1", features = ["full"] }
