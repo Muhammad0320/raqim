@@ -94,6 +94,7 @@ impl WasmEngine {
                 let cortex_tx_clone = layers.cortex_tx.clone();
                 let global_net_clone = layers.global_net.clone();
                 let counter_clone = tx_counter.clone();
+                let event_tx_clone = tx.clone();
 
                 let agent_id_hex = hex::encode(incoming_state.agent_id.clone().unwrap_or([0; 16]));
 
@@ -107,7 +108,7 @@ impl WasmEngine {
                         cortex_tx_clone,
                         global_net_clone,
                         counter_clone,
-                        tx,
+                        event_tx_clone,
                     )
                     .await;
                 });
