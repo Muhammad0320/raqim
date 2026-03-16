@@ -44,6 +44,14 @@ impl AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Extract ENV vars
+    let args: Vec<String> = std::env::args().collect();
+    let wal_path = if args.len() > 1 {
+        args[1].clone()
+    } else {
+        "./production.wal".to_string()
+    };
+
     // 2. Terminal Hijack (Raw mode)
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
@@ -235,9 +243,7 @@ async fn main() -> Result<()> {
                                 );
 
                                 // Directly Open the WAL file from the TUI
-                                if let Ok(mut file) =
-                                    std::fs::File::open("../synapse-core/production.wal")
-                                {
+                                if let Ok(mut file) = std::fs::File::open(&wal_path) {
                                     use std::io::Read;
                                     let mut buffer = Vec::new();
                                     if file.read_to_end(&mut buffer).is_ok() {

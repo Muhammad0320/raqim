@@ -20,12 +20,16 @@ use tokio::sync::{broadcast, mpsc};
 #[command(author, version, about)]
 struct DameonConfig {
     /// The namespace for this specific agent swarm
-    #[arg(short, long, env = "SYNAPSE_SWARM_TOPIC")]
+    #[arg(short, long, env = "RAQIM_SWARM_TOPIC")]
     topic: String,
 
     /// Path to append-only wal file.
-    #[arg(short, long, env = "SYNAPSE_WAL_PATH")]
+    #[arg(short, long, env = "RAQIM_WAL_PATH")]
     wal_path: String,
+
+    /// The vector dim
+    #[arg(short, long, env = "ROQIM_VECTOR_DIMS")]
+    vector_dims: i32,
 
     /// Port for local python agent to connect to
     #[arg(short, long, default_value_t = 8080)]
@@ -35,10 +39,7 @@ struct DameonConfig {
 #[tokio::main]
 async fn main() {
     let config = DameonConfig::parse();
-    println!(
-        "Bismillah. Booting Synapse Daemon on port {}...",
-        config.port
-    );
+    println!("Bismillah. Booting Raqim Daemon on port {}...", config.port);
 
     // ==============================
     // THE INTERNAL EVENT bUS
@@ -82,7 +83,7 @@ async fn main() {
         LanceEngine::new(
             &format!("{}_semantic.lancedb", &config.topic),
             "agent_history",
-            384,
+            config.vector_dims.clone(),
         )
         .await,
     );
