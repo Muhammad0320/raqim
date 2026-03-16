@@ -118,6 +118,7 @@ async fn main() {
     let w_global_net = global_net.clone();
     let w_wasm_engine = wasm_engine.clone();
     let w_tx_couter = tx_counter.clone();
+    let w_event_tx = event_tx.clone();
 
     // Spawns a dedicated background thread to monitor the plugins folder
     tokio::spawn(async move {
@@ -140,8 +141,8 @@ async fn main() {
                         println!("Discovered a new WASM Plugin: {:?}", path);
 
                         let wasm_bytes = fs::read(&path).unwrap();
-                        let _ = event_tx.send(SystemEvent::PluginLoaded {
-                            plugin_name: entry.file_name().to_str(),
+                        let _ = w_event_tx.clone().send(SystemEvent::PluginLoaded {
+                            plugin_name: entry.file_name().to_string_lossy().to_string(),
                         });
 
                         // We must clone the layers for the specific execution

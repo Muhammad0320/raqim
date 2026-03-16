@@ -92,7 +92,8 @@ pub fn listen_for_local_thoughts(
                     println!("CRITICAL ALERT: Local tampering detected. Dropping thoughts.");
                     let _ = tx.send(SystemEvent::SecurityBreach {
                         agent_id: hex::encode(&log.agent_id),
-                        reason: "Local tampering detected".to_string(),
+                        reason: "Local tampering detected - Markle Hash Mismatch ".to_string(),
+                        culprit_text: log.state.text,
                     });
                 }
             }

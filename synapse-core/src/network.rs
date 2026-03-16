@@ -81,7 +81,9 @@ impl GlobalNetworkBridge {
                     eprintln!("SECURITY BREACH: Forged thought detected on network. Dropping.");
                     let _ = tx.send(SystemEvent::SecurityBreach {
                         agent_id: hex::encode(&log.agent_id),
-                        reason: "Forged thought detected on global network".to_string(),
+                        reason: "Forged thought detected on global network - Markle Hash Mismatch "
+                            .to_string(),
+                        culprit_text: log.state.text,
                     });
                 }
             }

@@ -106,8 +106,19 @@ pub async fn execute_synapse_cascade(
 
 #[derive(Clone, Debug, Archive, Serialize, Deserialize)]
 pub enum SystemEvent {
-    ThoughtCommited { agent_id: String, tx_id: u64 },
-    SecurityBreach { agent_id: String, reason: String },
-    CompactionTriggered { archived_count: usize },
-    PluginLoaded { plugin_name: String },
+    ThoughtCommited {
+        agent_id: String,
+        tx_id: u64,
+    },
+    SecurityBreach {
+        agent_id: String,
+        reason: String,
+        culprit_text: String,
+    },
+    CompactionTriggered {
+        archived_count: usize,
+    },
+    PluginLoaded {
+        plugin_name: String,
+    },
 }
