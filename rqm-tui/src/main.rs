@@ -71,9 +71,17 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                SystemEvent::SecurityBreach { agent_id, reason, culprit_text } => {
-                    app.aegis_alert
-                        .push(format!("[ALERT]: {}: {} :: The agent tried to say: {}", &agent_id[0..8], reason, culprit_text));
+                SystemEvent::SecurityBreach {
+                    agent_id,
+                    reason,
+                    culprit_text,
+                } => {
+                    app.aegis_alert.push(format!(
+                        "[ALERT]: {}: {} :: The agent tried to say: {}",
+                        &agent_id[0..8],
+                        reason,
+                        culprit_text
+                    ));
                 }
 
                 SystemEvent::PluginLoaded { plugin_name } => {
@@ -216,74 +224,89 @@ async fn main() -> Result<()> {
                         }
                     }
 
-                    AppMode::TimeMachineReplay => match key.code {
-                        KeyCode::Esc | KeyCode::Tab => app.mode = AppMode::LiveLedger,
-                        KeyCode::Char(c) => app.replay_input_text.push(c),
-                        KeyCode::Backspace => {
-                            app.replay_input_text.pop();
-                        }
-                        KeyCode::Enter => {
-                            app.replay_result = format!(
-                                "Scanning WAL for TxID {} ... ( Integration Pending ) ",
-                                app.replay_input_text
-                            );
+                    AppMode::TimeMachineReplay => {
+                        match key.code {
+                            KeyCode::Esc | KeyCode::Tab => app.mode = AppMode::LiveLedger,
+                            KeyCode::Char(c) => app.replay_input_text.push(c),
+                            KeyCode::Backspace => {
+                                app.replay_input_text.pop();
+                            }
+                            KeyCode::Enter => {
+                                app.replay_result = format!(
+                                    "Scanning WAL for TxID {} ... ( Integration Pending ) ",
+                                    app.replay_input_text
+                                );
 
-                            // Directly Open the WAL file from the TUI 
-                            if let Ok(mut file) = std::fs::File::open("../synapse-core/production.wal") {
+                                // Directly Open the WAL file from the TUI
+                                if let Ok(mut file) =
+                                    std::fs::File::open("../synapse-core/production.wal")
+                                {
+                                    use std::io::Read;
+                                    let mut buffer = Vec::new();
+                                    if file.read_to_end(&mut buffer).is_ok() {
+                                        let mut offset = 0;
+                                        let mut found = false;
 
-                                use std::io::Read;
-                                let mut buffer = Vec::new();
-                                if file.read_to_end(&mut buffer).is_ok() {
-
-                                    let mut offset = 0;
-                                    let mut found = false; 
-
-                                    while offset < buffer.len() {
-
-                                        if offset + 4 > buffer.len() {break;}
-                                        let  mut len_bytes = [0u8; 4];
-                                        len_bytes.copy_from_slice(&buffer[offset..offset+4]);
-
-                                        let entry_len = u32::from_le_bytes(len_bytes) as usize;
-                                        offset +=4;
-
-                                        let entry_bytes = &buffer[offset..offset + entry_len];
-                                        let archived_log = unsafe {
-                                                rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(entry_bytes)
-                                        };
-
-
-                                        if let Ok(log) = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log) {
-                                            // Check if the TxID matches the user's search!
-
-                                            if log.state.transaction_id.to_string() == app.replay_input_text {
-
-                                                app.replay_input_text = format!("FOUND TX: {}\nStatus: {:?}\n Time: {}\nText: {}\n Prev Hash: {}\n Curr Hash: {}", log.state.transaction_id, hex::encode(log.agent_id), log.state.timestamp, log.state.text, hex::encode(log.previous_hash), hex::encode(log.current_hash)); 
-
-                                                found = true;
+                                        while offset < buffer.len() {
+                                            if offset + 4 > buffer.len() {
                                                 break;
-
                                             }
+                                            let mut len_bytes = [0u8; 4];
+                                            len_bytes.copy_from_slice(&buffer[offset..offset + 4]);
 
+                                            let entry_len = u32::from_le_bytes(len_bytes) as usize;
+                                            offset += 4;
 
+                                            let entry_bytes = &buffer[offset..offset + entry_len];
+                                            let archived_log = unsafe {
+                                                rkyv::access_unchecked::<
+                                                    <OpLog as rkyv::Archive>::Archived,
+                                                >(
+                                                    entry_bytes
+                                                )
+                                            };
+
+                                            if let Ok(log) =
+                                                rkyv::deserialize::<OpLog, rkyv::rancor::Error>(
+                                                    archived_log,
+                                                )
+                                            {
+                                                // Check if the TxID matches the user's search!
+
+                                                if log.state.transaction_id.to_string()
+                                                    == app.replay_input_text
+                                                {
+                                                    app.replay_input_text = format!(
+                                                        "FOUND TX: {}\nStatus: {:?}\n Time: {}\nText: {}\n Prev Hash: {}\n Curr Hash: {}",
+                                                        log.state.transaction_id,
+                                                        hex::encode(log.agent_id),
+                                                        log.state.timestamp,
+                                                        log.state.text,
+                                                        hex::encode(log.previous_hash),
+                                                        hex::encode(log.current_hash)
+                                                    );
+
+                                                    found = true;
+                                                    break;
+                                                }
+                                            }
+                                            offset += entry_len;
                                         }
-                                        offset += entry_len;
+
+                                        if !found {
+                                            app.replay_result = "ERROR: TxID not found in WAL or Compactor moved it to LanceDB.".to_string();
+                                        }
                                     
-                                    }
-
-                                    if !found = {app.replay_result = "ERROR: TxID not found in WAL or Compactor moved it to LanceDB.".to_string();}
-
+                                } else {
+                                    app.replay_result = "ERROR: Could not open production.wal. Is the Daemon running?".to_string()
                                 }
 
-                            } else {
-                                app.replay_result = "ERROR: Could not open production.wal. Is the Daemon running?".to_string()
+                                app.replay_input_text.clear();
                             }
 
-                            app.replay_input_text.clear();
+                            _ => {}
                         }
-
-                        _ => {}
-                    },
+                    }
                 }
             }
         }
