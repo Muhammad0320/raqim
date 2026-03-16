@@ -27,9 +27,9 @@ struct DameonConfig {
     #[arg(short, long, env = "RAQIM_WAL_PATH")]
     wal_path: String,
 
-    /// The vector dim
-    #[arg(short, long, env = "ROQIM_VECTOR_DIMS")]
-    vector_dims: i32,
+    /// The Embedding dimension for vector search
+    #[arg(short, long, env = "ROQIM_EMBEDDING_DIMS")]
+    embedding_dims: i32,
 
     /// Port for local python agent to connect to
     #[arg(short, long, default_value_t = 8080)]
@@ -83,7 +83,7 @@ async fn main() {
         LanceEngine::new(
             &format!("{}_semantic.lancedb", &config.topic),
             "agent_history",
-            config.vector_dims.clone(),
+            config.embedding_dims.clone(),
         )
         .await,
     );
@@ -153,6 +153,7 @@ async fn main() {
                         let c_clone = w_cortex_tx.clone();
                         let g_clone = w_global_net.clone();
                         let t_clone = w_tx_couter.clone();
+                        let tx_clone = w_event_tx.clone();
 
                         // Execute the untrusted logic in the WASM cage
                         if let Err(e) = w_wasm_engine.execute_agent(
@@ -163,7 +164,7 @@ async fn main() {
                             c_clone,
                             g_clone,
                             t_clone,
-                            event_tx.clone(),
+                            tx_clone,
                         ) {
                             eprintln!("Plugin {:?} trapped/failed: {} ", &path, e);
                         }
