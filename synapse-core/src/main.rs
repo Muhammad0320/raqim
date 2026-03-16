@@ -141,7 +141,7 @@ async fn main() {
                         println!("Discovered a new WASM Plugin: {:?}", path);
 
                         let wasm_bytes = fs::read(&path).unwrap();
-                        let _ = w_event_tx.clone().send(SystemEvent::PluginLoaded {
+                        let _ = w_event_tx.send(SystemEvent::PluginLoaded {
                             plugin_name: entry.file_name().to_string_lossy().to_string(),
                         });
 

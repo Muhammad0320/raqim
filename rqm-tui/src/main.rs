@@ -1,21 +1,18 @@
 use crossterm::{
     ExecutableCommand,
-    event::{self, Event, KeyCode, KeyModifiers},
-    execute,
+    event::{self, Event, KeyCode},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
     prelude::*,
-    symbols::block,
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 use std::{
-    fmt::format,
     io::{Result, stdout},
     time::Duration,
 };
 use synapse_core::{OpLog, SystemEvent};
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::mpsc::channel;
 
 // 1. The State machine
 enum AppMode {
@@ -53,7 +50,7 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
 
     let mut app = AppState::new();
-    let (_, mut rx) = unbounded_channel::<SystemEvent>();
+    let (_, mut rx) = channel::<SystemEvent>(1000);
 
     // 3. The Infinite Render Loop
     loop {
@@ -291,19 +288,18 @@ async fn main() -> Result<()> {
                                                 }
                                             }
                                             offset += entry_len;
-                                        }
 
-                                        if !found {
-                                            app.replay_result = "ERROR: TxID not found in WAL or Compactor moved it to LanceDB.".to_string();
+                                            if !found {
+                                                app.replay_result = "ERROR: TxID not found in WAL or Compactor moved it to LanceDB.".to_string();
+                                            }
                                         }
-                                    
-                                } else {
-                                    app.replay_result = "ERROR: Could not open production.wal. Is the Daemon running?".to_string()
+                                    } else {
+                                        app.replay_result = "ERROR: Could not open production.wal. Is the Daemon running?".to_string()
+                                    }
+
+                                    app.replay_input_text.clear();
                                 }
-
-                                app.replay_input_text.clear();
                             }
-
                             _ => {}
                         }
                     }
@@ -311,7 +307,6 @@ async fn main() -> Result<()> {
             }
         }
     }
-
     // 6. CLEANUP ( Returning the terminal to normal )
     disable_raw_mode()?;
     stdout().execute(LeaveAlternateScreen)?;
