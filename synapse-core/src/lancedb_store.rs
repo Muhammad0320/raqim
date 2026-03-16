@@ -4,6 +4,8 @@ use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
 };
 use arrow_schema::{DataType, Field, Schema};
+use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use futures::StreamExt;
 use lancedb::connect;
 use lancedb::connection::Connection;
 use std::sync::Arc;
@@ -11,22 +13,27 @@ use std::sync::Arc;
 pub struct LanceEngine {
     db: Connection,
     table_name: String,
-    // The Size of LLM's embedding vector (e.g., 384 or 1536)
     pub dims: i32,
+    embedder: TextEmbedding,
 }
 
 impl LanceEngine {
     pub async fn new(storage_path: &str, table_name: &str, vector_dim: i32) -> Self {
-        println!("Bismillah. Booting LanceEngine...");
+        println!("Bismillah. Booting LanceEngine & Local Embedding Model...");
         let db = connect(storage_path)
             .execute()
             .await
             .expect("Failed to connect to lanceDB");
 
+        // Initialize the local AI embedding model
+        let embedder = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6v2))
+            .expect("Failed to initialize FastEmbed ");
+
         Self {
             db,
             table_name: table_name.to_string(),
             dims: vector_dim,
+            embedder,
         }
     }
 

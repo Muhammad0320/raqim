@@ -29,3 +29,6 @@ arrow-schema = "52.2"
 
 wasmtime = "18.0"
 anyhow = "1.0"
+
+fastembed = "3"
+futures = "0.3"
