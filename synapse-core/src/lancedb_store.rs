@@ -131,4 +131,64 @@ impl LanceEngine {
                 .unwrap();
         }
     }
+
+    // REAL RAG: Seaches semantic history using methematical vector proximity
+    pub async fn search_memory(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<String>, anyhow::Error> {
+        // 1. Convert English query to mathematical vector
+        let embedding = self.embedder.embed(vec![query], None)?;
+        let query_vector = embedding[0].clone();
+
+        // 2. Open the table
+        let table = self.db.open_table(&self.table_name).execute().await?;
+
+        // 3. Execute High-Speed vector search (IVF-PQ Algorithm)
+        let mut stream = table.search(&query_vector).limit(limit).execute().await?;
+
+        let mut results = Vec::new();
+
+        while let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+
+            // Downcast Specific columns directly from Apache Arrow Memory
+            let text_col = batch
+                .column_by_name("text")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let agent_id_col = batch
+                .column_by_name("agent_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let timestamp_col = batch
+                .column_by_name("timestamp")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let status_col = batch
+                .column_by_name("status")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+
+            for i in 0..text_col.len() {
+                // Construct a hyper rich string for the LLM's context window
+                let memory_str = format!(
+                    "[Time: {}] Agent: '{}' ({}) noted: {}",
+                    timestamp_col[i], agent_id_col[i], status_col[i], text_col[i]
+                );
+
+                results.push(memory_str);
+            }
+        }
+        Ok(results)
+    }
 }
