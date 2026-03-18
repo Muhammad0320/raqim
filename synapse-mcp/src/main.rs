@@ -3,6 +3,7 @@ use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
 use serde_json::{Value, json};
+use synapse_core::config::RaqimConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -53,6 +54,9 @@ impl RaqimHandler {
 
 #[async_trait]
 impl ServerHandler for RaqimHandler {
+
+    let config = RaqimConfig::load_or_bootstrap();
+
     // 1. The Boot sequence
     async fn initialize(
         &self,
@@ -148,9 +152,9 @@ impl ServerHandler for RaqimHandler {
 
                     // Boot read-only semantic engine
                     let engine = synapse_core::lancedb_store::LanceEngine::new(
-                        "./production_semantic.lancedb",
-                        "agent_history",
-                        384,
+                        &config.lance_path,
+                        &config.table_name,
+                        config.dims,
                     )
                     .await;
 
