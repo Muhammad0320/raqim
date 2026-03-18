@@ -15,6 +15,9 @@ pub struct CliArgs {
 
     #[arg(short, long)]
     pub limit: Option<usize>,
+
+    #[arg(short, long, default_value_t = 8080)]
+    port: u16,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -25,6 +28,7 @@ pub struct RaqimConfig {
     pub table_name: String,
     pub dims: i32,
     pub limit: usize,
+    pub port: u16,
 }
 
 impl Default for RaqimConfig {
@@ -36,6 +40,7 @@ impl Default for RaqimConfig {
             table_name: "agent_history".to_string(),
             dims: 384,
             limit: 5,
+            port: 8080,
         }
     }
 }
@@ -68,6 +73,10 @@ impl RaqimConfig {
                 new_config.dims = l;
             }
 
+            if let Some(p) = args.port {
+                new_config.port = p
+            }
+
             let toml_string = toml::to_string(&new_config).unwrap();
             fs::write(config_path, toml_string).expect("Failed to bootstap raqim.toml");
             println!("[SYSTEM] Bootstrapped new config file at {} ", config_path);
@@ -90,6 +99,9 @@ impl RaqimConfig {
         }
         if let Some(l) = args.limit {
             config.limit = l;
+        }
+        if let Some(p) = args.port {
+            config.port = p
         }
 
         config
