@@ -19,7 +19,7 @@ tokio = {version = "1", features = ["full"]}
 blake3 =  "1.5"
 
 zenoh = "1.7.2"
-clap = {version = "4.4", features = ["derive", "env"]}
+
 hex =  "0.4"
 uuid = { version = "1.8", features = ["v4"] }
 
@@ -30,10 +30,8 @@ arrow-schema = "52.2"
 wasmtime = "18.0"
 anyhow = "1.0"
 
-fastembed = "5"
 futures = "0.3"
-
-ort = { version = "=2.0.0-rc.12", features = ["download-binaries", "tls-rustls"] }
-
+fastembed = "3.1.1" 
+clap = { version = "4.5", features = ["derive", "env"] } # For CLI parsing
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
