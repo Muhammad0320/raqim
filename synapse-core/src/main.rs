@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use synapse_core::axon::AxonGateKeeper;
 use synapse_core::compactor::WalCompactor;
+use synapse_core::config::RaqimConfig;
 use synapse_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
 use synapse_core::lancedb_store::LanceEngine;
 use synapse_core::network::GlobalNetworkBridge;
@@ -15,30 +16,30 @@ use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc};
 
-/// Synapse Daemon: The Agentic Control Plane
-#[derive(Parser, Debug, Clone)]
-#[command(author, version, about)]
-struct DameonConfig {
-    /// The namespace for this specific agent swarm
-    #[arg(short, long, env = "RAQIM_SWARM_TOPIC")]
-    topic: String,
+// /// Synapse Daemon: The Agentic Control Plane
+// #[derive(Parser, Debug, Clone)]
+// #[command(author, version, about)]
+// struct DameonConfig {
+//     /// The namespace for this specific agent swarm
+//     #[arg(short, long, env = "RAQIM_SWARM_TOPIC")]
+//     topic: String,
 
-    /// Path to append-only wal file.
-    #[arg(short, long, env = "RAQIM_WAL_PATH")]
-    wal_path: String,
+//     /// Path to append-only wal file.
+//     #[arg(short, long, env = "RAQIM_WAL_PATH")]
+//     wal_path: String,
 
-    /// The Embedding dimension for vector search
-    #[arg(short, long, env = "ROQIM_EMBEDDING_DIMS")]
-    embedding_dims: i32,
+//     /// The Embedding dimension for vector search
+//     #[arg(short, long, env = "ROQIM_EMBEDDING_DIMS")]
+//     embedding_dims: i32,
 
-    /// Port for local python agent to connect to
-    #[arg(short, long, default_value_t = 8080)]
-    port: u16,
-}
+//     /// Port for local python agent to connect to
+
+// }
 
 #[tokio::main]
 async fn main() {
-    let config = DameonConfig::parse();
+    let config = RaqimConfig::load_or_bootstrap();
+
     println!("Bismillah. Booting Raqim Daemon on port {}...", config.port);
 
     // ==============================
@@ -56,7 +57,7 @@ async fn main() {
         );
 
         //  Initialize Publisher INSIDE thread ( !Send Compliance )
-        let cortex = CortexDataPlane::new("rqm_telemetry");
+        let cortex = CortexDataPlane::new(&telemetry_topic);
         let publisher = cortex
             .create_publisher()
             .expect("Failed to create telemetry pub");
