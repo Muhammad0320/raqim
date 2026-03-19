@@ -3,7 +3,7 @@ use std::{fs::File, io::Read, sync::Arc};
 use futures::future::ok;
 use rkyv::Archived;
 
-use crate::{OpLog, lancedb_store::LanceEngine};
+use crate::{OpLog, config::RaqimConfig, lancedb_store::LanceEngine};
 
 pub struct MemoryRouter {
     wal_path: String,
@@ -18,13 +18,15 @@ impl MemoryRouter {
         }
     }
 
-    /// FORENSIC TIME MACHINE: used by TUI to find the exact TxID.
-    pub async fn fetch_by_txid(&self, target_tx_id: u64) -> Result<String, anyhow::Error> {
-        // 1. Sacn the WAL
+    /// PRIVATE DRY HELPER: Scans the WAL and executes a closure on the Zero-Copy Archived data
+    fn scal_wal_zero_copy<F>(&self, mut callback: F)
+    where
+        F: FnMut(&rkyv::Archived<OpLog>),
+    {
         if let Ok(mut file) = File::open(&self.wal_path) {
-            let buffer = Vec::new();
+            let mut buffer = Vec::new();
             if file.read_to_end(&mut buffer).is_ok() {
-                let offset = 0;
+                let mut offset = 0;
                 while offset < buffer.len() {
                     if offset + 4 > buffer.len() {
                         break;
@@ -34,39 +36,99 @@ impl MemoryRouter {
                     len_bytes.copy_from_slice(&buffer[offset..offset + 4]);
                     let entry_len = u32::from_le_bytes(len_bytes) as usize;
                     offset += 4;
-
                     let entry_slice = &buffer[offset..offset + entry_len];
+
+                    //  TRUE ZERO-COPY: We cast a pointer. No mem allocation. No deserialization
                     let archived_log = unsafe {
                         rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice)
                     };
 
-                    if let Ok(log) = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log) {
-                        if log.state.transaction_id == target_tx_id {
-                            return Ok(format!(
-                                "[HOT MEMORY] TxID: {} | Text: {}",
-                                log.state.transaction_id, log.state.text
-                            ));
-                        }
-                    }
+                    callback(archived_log);
 
                     offset += entry_len;
                 }
             }
         }
+    }
 
-        // 2. Fallback to LanceDB (Cold Memory)
-        Ok(format!(
-            "[COLD STORAGE] TxID {} not in WAL. Proceeding to LanceDB index scan... ",
+    /// FORENSIC TIME MACHINE
+    pub async fn fetch_by_txid(&self, target_tx_id: u64) -> Result<String, anyhow::Error> {
+        let config = RaqimConfig::load_or_bootstrap();
+        let mut result = None;
+
+        // 1. Hot Memory ( Zero-copy WAL scan )
+        self.scal_wal_zero_copy(|archievd| {
+            // We read directly from the archeived bytes!
+            if archievd.state.transaction_id == target_tx_id {
+                result = Some(format!(
+                    "[HOT MEMORY] TxID: {} | Text: {} ",
+                    archievd.state.transaction_id,
+                    archievd.state.text.as_str()
+                ))
+            }
+        });
+
+        if let Some(res) = result {
+            return Ok(res);
+        }
+
+        // 2. Cold Memory ( REAL LanceDB SQL Filter )
+        let table = self
+            .lance_engine
+            .db
+            .open_table(&config.table_name)
+            .execute()
+            .await?;
+
+        // LanceDB allows SQL-style filtering directly on the Arrow columns
+        let mut stream = table
+            .query()
+            .filter(format!("tx_id = {}", target_tx_id))
+            .limit(1)
+            .execute()
+            .await?;
+
+        if let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+            let text_col = batch
+                .column_by_name("text")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<arrow_array::StringArray>()
+                .unwrap();
+
+            if text_col.len() > 0 {
+                return Ok(format!(
+                    "[COLD STORAGE] TxID: {} | Text: {} ",
+                    target_tx_id,
+                    text_col.value(0)
+                ));
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "TxID {} not found in WAL or LanceDB.",
             target_tx_id
         ))
     }
 
-    // RAG CONTEXT: used by MCP to give the LLM memory
+    // RAG CONTEXT: Prioritize the hot WAL, fills the rest with semantic lanceDB
     pub async fn semantic_search_with_context(
         &self,
         query: &str,
         limi: &usize,
     ) -> Result<Vec<String>, anyhow::Error> {
         let mut final_context = Vec::new();
+
+        // 1. The WAL is the absolute truth of present. We take ALL recent active thoughts.
+        self.scal_wal_zero_copy(|archived| {
+            final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
+        });
+
+        // 2. Supplement with Deep Semantic search
+        let mut deep_memories = self.lance_engine.search_memory(query, limit).await?;
+        final_context.append(&mut deep_memories);
+
+        Ok(final_context)
     }
 }
