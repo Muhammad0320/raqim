@@ -5,5 +5,3 @@ members = [
     "synapse-cli"
 , "synapse-mcp", "rqm-tui"]
 
-[patch.crates-io]
-ureq = "=2.9.7"
