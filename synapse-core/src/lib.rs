@@ -75,8 +75,7 @@ pub async fn execute_synapse_cascade(
 
     let agent_hex = hex::encode(final_agent_id);
 
-    brain.update_agent_state(&agent_hex, &incoming_state);
-    let delta = brain.export_delta();
+    let delta = brain.update_agent_state(&agent_hex, &incoming_state);
 
     // Contruct the raw log
     let raw_log = OpLog {

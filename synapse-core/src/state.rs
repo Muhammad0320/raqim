@@ -13,25 +13,31 @@ impl SwarmState {
     pub fn new(swarm_namespace: &str) -> Self {
         let doc = Arc::new(LoroDoc::new());
 
-        // creates a root dir in the CRDT for this specific swarm
+        // LoroDocs acts likes a filesystem. We create a root dir (Map) for our swarm.
         let state_map = doc.get_map(swarm_namespace);
 
         Self { doc, state_map }
     }
 
-    /// Agent updates a specific key in the shared state
-    pub fn update_agent_state(&self, agent_id_hex: &str, state: &AgentState) {
-        //  Create or get the specific mmap
+    /// Updates the state and returns a microscopic DELTA [u8] byte array
+    pub fn update_agent_state(&self, agent_id_hex: &str, state: &AgentState) -> Vec<u8> {
+        // 1. Capture the vector version of the CRDT *before* we changes.
+        // A mathematical vector clock ( e.g Node A is at tick 5, Node B is at tick 2. )
+
+        let previous_frontier = self.doc.oplog_frontiers();
+
+        // 2. Locate or create a specific mmap for this agent id. let
         let agent_memory = self
             .state_map
             .insert_container(agent_id_hex, LoroMap::new())
-            .expect("Failed to create agent memory map");
+            .expect("Loro allocation error: Failed to create agent memory map");
 
-        // Maps the rust struct fields directly into CDRT
+        // Mutate the state. Loro tracks these changes in its internal OpLog.
         agent_memory
             .insert("transaction_id", state.transaction_id as i64)
             .unwrap();
         agent_memory.insert("timestamp", state.timestamp).unwrap();
+        agent_memory.insert("text", state.text).unwrap();
 
         let status_str = match state.status {
             AgentStatus::Idle => "IDLE",
@@ -39,21 +45,21 @@ impl SwarmState {
             AgentStatus::Halted => "HALTED",
             AgentStatus::ToolExecution => "TOOL_EXEC",
         };
-
         agent_memory.insert("status", status_str).unwrap();
 
-        // commit the transaction. This generates a "Version Vector";
+        // 4. Commit the txn to the local CRDT
         self.doc.commit();
-    }
 
-    /// Extract the delta since the last sync. To be used as the Oplog Payload in iceoryx2
-    pub fn export_delta(&self) -> Vec<u8> {
-        self.doc.export(ExportMode::Snapshot).unwrap()
+        // 5. TRUE DELTA EXPORT: We tell loro to export ONLY the bytes that changed since the `previous_frontier`.
+        // Ultimately creating a tiny [u8] payload
+
+        self.doc.export_from(&previous_frontier)
     }
 
     /// Merges another agent's thought (action) into this agent's brain.
     /// Conflict resolution happens here automatically.
-    pub fn assimilate_foreign_thought(&self, delta: &[u8]) {
-        self.doc.import(delta).expect("CRDT merge failed");
+    pub fn assimilate_foreign_thought(&self, delta: &[u8]) -> Result<(), loro::LoroError> {
+        // parses the binary data and merges it into out local graph.
+        self.doc.import(delta)
     }
 }
