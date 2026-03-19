@@ -11,7 +11,7 @@ use lancedb::connection::Connection;
 use std::sync::Arc;
 
 pub struct LanceEngine {
-    db: Connection,
+    pub db: Connection,
     table_name: String,
     pub dims: i32,
     embedder: TextEmbedding,
