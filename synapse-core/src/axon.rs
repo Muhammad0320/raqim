@@ -1,5 +1,6 @@
 use crate::OpLog;
 use blake3::Hasher;
+use rkyv::Archived;
 use std::sync::Mutex;
 
 /// The active Governance GateKeeper.
@@ -41,15 +42,15 @@ impl AxonGateKeeper {
     }
 
     /// Agent B uses this to verify the thoughts it received from iceoryx2
-    pub fn verify_foreign_thoughts(&self, log: &OpLog) -> bool {
+    pub fn verify_foreign_thoughts(&self, log: &Archived<OpLog>) -> bool {
         let mut hasher = Hasher::new();
 
-        hasher.update(&log.delta);
-        hasher.update(&log.agent_id);
-        hasher.update(&log.previous_hash);
+        hasher.update(log.delta.as_slice());
+        hasher.update(log.agent_id.as_slice());
+        hasher.update(log.previous_hash.as_slice());
 
         let expected_hash: [u8; 32] = hasher.finalize().into();
 
-        expected_hash == log.current_hash
+        expected_hash == *log.current_hash.as_slice()
     }
 }
