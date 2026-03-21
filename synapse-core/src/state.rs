@@ -1,5 +1,5 @@
 use crate::{AgentState, AgentStatus, SystemEvent};
-use loro::{ExportMode, LoroDoc, LoroMap, Subscription, VersionVector};
+use loro::{ExportMode, ImportStatus, LoroDoc, LoroMap, Subscription, VersionVector};
 use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 
@@ -31,10 +31,17 @@ impl SwarmState {
                     .collect::<Vec<_>>()
                     .join("/");
 
+                // Extract the actual Loro Lamport Clock (TxID) for this exact merge event!
+                let front = event
+                    .current_frontiers
+                    .first()
+                    .map(|id| id.counter as u64)
+                    .unwrap_or(0);
+
                 // We broadcast the exact internal memory mutation to the daemon.
                 let _ = tx_clone.send(SystemEvent::ThoughtCommited {
                     agent_id: "CRDT_MERGE".to_string(),
-                    tx_id: 0,
+                    tx_id: front, // The real mathematical clock.
                 });
 
                 println!("[CRDT RESOLUTION] State mutated at path: {} ", target_path)
@@ -87,7 +94,10 @@ impl SwarmState {
 
     /// Merges another agent's thought (action) into this agent's brain.
     /// Conflict resolution happens here automatically.
-    pub fn assimilate_foreign_thought(&self, delta: &[u8]) -> Result<(), loro::LoroError> {
+    pub fn assimilate_foreign_thought(
+        &self,
+        delta: &[u8],
+    ) -> Result<ImportStatus, loro::LoroError> {
         // parses the binary data and merges it into out local graph.
         self.doc.import(delta)
     }
