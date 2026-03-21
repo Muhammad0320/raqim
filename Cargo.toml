@@ -5,3 +5,5 @@ members = [
     "synapse-cli"
 , "synapse-mcp", "rqm-tui"]
 
+[patch.crates-io]
+chrono = { git = "https://github.com", tag = "v0.4.38" }

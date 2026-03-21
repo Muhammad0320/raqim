@@ -53,7 +53,7 @@ pub struct OpLog {
 }
 
 pub async fn execute_synapse_cascade(
-    mut incoming_state: AgentState,
+    mut incoming_state: &rkyv::Archived<AgentState>,
     brain: Arc<SwarmState>,
     axon: Arc<AxonGateKeeper>,
     wal: Arc<WalEngine>,
@@ -65,7 +65,7 @@ pub async fn execute_synapse_cascade(
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];
 
-    let final_agent_id = match incoming_state.agent_id {
+    let final_agent_id = match incoming_state.agent_id.as_slice() {
         Some(id) if id != empty_id => id,
         _ => Uuid::new_v4().into_bytes(),
     };
