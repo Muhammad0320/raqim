@@ -76,7 +76,7 @@ async fn main() {
     // ===============================
 
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
-    let brain = Arc::new(SwarmState::new(&config.topic));
+    let brain = Arc::new(SwarmState::new(&config.topic, event_tx.clone()));
     let axon = Arc::new(AxonGateKeeper::new());
     let wal = Arc::new(WalEngine::start(&config.wal_path).await);
     let global_net = Arc::new(GlobalNetworkBridge::new(&config.topic).await);

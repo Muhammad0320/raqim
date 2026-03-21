@@ -30,7 +30,7 @@ arrow-schema = "52.2"
 wasmtime = "18.0"
 anyhow = "1.0"
 
-fastembed = "3.1.1"
+fastembed = "5.12"
 
 futures = "0.3"
 clap = { version = "4.5", features = ["derive", "env"] } # For CLI parsing
