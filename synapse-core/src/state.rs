@@ -1,22 +1,51 @@
-use crate::{AgentState, AgentStatus};
-use loro::{ExportMode, LoroDoc, LoroMap};
+use crate::{AgentState, AgentStatus, SystemEvent};
+use loro::{ExportMode, LoroDoc, LoroMap, Subscription, VersionVector};
 use std::sync::Arc;
+use tokio::sync::broadcast::Sender;
 
 // ARC (Atomic Reference counting) becaue multiple (threads) agents will hold pointers to this document in memory
 pub struct SwarmState {
     pub doc: Arc<LoroDoc>,
     state_map: LoroMap,
+    _subscriber: Subscription,
 }
 
 impl SwarmState {
     /// Initialize the CRDT brain for a specific swarm domain.
-    pub fn new(swarm_namespace: &str) -> Self {
+    pub fn new(swarm_namespace: &str, event_tx: Sender<SystemEvent>) -> Self {
         let doc = Arc::new(LoroDoc::new());
 
         // LoroDocs acts likes a filesystem. We create a root dir (Map) for our swarm.
         let state_map = doc.get_map(swarm_namespace);
 
-        Self { doc, state_map }
+        // --- THE CRDT EVENT LISTENER ---
+        // We attach a deep listener to the Loro Doc. Whenever the math resolves a conflict, this closure fires syncronously
+        let tx_clone = event_tx.clone();
+        let subscriber = doc.subscribe_deep(Box::new(move |event| {
+            // event.events contains the precise diffs (what was added, deleted, updated)
+            for diff in &event.events {
+                let target_path = diff
+                    .path
+                    .iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join("/");
+
+                // We broadcast the exact internal memory mutation to the daemon.
+                let _ = tx_clone.send(SystemEvent::ThoughtCommited {
+                    agent_id: "CRDT_MERGE".to_string(),
+                    tx_id: 0,
+                });
+
+                println!("[CRDT RESOLUTION] State mutated at path: {} ", target_path)
+            }
+        }));
+
+        Self {
+            doc,
+            state_map,
+            _subscriber: subscriber,
+        }
     }
 
     /// Updates the state and returns a microscopic DELTA [u8] byte array
