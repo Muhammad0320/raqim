@@ -12,6 +12,7 @@ pub mod state;
 use rkyv::{Archive, Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 use uuid::Uuid;
 
@@ -53,7 +54,7 @@ pub struct OpLog {
 }
 
 pub async fn execute_synapse_cascade(
-    mut incoming_state: &rkyv::Archived<AgentState>,
+    archive_state: &rkyv::Archived<AgentState>, // True Zero Copy
     brain: Arc<SwarmState>,
     axon: Arc<AxonGateKeeper>,
     wal: Arc<WalEngine>,
@@ -65,22 +66,38 @@ pub async fn execute_synapse_cascade(
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];
 
-    let final_agent_id = match incoming_state.agent_id.as_slice() {
-        Some(id) if id != empty_id => id,
+    // Safely extract from ArrchiveOption using .as_ref()
+    let final_agent_id = match archive_state.agent_id.as_ref() {
+        Some(id) if id.as_slice() != empty_id => id.as_slice().try_into().wnwrap(),
         _ => Uuid::new_v4().into_bytes(),
     };
 
-    incoming_state.agent_id = Some(final_agent_id);
-    incoming_state.transaction_id = global_tx_counter.fetch_add(1, Ordering::SeqCst);
-
     let agent_hex = hex::encode(final_agent_id);
 
-    let delta = brain.update_agent_state(&agent_hex, &incoming_state);
+    let enriched_state = AgentState {
+        agent_id: Some(final_agent_id),
+        transaction_id: global_tx_counter.fetch_add(1, Ordering::SeqCst),
+
+        timestamp: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64,
+        status: match archive_state.status {
+            rkyv::Archived::<AgentStatus>::Idle => AgentStatus::Idle,
+            rkyv::Archived::<AgentStatus>::Halted => AgentStatus::Halted,
+            rkyv::Archived::<AgentStatus>::ToolExecution => AgentStatus::ToolExecution,
+            rkyv::Archived::<AgentStatus>::Reasoning => AgentStatus::Reasoning,
+        },
+        text: archive_state.text.as_str().to_string(), // Extract text from pointer
+    };
+
+    //
+    let delta = brain.update_agent_state(&agent_hex, &enriched_state);
 
     // Contruct the raw log
     let raw_log = OpLog {
-        agent_id: incoming_state.agent_id.unwrap_or([0; 16]),
-        state: incoming_state.clone(),
+        agent_id: final_agent_id,
+        state: enriched_state.clone(),
         delta,
         previous_hash: [0; 32],
         current_hash: [0; 32],
@@ -92,7 +109,7 @@ pub async fn execute_synapse_cascade(
     // 4. Fire to wal (Durability)
     wal.append(sealed_log.clone()).await;
 
-    // 5. Fire to Local Cortex (Zero-Copy)
+    // 5. Fire to Local Cortex (Zero-Copy IPC )
     let serialized_log = rkyv::to_bytes::<rkyv::rancor::Error>(&sealed_log).unwrap();
     let _ = cortex_tx.send(serialized_log.into_vec());
 
@@ -101,7 +118,7 @@ pub async fn execute_synapse_cascade(
 
     let _ = tx.send(SystemEvent::ThoughtCommited {
         agent_id: agent_hex.clone(),
-        tx_id: incoming_state.transaction_id,
+        tx_id: enriched_state.transaction_id,
     });
 }
 

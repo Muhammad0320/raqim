@@ -146,7 +146,11 @@ impl LanceEngine {
         let table = self.db.open_table(&self.table_name).execute().await?;
 
         // 3. Execute High-Speed vector search (IVF-PQ Algorithm)
-        let mut stream = table.search(&query_vector).limit(limit).execute().await?;
+        let mut stream = table
+            .vector_search(query_vector)
+            .limit(limit)
+            .execute()
+            .await?;
 
         let mut results = Vec::new();
 
