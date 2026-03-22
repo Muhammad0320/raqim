@@ -1,5 +1,5 @@
 use crate::{AgentState, AgentStatus, SystemEvent};
-use loro::{ExportMode, ImportStatus, LoroDoc, LoroMap, Subscription, VersionVector};
+use loro::{ImportStatus, LoroDoc, LoroMap, Subscription};
 use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 

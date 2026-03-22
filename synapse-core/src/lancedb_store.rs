@@ -26,7 +26,7 @@ impl LanceEngine {
             .expect("Failed to connect to lanceDB");
 
         // Initialize the local AI embedding model
-        let embedder = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6v2))
+        let embedder = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))
             .expect("Failed to initialize FastEmbed ");
 
         Self {
