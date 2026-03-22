@@ -130,7 +130,14 @@ impl WasmEngine {
 
                 println!(
                     "WASM sandbox successfully parsed state from agent {} ",
-                    agent_id_hex
+                    hex::encode(
+                        archived_state
+                            .agent_id
+                            .as_ref()
+                            .as_slice()
+                            .try_into()
+                            .unwrap()
+                    )
                 );
 
                 Ok(())

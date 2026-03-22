@@ -8,6 +8,7 @@ use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::StreamExt;
 use lancedb::connect;
 use lancedb::connection::Connection;
+use lancedb::query::{Executable, QueryBase};
 use std::sync::Arc;
 
 pub struct LanceEngine {
@@ -147,7 +148,8 @@ impl LanceEngine {
 
         // 3. Execute High-Speed vector search (IVF-PQ Algorithm)
         let mut stream = table
-            .vector_search(query_vector)
+            .query()
+            .nearest_to(query_vector)?
             .limit(limit)
             .execute()
             .await?;

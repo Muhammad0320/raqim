@@ -1,6 +1,8 @@
 use memmap2::MmapOptions;
 use std::{fs::File, sync::Arc};
 
+use lancedb::query::{Executable, QueryBase};
+
 use rkyv::{Archive, Archived};
 
 use crate::{OpLog, config::RaqimConfig, lancedb_store::LanceEngine};
