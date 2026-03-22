@@ -1,10 +1,10 @@
 use memmap2::MmapOptions;
-use std::{fs::File, io::Read, sync::Arc};
+use std::{fs::File, sync::Arc};
 
-use futures::future::ok;
 use rkyv::{Archive, Archived};
 
 use crate::{OpLog, config::RaqimConfig, lancedb_store::LanceEngine};
+use futures::StreamExt;
 
 pub struct MemoryRouter {
     wal_path: String,
@@ -24,7 +24,7 @@ impl MemoryRouter {
     /// PRIVATE DRY HELPER: Scans the WAL and executes a closure on the Zero-Copy Archived data
     fn scal_wal_zero_copy<F>(&self, mut callback: F)
     where
-        F: FnMut(&rkyv::Archived<OpLog>),
+        F: FnMut(&Archived<OpLog>),
     {
         if let Ok(mut file) = File::open(&self.wal_path) {
             if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {

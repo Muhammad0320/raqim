@@ -68,7 +68,7 @@ pub async fn execute_synapse_cascade(
 
     // Safely extract from ArrchiveOption using .as_ref()
     let final_agent_id = match archive_state.agent_id.as_ref() {
-        Some(id) if id.as_slice() != empty_id => id.as_slice().try_into().wnwrap(),
+        Some(id) if id.as_slice() != empty_id => id.as_slice().try_into().unwrap(),
         _ => Uuid::new_v4().into_bytes(),
     };
 
