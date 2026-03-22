@@ -7,19 +7,21 @@ use crate::nucleus::WalEngine;
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 use anyhow::Ok;
 use anyhow::anyhow;
-use rkyv::Archive;
+use rkyv::{Archive, Archived};
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 use wasmtime::*;
 
 ///  The internal state we pass into sandbox,
 ///  so that the host fxns can interact with the rest of the synpase organism.
-struct SandboxContent {
-    axon: Arc<AxonGateKeeper>,
-    brain: Arc<SwarmState>,
-    wal: Arc<WalEngine>,
-    cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
-    global_net: Arc<GlobalNetworkBridge>,
+pub struct SandboxContent {
+    pub axon: Arc<AxonGateKeeper>,
+    pub brain: Arc<SwarmState>,
+    pub wal: Arc<WalEngine>,
+    pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
+    pub global_net: Arc<GlobalNetworkBridge>,
+    pub global_tx_counter: Arc<AtomicU64>,
+    pub event_tx: Sender<SystemEvent>,
 }
 
 pub struct WasmEngine {
@@ -28,7 +30,7 @@ pub struct WasmEngine {
 
 impl WasmEngine {
     pub fn new() -> Self {
-        println!("Bismillah. Booting Wasmtime Capability-Based Sandbox");
+        println!("Bismillah. Booting Deterministic Wasmtime Hypervisor...");
         let mut config = Config::new();
         // 1. Enable CPU fuels to prevent infinite loop attacks
         config.consume_fuel(true);
@@ -40,17 +42,29 @@ impl WasmEngine {
         }
     }
 
+    /// Takes a full byte-for-byte snapshot of the agent's linear memory. The foundation of the Time Machine.
+    pub fn extract_memory_snapshot(store: &mut Store<SandboxContent>, memory: Memory) -> Vec<u8> {
+        //  We literally copy the entire working brain of the agent into a vector.
+        memory.data(store).to_vec()
+    }
+
+    /// BENDS REALITY: Injects a historical memory state directly into live agent's brain.
+    pub fn inject_historical_state(
+        store: &mut Store<SandboxContent>,
+        memory: Memory,
+        historical_snapshot: &[u8],
+    ) -> Result<(), anyhow::Error> {
+        // Violently overwrites the agent's current reality with the past reality
+        memory
+            .write(store, 0, historical_snapshot)
+            .map_err(|e| anyhow!(" Failed to inject historical timeline: {}", e))
+    }
+
     /// Executes a compiled WASM agent securely.
     pub fn execute_agent(
         &self,
         wasm_binary: &[u8],
-        brain: Arc<SwarmState>,
-        axon: Arc<AxonGateKeeper>,
-        wal: Arc<WalEngine>,
-        cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
-        global_net: Arc<GlobalNetworkBridge>,
-        tx_counter: Arc<AtomicU64>,
-        tx: Sender<SystemEvent>,
+        content: SandboxContent,
     ) -> Result<(), anyhow::Error> {
         let mut linker = Linker::new(&self.engine);
 
@@ -67,7 +81,7 @@ impl WasmEngine {
                 // 1. Get the Isolated memory of the WASM cage
                 let mem = match caller.get_export("memory") {
                     Some(Extern::Memory(mem)) => mem,
-                    _ => return Err(anyhow!("Failed to find WASM memory")),
+                    _ => return Err(anyhow!("Failed to locate WASM linear memory")),
                 };
 
                 // 2. Read the raw bytes safely from the WASM linear memory
@@ -76,32 +90,33 @@ impl WasmEngine {
                     .get(ptr as usize..(ptr + len) as usize)
                     .ok_or_else(|| anyhow!("Memory access out of bounds"))?;
 
-                // Zero-copy desetialize the AgentState from the WASM memory.
+                // Zero-copy Pointer cast
                 let archived_state =
                     unsafe { rkyv::access_unchecked::<<AgentState as Archive>::Archived>(data) };
 
-                let incoming_state: AgentState =
-                    rkyv::deserialize::<AgentState, rkyv::rancor::Error>(archived_state)
-                        .expect("Failed to deserialize from WASM");
-
                 let layers = caller.data();
-
-                // used tokio::spawn to bridge syncronous WASM call to out async cascade
 
                 let brain_clone = layers.brain.clone();
                 let axon_clone = layers.axon.clone();
                 let wal_clone = layers.wal.clone();
                 let cortex_tx_clone = layers.cortex_tx.clone();
                 let global_net_clone = layers.global_net.clone();
-                let counter_clone = tx_counter.clone();
-                let event_tx_clone = tx.clone();
+                let counter_clone = layers.global_tx_counter.clone();
+                let event_tx_clone = layers.event_tx.clone();
 
-                let agent_id_hex = hex::encode(incoming_state.agent_id.clone().unwrap_or([0; 16]));
+                // To cross thread boundaries. We must read the required bytes into a temp buffer, because the pointer is tied to WASM memory lifespan.
+                // (Lifetime prevents moving pointers across threads )
+                let temp_buffer = data.to_vec();
 
+                // used tokio::spawn to bridge syncronous WASM call to out async cascade
                 tokio::spawn(async move {
-                    // 4. Trigger the synapse cascade
+                    // Recast the pointer safely inside the own thread.
+                    let archived_bytes = unsafe {
+                        rkyv::access_unchecked::<<AgentState as Archive>::Archived>(&temp_buffer)
+                    };
+
                     crate::execute_synapse_cascade(
-                        incoming_state,
+                        archived_bytes,
                         brain_clone,
                         axon_clone,
                         wal_clone,
@@ -123,16 +138,7 @@ impl WasmEngine {
         )?;
 
         // Initialize the Sandbox Context
-        let mut store = Store::new(
-            &self.engine,
-            SandboxContent {
-                axon,
-                brain,
-                wal,
-                cortex_tx,
-                global_net,
-            },
-        );
+        let mut store = Store::new(&self.engine, content);
 
         // Give the agent exactly 1_000_000 CPU instrctions of fuel
         store.set_fuel(1_000_000)?;
@@ -145,7 +151,9 @@ impl WasmEngine {
         let agent_main = instance.get_typed_func::<(), ()>(&mut store, "agent_main")?;
 
         match agent_main.call(&mut store, ()) {
-            std::result::Result::Ok(_) => println!("Agent execution completed successfully."),
+            std::result::Result::Ok(_) => {
+                println!("Agent execution completed deterministic cycle.")
+            }
             Err(e) => eprintln!("Agent execution trapped/terminated: {}", e),
         }
 

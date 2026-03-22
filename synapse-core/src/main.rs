@@ -9,7 +9,7 @@ use synapse_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
 use synapse_core::lancedb_store::LanceEngine;
 use synapse_core::network::GlobalNetworkBridge;
 use synapse_core::nucleus::WalEngine;
-use synapse_core::sandbox::WasmEngine;
+use synapse_core::sandbox::{SandboxContent, WasmEngine};
 use synapse_core::state::SwarmState;
 use synapse_core::{AgentState, SystemEvent, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
@@ -156,17 +156,18 @@ async fn main() {
                         let t_clone = w_tx_couter.clone();
                         let tx_clone = w_event_tx.clone();
 
+                        let content = SandboxContent {
+                            axon: a_clone,
+                            brain: b_clone,
+                            wal: w_clone,
+                            cortex_tx: c_clone,
+                            global_net: g_clone,
+                            global_tx_counter: t_clone,
+                            event_tx: tx_clone,
+                        };
+
                         // Execute the untrusted logic in the WASM cage
-                        if let Err(e) = w_wasm_engine.execute_agent(
-                            &wasm_bytes,
-                            b_clone,
-                            a_clone,
-                            w_clone,
-                            c_clone,
-                            g_clone,
-                            t_clone,
-                            tx_clone,
-                        ) {
+                        if let Err(e) = w_wasm_engine.execute_agent(&wasm_bytes, content) {
                             eprintln!("Plugin {:?} trapped/failed: {} ", &path, e);
                         }
 
