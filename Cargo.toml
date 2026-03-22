@@ -6,4 +6,5 @@ members = [
 , "synapse-mcp", "rqm-tui"]
 
 [patch.crates-io]
-chrono = { git = "https://github.com", tag = "v0.4.38" }
+# This must be the full path to the repository
+chrono = { git = "https://github.com/chronotope/chrono", tag = "v0.4.38" }

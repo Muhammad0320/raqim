@@ -1,20 +1,23 @@
+use memmap2::MmapOptions;
 use std::{fs::File, io::Read, sync::Arc};
 
 use futures::future::ok;
-use rkyv::Archived;
+use rkyv::{Archive, Archived};
 
 use crate::{OpLog, config::RaqimConfig, lancedb_store::LanceEngine};
 
 pub struct MemoryRouter {
     wal_path: String,
     lance_engine: Arc<LanceEngine>,
+    config: RaqimConfig,
 }
 
 impl MemoryRouter {
-    pub fn new(wal_path: &str, lance_engine: Arc<LanceEngine>) -> Self {
+    pub fn new(wal_path: &str, lance_engine: Arc<LanceEngine>, config: RaqimConfig) -> Self {
         Self {
             wal_path: wal_path.to_string(),
             lance_engine,
+            config,
         }
     }
 
@@ -24,19 +27,18 @@ impl MemoryRouter {
         F: FnMut(&rkyv::Archived<OpLog>),
     {
         if let Ok(mut file) = File::open(&self.wal_path) {
-            let mut buffer = Vec::new();
-            if file.read_to_end(&mut buffer).is_ok() {
+            if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
                 let mut offset = 0;
-                while offset < buffer.len() {
-                    if offset + 4 > buffer.len() {
+                while offset < mmap.len() {
+                    if offset + 4 > mmap.len() {
                         break;
                     }
 
                     let mut len_bytes = [0u8; 4];
-                    len_bytes.copy_from_slice(&buffer[offset..offset + 4]);
+                    len_bytes.copy_from_slice(&mmap[offset..offset + 4]);
                     let entry_len = u32::from_le_bytes(len_bytes) as usize;
                     offset += 4;
-                    let entry_slice = &buffer[offset..offset + entry_len];
+                    let entry_slice = &mmap[offset..offset + entry_len];
 
                     //  TRUE ZERO-COPY: We cast a pointer. No mem allocation. No deserialization
                     let archived_log = unsafe {
@@ -53,7 +55,6 @@ impl MemoryRouter {
 
     /// FORENSIC TIME MACHINE
     pub async fn fetch_by_txid(&self, target_tx_id: u64) -> Result<String, anyhow::Error> {
-        let config = RaqimConfig::load_or_bootstrap();
         let mut result = None;
 
         // 1. Hot Memory ( Zero-copy WAL scan )
@@ -76,7 +77,7 @@ impl MemoryRouter {
         let table = self
             .lance_engine
             .db
-            .open_table(&config.table_name)
+            .open_table(&self.config.table_name)
             .execute()
             .await?;
 
@@ -116,7 +117,7 @@ impl MemoryRouter {
     pub async fn semantic_search_with_context(
         &self,
         query: &str,
-        limi: &usize,
+        limit: usize,
     ) -> Result<Vec<String>, anyhow::Error> {
         let mut final_context = Vec::new();
 
