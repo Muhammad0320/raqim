@@ -1,4 +1,5 @@
 use crate::OpLog;
+use anyhow::Ok;
 use arrow_array::types::Float32Type;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
@@ -234,5 +235,48 @@ impl LanceEngine {
 
         // Use the add() builder to append a snapshot
         table.add(vec![batch]).execute().await.unwrap();
+    }
+
+    /// Fetches the closest snapshot BEFORE or EQUAL TO the txID
+    pub async fn fetch_closest_snapshot(
+        &self,
+        agent_hex: &str,
+        target_tx_id: i64,
+    ) -> Result<(i64, Vec<u8>), anyhow::Error> {
+        let table = self.db.open_table(&self.snapshot_table).execute().await?;
+
+        // SQL-Style Filter: Find the highest TxID for this agent that's <= target.
+        let mut stream = table
+            .query()
+            .filter(format!(
+                "agent_id = '{}' AND tx_id <= {} ",
+                agent_hex, target_tx_id
+            ))
+            .limit(1)
+            .execute()
+            .await?;
+
+        if let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+            let tx_col = batch
+                .column_by_name("tx_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let blob_col = batch
+                .column_by_name("memory_blob")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .unwrap();
+
+            return Ok((tx_col.value(0), blob_col.value(0).to_vec()));
+        }
+
+        Err(anyhow::anyhow!(
+            "No snapshot found for agent: {}",
+            agent_hex
+        ))
     }
 }
