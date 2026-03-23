@@ -13,7 +13,8 @@ use std::sync::Arc;
 
 pub struct LanceEngine {
     pub db: Connection,
-    table_name: String,
+    pub history_table: String,
+    pub snapshot_table: String,
     pub dims: i32,
     embedder: TextEmbedding,
 }
@@ -32,7 +33,8 @@ impl LanceEngine {
 
         Self {
             db,
-            table_name: table_name.to_string(),
+            history_table: table_name.to_string(),
+            snapshot_table: "agent_snapshot".to_string(),
             dims: vector_dim,
             embedder,
         }
@@ -56,6 +58,15 @@ impl LanceEngine {
                 ),
                 false,
             ),
+        ]))
+    }
+
+    // 2. Schema for WASM memory snapshot
+    fn snapshot_schema(&self) -> Arc<Schema> {
+        Arc::new(Schema::new(vec![
+            Field::new("tx_id", DataType::Int64, false),
+            Field::new("agent_id", DataType::Utf8, false),
+            Field::new("memory_blob", DataType::Binary, false), // The actual WASM RAM
         ]))
     }
 
@@ -196,5 +207,32 @@ impl LanceEngine {
             }
         }
         Ok(results)
+    }
+
+    /// Saves the 2MB-5MB active memory snapshot to Cold storage.
+    pub async fn save_snapshot(&self, tx_id: i64, agent_hex: &str, memory_blob: Vec<u8>) {
+        let tx_array = Arc::new(Int64Array::from(vec![tx_id]));
+        let agent_arrray = Arc::new(StringArray::from(vec![agent_hex.to_string()]));
+        let blob_arrray = Arc::new(BinaryArray::from(vec![memory_blob.as_slice()]));
+
+        let batch = RecordBatch::try_new(
+            self.snapshot_schema(),
+            vec![
+                tx_array as Arc<dyn arrow_array::Array>,
+                agent_array as Arc<dyn arrow_array::Array>,
+                blob_array as Arc<dyn arrow_array::Array>,
+            ],
+        )
+        .expect("Failed to build Agent snapshot RecordBatch");
+
+        let table = self
+            .db
+            .open_table(&self.snapshot_table)
+            .execute()
+            .await
+            .unwrap();
+
+        // Use the add() builder to append a snapshot
+        table.add(vec![batch]).execute().await.unwrap();
     }
 }
