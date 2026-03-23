@@ -81,19 +81,19 @@ pub fn listen_for_local_thoughts(
                     rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload_bytes)
                 };
 
-                let log: OpLog = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
-                    .expect("Cortex deserialization failed");
-
                 // The Circuit Breaker
-                if axon.verify_foreign_thoughts(&log) {
-                    brain.assimilate_foreign_thought(&log.delta);
-                    println!("Cortex: Assimilated thought from Agent: {:?}", log.agent_id);
+                if axon.verify_foreign_thoughts(&archived_log) {
+                    brain.assimilate_foreign_thought(&archived_log.delta.as_slice());
+                    println!(
+                        "Cortex: Assimilated thought from Agent: {:?}",
+                        archived_log.agent_id.as_slice()
+                    );
                 } else {
                     println!("CRITICAL ALERT: Local tampering detected. Dropping thoughts.");
                     let _ = tx.send(SystemEvent::SecurityBreach {
-                        agent_id: hex::encode(&log.agent_id),
+                        agent_id: hex::encode(&archived_log.agent_id.as_slice()),
                         reason: "Local tampering detected - Markle Hash Mismatch ".to_string(),
-                        culprit_text: log.state.text,
+                        culprit_text: archived_log.state.text.as_str().to_string(),
                     });
                 }
             }
