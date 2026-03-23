@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmState;
 use crate::{OpLog, SystemEvent};
-use rkyv::{Archive, to_bytes};
+use rkyv::{Archive, Archived, to_bytes};
 use tokio::sync::broadcast::Sender;
 use zenoh::Session;
 use zenoh::config::Config;
@@ -60,23 +60,26 @@ impl GlobalNetworkBridge {
             let subscriber = session_clone.declare_subscriber(key_expr).await.unwrap();
 
             while let Ok(sample) = subscriber.recv_async().await {
-                // Payload extraction
-                let payload_bytes = sample.payload().to_bytes();
+                // 1. Zenoh payload can be fragmented in memory (chunked) .contiguous() forces Zenoh to yield a single flat memory slice &[u8].
+                // IF it's already flat (most cases). this const zero CPU cycles.
+                let payload_bytes = sample.payload().contiguous();
 
-                // Zero-Copy Deserialize
+                // 2. We cast pointer directly over ZENOH network buffer!
                 let archived_log = unsafe {
                     rkyv::access_unchecked::<<OpLog as Archive>::Archived>(&payload_bytes)
                 };
-                let log: OpLog = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
-                    .expect("Network Deserialization Failed");
 
-                // Cryptographic verification (The Circuit Breaker)
-                if axon.verify_foreign_thoughts(&log) {
-                    brain.assimilate_foreign_thought(&log.delta);
-                    println!(
-                        "Assimilated foreign thought from Agent: {:?} ",
-                        &log.agent_id
-                    )
+                // Cryptographic verification on Raw pounter
+                if axon.verify_foreign_thoughts(archived_log) {
+                    if let Err(e) = brain.assimilate_foreign_thought(archived_log.delta.as_slice())
+                    {
+                        eprintln!("CRDT Assimilation Failed: {} ", e);
+                    } else {
+                        println!(
+                            "Assimlated foreign thoughts from Agent: {}",
+                            hex::encode(archived_log.agent_id.as_slice())
+                        )
+                    }
                 } else {
                     eprintln!("SECURITY BREACH: Forged thought detected on network. Dropping.");
                     let _ = tx.send(SystemEvent::SecurityBreach {
