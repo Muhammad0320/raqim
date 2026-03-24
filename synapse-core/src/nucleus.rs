@@ -29,7 +29,7 @@ impl WalEngine {
         thread::spawn(move || {
             // 2. We boot the io_uring runtime inside this specific thread
             tokio_uring::start(async move {
-                let mut file = OpenOptions::new()
+                let file = OpenOptions::new()
                     .create(true)
                     .read(true)
                     .write(true)
