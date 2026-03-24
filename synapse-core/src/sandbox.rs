@@ -8,7 +8,7 @@ use crate::nucleus::WalEngine;
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 use anyhow::Ok;
 use anyhow::anyhow;
-use rkyv::{Archive, Archived};
+use rkyv::Archive;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 use wasmtime::*;
