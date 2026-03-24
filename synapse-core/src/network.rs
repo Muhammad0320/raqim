@@ -62,7 +62,7 @@ impl GlobalNetworkBridge {
             while let Ok(sample) = subscriber.recv_async().await {
                 // 1. Zenoh payload can be fragmented in memory (chunked) .contiguous() forces Zenoh to yield a single flat memory slice &[u8].
                 // IF it's already flat (most cases). this const zero CPU cycles.
-                let payload_bytes = sample.payload().contiguous();
+                let payload_bytes = sample.payload().to_bytes();
 
                 // 2. We cast pointer directly over ZENOH network buffer!
                 let archived_log = unsafe {
@@ -83,10 +83,10 @@ impl GlobalNetworkBridge {
                 } else {
                     eprintln!("SECURITY BREACH: Forged thought detected on network. Dropping.");
                     let _ = tx.send(SystemEvent::SecurityBreach {
-                        agent_id: hex::encode(&log.agent_id),
+                        agent_id: hex::encode(&archived_log.agent_id.as_slice()),
                         reason: "Forged thought detected on global network - Markle Hash Mismatch "
                             .to_string(),
-                        culprit_text: log.state.text,
+                        culprit_text: archived_log.state.text.as_str().to_string(),
                     });
                 }
             }

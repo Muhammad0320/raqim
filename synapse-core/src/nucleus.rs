@@ -30,8 +30,11 @@ impl WalEngine {
 
                 // io_uring requires explicit offsets. We can't just "append".
                 // We must query the OS for the current file_size to know where ti start writing.
-                let stat = file.statx().await.expect(" Failed to stat WAL file ");
-                let current_offset = stat.stx_size;
+                // let stat = file.statx().await.expect(" Failed to stat WAL file ");
+                // let current_offset = stat.stx_size;
+
+                let metadata = std::fs::metadata(&file_path).expect("Failed to stat WAL file");
+                let mut current_offset = metadata.len();
 
                 let mut batch = Vec::new();
 
@@ -51,17 +54,19 @@ impl WalEngine {
                             .into_vec();
 
                         // Frame it: Calculate the 4-byte length prefix (Little Endian format)
-                        let len_prefix = (bytes.len() as u32).to_le_bytes();
+                        let len_prefix = (bytes.len() as u32).to_le_bytes().to_vec();
 
                         //  --- THE LINE-BY-LINE PHYSICS OF IO_URING ---
 
                         // We pass OWNERSHIP of the  `len_prefix` to the kernel
-                        let (res, _returnerd_len_buf) = file.write_at(len_prefix, current_offset);
+                        let (res, _returnerd_len_buf) =
+                            file.write_at(len_prefix, current_offset).await;
                         let written_len = res.expect("WAL length write Error") as u64;
                         current_offset += written_len;
 
                         // We pass the OWNERSHIP of the `payload` to the kernel
-                        let (res, _returnerd_payload_buf) = file.write_at(bytes, current_offset);
+                        let (res, _returnerd_payload_buf) =
+                            file.write_at(bytes, current_offset).await;
                         let written_payload = res.expect("WAL paylaod write error") as u64;
                         current_offset += written_payload;
 
