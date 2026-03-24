@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
+use wasmtime_wasi::WasiCtx;
 
 use crate::SystemEvent;
 use crate::network::GlobalNetworkBridge;
@@ -125,6 +125,12 @@ impl WasmEngine {
                 let global_net_clone = layers.global_net.clone();
                 let counter_clone = layers.global_tx_counter.clone();
                 let event_tx_clone = layers.event_tx.clone();
+                let seeds_to_save = layers.live_seeds.clone();
+                let network_to_save = layers.replay_responses.clone();
+
+                // Clear the live queues for the next thought cycle
+                caller.data_mut().live_responses.clear();
+                caller.data_mut().live_seeds.clear();
 
                 // To cross thread boundaries. We must read the required bytes into a temp buffer, because the pointer is tied to WASM memory lifespan.
                 // (Lifetime prevents moving pointers across threads )
@@ -146,6 +152,8 @@ impl WasmEngine {
                         global_net_clone,
                         counter_clone,
                         event_tx_clone,
+                        seeds_to_save,
+                        network_to_save,
                     )
                     .await;
                 });

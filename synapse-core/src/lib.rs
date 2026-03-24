@@ -9,7 +9,7 @@ pub mod nucleus;
 pub mod sandbox;
 pub mod state;
 
-use rkyv::{Archive, Deserialize, Serialize};
+use rkyv::{Archive, Deserialize, Serialize, vec};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -66,6 +66,8 @@ pub async fn execute_synapse_cascade(
     global_net: Arc<GlobalNetworkBridge>,
     global_tx_counter: Arc<AtomicU64>,
     tx: Sender<SystemEvent>,
+    seeds: Vec<u64>,
+    responses: Vec<String>,
 ) {
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];
@@ -105,6 +107,9 @@ pub async fn execute_synapse_cascade(
         delta,
         previous_hash: [0; 32],
         current_hash: [0; 32],
+
+        entropy_seeds: seeds,
+        network_responses: responses,
     };
 
     // 3. Cryptographically Seal (Markle DAG)
