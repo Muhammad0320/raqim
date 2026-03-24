@@ -213,28 +213,34 @@ impl LanceEngine {
     /// Saves the 2MB-5MB active memory snapshot to Cold storage.
     pub async fn save_snapshot(&self, tx_id: i64, agent_hex: &str, memory_blob: Vec<u8>) {
         let tx_array = Arc::new(Int64Array::from(vec![tx_id]));
-        let agent_arrray = Arc::new(StringArray::from(vec![agent_hex.to_string()]));
-        let blob_arrray = Arc::new(BinaryArray::from(vec![memory_blob.as_slice()]));
+        let agent_array = Arc::new(StringArray::from(vec![agent_hex.to_string()]));
+        let blob_array = Arc::new(BinaryArray::from(vec![memory_blob.as_slice()]));
 
         let batch = RecordBatch::try_new(
             self.snapshot_schema(),
-            vec![
-                tx_array as Arc<dyn arrow_array::Array>,
-                agent_array as Arc<dyn arrow_array::Array>,
-                blob_array as Arc<dyn arrow_array::Array>,
-            ],
+            vec![tx_array, agent_array, blob_array],
         )
         .expect("Failed to build Agent snapshot RecordBatch");
 
-        let table = self
-            .db
-            .open_table(&self.snapshot_table)
-            .execute()
-            .await
-            .unwrap();
+        // THE FIX: Wrap the batch in a RecordBatchIterator with the correct schema
+        let batches = RecordBatchIterator::new(vec![Ok(batch)], self.snapshot_schema());
 
-        // Use the add() builder to append a snapshot
-        table.add(vec![batch]).execute().await.unwrap();
+        let table_names = self.db.table_names().execute().await.unwrap();
+        if table_names.contains(&self.snapshot_table) {
+            let table = self
+                .db
+                .open_table(&self.snapshot_table)
+                .execute()
+                .await
+                .unwrap();
+            table.add(batches).execute().await.unwrap();
+        } else {
+            self.db
+                .create_table(&self.snapshot_table, batches)
+                .execute()
+                .await
+                .unwrap();
+        }
     }
 
     /// Fetches the closest snapshot BEFORE or EQUAL TO the txID
