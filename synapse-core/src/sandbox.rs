@@ -191,7 +191,53 @@ impl WasmEngine {
         linker.func_wrap(
             "synapse_env",
             "host_fetch_url",
-            move |mut caller: Caller<'_, SandboxContent>, url_ptr: i32, url_len: i32| -> i32 { 3 },
+            move |mut caller: Caller<'_, SandboxContent>,
+                  url_ptr: i32,
+                  url_len: i32,
+                  out_ptr: i32,
+                  out_len: i32|
+                  -> i32 {
+                let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
+
+                // Read the URL requested by the agent.
+                let mem_slice = mem.data(&caller);
+                let url_bytes = &mem_slice[url_ptr as usize..(url_ptr + url_len) as usize];
+                let url = std::str::from_utf8(url_bytes).unwrap();
+
+                let content = caller.data_mut();
+
+                // 2. THE REALITY FORK
+                let response_string = if !content.replay_responses.is_empty() {
+                    // REPLAY: We feed the historical reality back to the agent
+                    content.replay_responses.remove(0)
+                } else {
+                    // LIVE: We excute a real, blocking http request.
+                    let res = tokio::task::block_in_place(|| {
+                        reqwest::blocking::get(url)
+                            .map(|r| r.text().unwrap_or_default())
+                            .unwrap_or_default()
+                    });
+
+                    // save reality so we can replay it later
+                    content.live_responses.push(res.clone());
+                    res
+                };
+
+                // 3. ZERO-COPY Injection into WASM memory.
+                let response_bytes = response_string.as_bytes();
+                let bytes_to_write = std::cmp::min(response_bytes.len(), max_len as usize);
+
+                // We physically overrites the agent's pre-allocated buffer with thr HTTP response.
+                mem.write(
+                    &mut caller,
+                    out_ptr as usize,
+                    &response_bytes[..bytes_to_write],
+                )
+                .expect("Failed to write the network res to WASM memory");
+
+                // Return the actutal number of bytes written so the agent_knows how to much to read
+                bytes_to_write as i32;
+            },
         )?;
 
         // Initialize the Sandbox Context
