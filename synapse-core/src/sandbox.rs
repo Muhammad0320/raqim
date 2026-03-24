@@ -184,6 +184,25 @@ impl WasmEngine {
             },
         )?;
 
+        linker.func_wrap(
+            "synapse_env",
+            "host_request_entropy",
+            move |mut caller: Caller<'_, SandboxContent>| -> u64 {
+                let content = caller.data_mut();
+
+                // If we're replaying a historical transaction, we just pop the seed we saved!
+                if let Some(historical_seed) = content.replay_seeds.pop() {
+                    return historical_seed;
+                }
+
+                // If live: we generate a real seed, save it to the OpLog, and return it.
+                let new_seed = rand::random::<u64>();
+                content.live_seeds_generated.push(new_seed);
+
+                new_seed
+            },
+        )?;
+
         // Initialize the Sandbox Context
         let mut store = Store::new(&self.engine, content);
 
