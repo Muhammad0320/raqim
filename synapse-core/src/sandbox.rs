@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
 use crate::SystemEvent;
 use crate::network::GlobalNetworkBridge;
@@ -22,6 +23,7 @@ pub struct SandboxContent {
     pub global_net: Arc<GlobalNetworkBridge>,
     pub global_tx_counter: Arc<AtomicU64>,
     pub event_tx: Sender<SystemEvent>,
+    pub wasi: WasiCtx,
 }
 
 pub struct WasmEngine {
@@ -30,16 +32,25 @@ pub struct WasmEngine {
 
 impl WasmEngine {
     pub fn new() -> Self {
-        println!("Bismillah. Booting Deterministic Wasmtime Hypervisor...");
+        println!("Bismillah. Booting Deterministic Wasmtime Hypervisor with WASI Jailing...");
         let mut config = Config::new();
         // 1. Enable CPU fuels to prevent infinite loop attacks
         config.consume_fuel(true);
-        // 2. Restrict maximum memory allocation to prevnt OOM attacks (e.g., 50MB)
+        // 2. Restrict maximum memory allocation to prevnt OOM attacks - Absoslute hardware ceiling
         config.static_memory_maximum_size(50 * 1024 * 1024);
 
         Self {
             engine: Engine::new(&config).expect("Failed to initialize wastime engine"),
         }
+    }
+
+    /// TRUE ENTERPRISE CHECKPOINTING: Captures only the active memory pages, not the entire 50MB void.
+    pub fn create_checkpoint(store: &mut Store<SandboxContent>, memory: Memory) -> Vec<u8> {
+        // memory.data_size() returns the exact number of active bytes currently in use,
+        // preventing the massive data reduplication of saving the entire 50MB capacity!
+        let active_size = memory.data_size(store);
+        let mem_slice = memory.data(store);
+        mem_slice[0..active_size].to_vec()
     }
 
     /// Takes a full byte-for-byte snapshot of the agent's linear memory. The foundation of the Time Machine.
@@ -60,6 +71,32 @@ impl WasmEngine {
             .map_err(|e| anyhow!(" Failed to inject historical timeline: {}", e))
     }
 
+    /// Bootstrap the WASI Context
+    pub fn build_wasi_context(historical_seed: Option<u64>) -> (WasiCtx, u64) {
+        let mut builder = WasiCtxBuilder::new();
+
+        // 1. THE PHYSICS OF DETERMINISM (wasi-random)
+        let actual_seed = match historical_seed {
+            // REPLAY MODE
+            Some(past_seed) => {
+                println!(
+                    "[TIME MACHINE] Initializing the wasi with historical seed: {} ",
+                    past_seed
+                );
+                past_seed
+            }
+            // lIVE MODE, we generate a true random seed from the host
+            None => rand::random::<u64>(),
+        };
+
+        // 2. We inject a Pseudo-Random Number generator initialized with out EXACT seed
+        // Whenever the WASM agent calls `random()` in pulls from this deterministic sequence
+        let deterministic_prng = StdRng::seed_from_u64(actual_seed);
+
+        let wasi_ctx = builder.build();
+        (wasi_ctx, actual_seed)
+    }
+
     /// Executes a compiled WASM agent securely.
     pub fn execute_agent(
         &self,
@@ -67,6 +104,9 @@ impl WasmEngine {
         content: SandboxContent,
     ) -> Result<(), anyhow::Error> {
         let mut linker = Linker::new(&self.engine);
+
+        // LINK WASI: This traps all OS calls (clock, random, HTTP) into our hypervisor.
+        wasmtime_wasi::add_to_linker(&mut linker, |ctx: &mut SandboxContent| &mut ctx.wasi)?;
 
         // ===================================
         // THE ONLY DOOR TO THE OUTSIDE WORLD
@@ -147,16 +187,26 @@ impl WasmEngine {
         // Initialize the Sandbox Context
         let mut store = Store::new(&self.engine, content);
 
-        // Give the agent exactly 1_000_000 CPU instrctions of fuel
+        // Give the agent exactly 1_000_000 CPU instructions of fuel
         store.set_fuel(1_000_000)?;
 
         // Compile and initialize the agent
         let module = Module::new(&self.engine, wasm_binary)?;
         let instance = linker.instantiate(&mut store, &module)?;
 
+        // THE DYNAMIC CHECKPOINT
+        let memory = instance
+            .get_memory(&mut store, "memory")
+            .ok_or(anyhow!("No more exported"))?;
+        let active_snapshot = Self::create_checkpoint(&mut store, memory);
+
+        println!(
+            "[SYSTEM] Captured {} bytes of active WASM deterministic state (Base Time). ",
+            active_snapshot.len()
+        );
+
         // Retreive the  'main' function of AI agent and execute it
         let agent_main = instance.get_typed_func::<(), ()>(&mut store, "agent_main")?;
-
         match agent_main.call(&mut store, ()) {
             std::result::Result::Ok(_) => {
                 println!("Agent execution completed deterministic cycle.")

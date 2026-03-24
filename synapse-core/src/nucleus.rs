@@ -1,4 +1,8 @@
-use std::thread;
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+    thread,
+};
 
 use crate::OpLog;
 use rkyv::to_bytes;
@@ -7,14 +11,19 @@ use tokio_uring::fs::OpenOptions;
 
 pub struct WalEngine {
     sender: mpsc::Sender<OpLog>,
+    // The O(1) INDEX: Maps TxID -> Physical byte offset in the WAL.
+    pub index: Arc<RwLock<BTreeMap<u64, u64>>>,
 }
 
 impl WalEngine {
-    pub async fn start(file_path: &str) -> Self {
+    pub async fn start(file_path: String) -> Self {
         println!("Bismillah. Booting io_uring Nucleus WAL Engine on dedicated OS thread...");
 
         // Bounded channel to prevent OOM crashes
         let (tx, mut rx) = mpsc::channel::<OpLog>(100_000);
+
+        let index = Arc::new(RwLock::new(BTreeMap::new()));
+        let index_clone = index.clone();
 
         // 1. We spawn a physical OS thread entirely dedicated to the Hard Drive
         thread::spawn(move || {
@@ -29,7 +38,7 @@ impl WalEngine {
                     .expect("Failed to open io_uring WAL file");
 
                 // io_uring requires explicit offsets. We can't just "append".
-                // We must query the OS for the current file_size to know where ti start writing.
+                // We must query the OS for the current file_size to know where to start writing.
                 // let stat = file.statx().await.expect(" Failed to stat WAL file ");
                 // let current_offset = stat.stx_size;
 
@@ -46,6 +55,13 @@ impl WalEngine {
                         // Drain the channel of any other pending thoughts for batching
                         while let Ok(log) = rx.try_recv() {
                             batch.push(log);
+                        }
+
+                        // Record the offset for the first tx_id in this batch
+                        let first_txid = batch[0].state.transaction_id;
+                        {
+                            let mut idx = index_clone.write().unwrap();
+                            idx.insert(first_txid, current_offset);
                         }
 
                         // Zero-copy serialize the entire batch instantly
@@ -84,7 +100,7 @@ impl WalEngine {
             });
         });
 
-        Self { sender: tx }
+        Self { sender: tx, index }
     }
 
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
