@@ -1,5 +1,6 @@
 use memmap2::MmapOptions;
 use std::{fs::File, sync::Arc, u64};
+use tokio::sync::broadcast;
 
 use lancedb::query::QueryBase;
 
@@ -10,7 +11,9 @@ pub enum RebuildMode {
     TimeTravel(u64), //
 }
 
-use crate::{OpLog, config::RaqimConfig, lancedb_store::LanceEngine, state::SwarmState};
+use crate::{
+    OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, state::SwarmState,
+};
 use futures::StreamExt;
 
 pub struct MemoryRouter {
@@ -148,7 +151,7 @@ impl MemoryRouter {
     ) -> Result<Arc<SwarmState>, anyhow::Error> {
         println!("[SYSTEM] Bismillah. Initializing Swarm State Rebuild Sequence...");
 
-        let target_tx_Id = match mode {
+        let target_tx_id = match mode {
             RebuildMode::Resurrection => u64::MAX,
             RebuildMode::TimeTravel(tx) => tx,
         };
@@ -162,7 +165,7 @@ impl MemoryRouter {
         let mut applied_count = 0;
 
         self.scal_wal_zero_copy(|log| {
-            if log.state.transaction_id <= target_tx_Id {
+            if log.state.transaction_id <= target_tx_id {
                 // Re-assimilate the histocal thought into the new brain
                 if let Err(e) = rebuilt_brain.assimilate_foreign_thought(&log.delta.as_slice()) {
                     eprintln!("Failed to assimilate historical delta during build: {}", e);
