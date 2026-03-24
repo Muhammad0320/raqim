@@ -26,11 +26,11 @@ pub struct SandboxContent {
     pub wasi: WasiCtx,
 
     // LIVE MODE: We collect seeds and HTTP responses as they happen
-    pub live_seeds: Vec<u8>,
+    pub live_seeds: Vec<u64>,
     pub live_responses: Vec<String>,
 
     // REPLAY MODE: We load the seeds and HTTP responses here before booting
-    pub replay_seeds: Vec<u8>,
+    pub replay_seeds: Vec<u64>,
     pub replay_responses: Vec<String>,
 }
 
@@ -175,7 +175,7 @@ impl WasmEngine {
 
                 // If we have seeds in our replay queue, We are Time Travelling
                 if !content.replay_seeds.is_empty() {
-                    return content.replay_seeds.remove(0);
+                    return content.replay_seeds.remove(0).into();
                 }
 
                 // Otherwise, generate a real_seed, store it and return it.
