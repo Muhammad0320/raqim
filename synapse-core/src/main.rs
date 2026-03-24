@@ -269,6 +269,8 @@ async fn main() {
                 global_publisher,
                 task_tx_couter,
                 task_event_tx,
+                vec![0],
+                vec!["".to_string()],
             )
             .await;
 

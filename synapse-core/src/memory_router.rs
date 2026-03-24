@@ -1,11 +1,16 @@
 use memmap2::MmapOptions;
-use std::{fs::File, sync::Arc};
+use std::{fs::File, sync::Arc, u64};
 
-use lancedb::query::{Executable, QueryBase};
+use lancedb::query::QueryBase;
 
 use rkyv::{Archive, Archived};
 
-use crate::{OpLog, config::RaqimConfig, lancedb_store::LanceEngine};
+pub enum RebuildMode {
+    Resurrection,
+    TimeTravel(u64), //
+}
+
+use crate::{OpLog, config::RaqimConfig, lancedb_store::LanceEngine, state::SwarmState};
 use futures::StreamExt;
 
 pub struct MemoryRouter {
@@ -133,5 +138,44 @@ impl MemoryRouter {
         final_context.append(&mut deep_memories);
 
         Ok(final_context)
+    }
+
+    /// THE RESURRECTION ENGINE
+    /// Rebuild the LORO CRDT Hive Mind from Cold storage and Hot Memory.
+    pub async fn rebuild_swarm_brain(
+        &self,
+        mode: RebuildMode,
+    ) -> Result<Arc<SwarmState>, anyhow::Error> {
+        println!("[SYSTEM] Bismillah. Initializing Swarm State Rebuild Sequence...");
+
+        let target_tx_Id = match mode {
+            RebuildMode::Resurrection => u64::MAX,
+            RebuildMode::TimeTravel(tx) => tx,
+        };
+
+        // Initilaize a blank CRDT Brain
+        // TODO: In production pass the actual sender!
+        let (tx, _rx) = broadcast::channel::<SystemEvent>(1000);
+        let rebuilt_brain = Arc::new(SwarmState::new("rqm_global", tx));
+
+        // We stream the OpLogs from the WAL up to the Target tx_id
+        let mut applied_count = 0;
+
+        self.scal_wal_zero_copy(|log| {
+            if log.state.transaction_id <= target_tx_Id {
+                // Re-assimilate the histocal thought into the new brain
+                if let Err(e) = rebuilt_brain.assimilate_foreign_thought(&log.delta.as_slice()) {
+                    eprintln!("Failed to assimilate historical delta during build: {}", e);
+                }
+
+                applied_count += 1;
+            }
+        });
+
+        println!(
+            "[SYSTEM] BRAIN REBUILD COMPLETE. Assimilated {} historical deltas.",
+            applied_count
+        );
+        Ok(rebuilt_brain)
     }
 }
