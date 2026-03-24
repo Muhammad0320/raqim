@@ -51,6 +51,10 @@ pub struct OpLog {
 
     pub previous_hash: [u8; 32],
     pub current_hash: [u8; 32],
+
+    // The deterministic flight recorder
+    pub entropy_seeds: Vec<u64>,
+    pub network_responses: Vec<String>,
 }
 
 pub async fn execute_synapse_cascade(

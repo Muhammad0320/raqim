@@ -258,13 +258,10 @@ async fn main() {
             let archived_state = unsafe {
                 rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(&payload_buf)
             };
-            let incoming_state: AgentState =
-                rkyv::deserialize::<AgentState, rkyv::rancor::Error>(archived_state)
-                    .expect("Failed to deserialize agent state");
 
             // --- The Synaptic Cascade ---
             execute_synapse_cascade(
-                incoming_state,
+                archived_state,
                 task_brain,
                 task_axon,
                 task_wal,

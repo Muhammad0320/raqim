@@ -24,6 +24,14 @@ pub struct SandboxContent {
     pub global_tx_counter: Arc<AtomicU64>,
     pub event_tx: Sender<SystemEvent>,
     pub wasi: WasiCtx,
+
+    // LIVE MODE: We collect seeds and HTTP responses as they happen
+    pub live_seeds: Vec<u8>,
+    pub live_responses: Vec<String>,
+
+    // REPLAY MODE: We load the seeds and HTTP responses here before booting
+    pub replay_seeds: Vec<u8>,
+    pub replay_responses: Vec<String>,
 }
 
 pub struct WasmEngine {
@@ -69,32 +77,6 @@ impl WasmEngine {
         memory
             .write(store, 0, historical_snapshot)
             .map_err(|e| anyhow!(" Failed to inject historical timeline: {}", e))
-    }
-
-    /// Bootstrap the WASI Context
-    pub fn build_wasi_context(historical_seed: Option<u64>) -> (WasiCtx, u64) {
-        let mut builder = WasiCtxBuilder::new();
-
-        // 1. THE PHYSICS OF DETERMINISM (wasi-random)
-        let actual_seed = match historical_seed {
-            // REPLAY MODE
-            Some(past_seed) => {
-                println!(
-                    "[TIME MACHINE] Initializing the wasi with historical seed: {} ",
-                    past_seed
-                );
-                past_seed
-            }
-            // lIVE MODE, we generate a true random seed from the host
-            None => rand::random::<u64>(),
-        };
-
-        // 2. We inject a Pseudo-Random Number generator initialized with out EXACT seed
-        // Whenever the WASM agent calls `random()` in pulls from this deterministic sequence
-        let deterministic_prng = StdRng::seed_from_u64(actual_seed);
-
-        let wasi_ctx = builder.build();
-        (wasi_ctx, actual_seed)
     }
 
     /// Executes a compiled WASM agent securely.
@@ -184,23 +166,32 @@ impl WasmEngine {
             },
         )?;
 
+        // Entropy interceptor
         linker.func_wrap(
             "synapse_env",
             "host_request_entropy",
             move |mut caller: Caller<'_, SandboxContent>| -> u64 {
                 let content = caller.data_mut();
 
-                // If we're replaying a historical transaction, we just pop the seed we saved!
-                if let Some(historical_seed) = content.replay_seeds.pop() {
-                    return historical_seed;
+                // If we have seeds in our replay queue, We are Time Travelling
+                if !content.replay_seeds.is_empty() {
+                    return content.replay_seeds.remove(0);
                 }
 
-                // If live: we generate a real seed, save it to the OpLog, and return it.
+                // Otherwise, generate a real_seed, store it and return it.
                 let new_seed = rand::random::<u64>();
-                content.live_seeds_generated.push(new_seed);
+                content.live_seeds.push(new_seed);
 
                 new_seed
             },
+        )?;
+
+        // Network Interceptor (Reality Fork)
+        // The WASM agent passes a pointer to the URL it wants tot fetch
+        linker.func_wrap(
+            "synapse_env",
+            "host_fetch_url",
+            move |mut caller: Caller<'_, SandboxContent>, url_ptr: i32, url_len: i32| -> i32 { 3 },
         )?;
 
         // Initialize the Sandbox Context

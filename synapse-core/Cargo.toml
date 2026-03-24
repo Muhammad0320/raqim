@@ -38,3 +38,4 @@ serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 memmap2 = "0.9" 
 tokio-uring = "0.4"
+wasmtime-wasi = "43.0.0"
