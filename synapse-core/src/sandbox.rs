@@ -240,7 +240,7 @@ impl WasmEngine {
 
                 // 3. ZERO-COPY Injection into WASM memory.
                 let response_bytes = response_string.as_bytes();
-                let bytes_to_write = std::cmp::min(response_bytes.len(), max_len as usize);
+                let bytes_to_write = std::cmp::min(response_bytes.len(), out_len as usize);
 
                 // We physically overrites the agent's pre-allocated buffer with thr HTTP response.
                 mem.write(
