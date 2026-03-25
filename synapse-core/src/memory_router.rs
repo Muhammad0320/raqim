@@ -1,10 +1,10 @@
+use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
-use std::{fs::File, sync::Arc, u64};
+use std::io::{Read, Seek, SeekFrom};
+use std::{fs::File, io::Seek, sync::Arc, u64};
 use tokio::sync::broadcast;
 
-use lancedb::query::QueryBase;
-
-use rkyv::{Archive, Archived};
+use rkyv::{Archive, Archived, vec};
 
 pub enum RebuildMode {
     Resurrection,
@@ -12,7 +12,8 @@ pub enum RebuildMode {
 }
 
 use crate::{
-    OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, state::SwarmState,
+    OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
+    state::SwarmState,
 };
 use futures::StreamExt;
 
@@ -180,5 +181,50 @@ impl MemoryRouter {
             applied_count
         );
         Ok(rebuilt_brain)
+    }
+
+    pub async fn rebuild_agent_timeline(
+        &self,
+        agent_hex: &str,
+        target_tx_id: u64,
+        wal_engine: Arc<WalEngine>,
+    ) -> Result<(Vec<u8>, Vec<OpLog>), anyhow::Error> {
+        // 1. O(1) COLD MEMORY JUMP (LanceDB)
+        let (snapshot_txid, memory_blob) = self
+            .lance_engine
+            .fetch_closest_snapshot(agent_hex, target_tx_id as i64)
+            .await
+            .unwrap_or((0, Vec::new()));
+
+        println!(
+            "[TIME MACHINE] Loaded Base Snapshot at TxID: {} ",
+            snapshot_txid
+        );
+
+        let mut historical_oplogs = Vec::new();
+
+        // 2. O(1) WAL INDEX SEEK
+        // We calculate the very next TxID we need to read
+        let next_txid = (snapshot_txid as u64) + 1;
+
+        if next_txid <= target_tx_id {
+            // Ask the mutex protected BTreeMap for the exact byte offset on the SSD
+            let start_byte = {
+                let idx = wal_engine.index.read().unwrap();
+                idx.get(&next_txid).cloned().unwrap_or(0)
+            };
+
+            // 3. Physical disk seek
+            if let Ok(mut file) = std::fs::File::open(&self.config.wal_path) {
+                // The Kernel jumps the read-head directly to the exact byte. Zero scanning!
+                file.seek(SeekFrom::Start(start_byte))
+                    .expect("Failed to seek WAL file");
+
+                let mut buffer = Vec::new();
+                file.read_to_end(&mut buffer).unwrap(); // Read the remainder of the file
+
+                //    let mut offse
+            }
+        }
     }
 }
