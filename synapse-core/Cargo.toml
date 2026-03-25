@@ -38,5 +38,5 @@ serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 memmap2 = "0.9" 
 tokio-uring = "0.4"
-wasmtime-wasi = {version="43.0.0", features=["preview1"] }
+wasmtime-wasi = {version = "43.0.0" }
 rand = "0.10.0"
