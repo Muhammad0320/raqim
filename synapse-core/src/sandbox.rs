@@ -56,8 +56,8 @@ impl WasmEngine {
     pub fn create_checkpoint(store: &mut Store<SandboxContent>, memory: Memory) -> Vec<u8> {
         // memory.data_size() returns the exact number of active bytes currently in use,
         // preventing the massive data reduplication of saving the entire 50MB capacity!
-        let active_size = memory.data_size(store);
-        let mem_slice = memory.data(store);
+        let active_size = memory.data_size(&mut *store);
+        let mem_slice = memory.data(&mut *store);
         mem_slice[0..active_size].to_vec()
     }
 
@@ -88,7 +88,9 @@ impl WasmEngine {
         let mut linker = Linker::new(&self.engine);
 
         // LINK WASI: This traps all OS calls (clock, random, HTTP) into our hypervisor.
-        wasmtime_wasi::add_to_linker(&mut linker, |ctx: &mut SandboxContent| &mut ctx.wasi)?;
+        wasmtime_wasi::preview1::add_to_linker(&mut linker, |ctx: &mut SandboxContent| {
+            &mut ctx.wasi
+        })?;
 
         // ===================================
         // THE ONLY DOOR TO THE OUTSIDE WORLD

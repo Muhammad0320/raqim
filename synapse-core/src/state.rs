@@ -21,13 +21,13 @@ impl SwarmState {
         // --- THE CRDT EVENT LISTENER ---
         // We attach a deep listener to the Loro Doc. Whenever the math resolves a conflict, this closure fires syncronously
         let tx_clone = event_tx.clone();
-        let subscriber = doc.subscribe_deep(Box::new(move |event| {
+        let subscriber = doc.subscribe(Box::new(move |event| {
             // event.events contains the precise diffs (what was added, deleted, updated)
             for diff in &event.events {
                 let target_path = diff
                     .path
                     .iter()
-                    .map(|p| p.to_string())
+                    .map(|p| p.as_string())
                     .collect::<Vec<_>>()
                     .join("/");
 
@@ -88,8 +88,7 @@ impl SwarmState {
 
         // 5. TRUE DELTA EXPORT: We tell loro to export ONLY the bytes that changed since the `previous_frontier`.
         // Ultimately creating a tiny [u8] payload
-
-        self.doc.export_from(&previous_frontier)
+        self.doc.export_updates(&previous_frontier).unwrap()
     }
 
     /// Merges another agent's thought (action) into this agent's brain.
