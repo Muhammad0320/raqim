@@ -9,7 +9,7 @@ use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::StreamExt;
 use lancedb::connect;
 use lancedb::connection::Connection;
-use lancedb::query::{Executable, QueryBase};
+use lancedb::query::QueryBase;
 use std::sync::Arc;
 
 pub struct LanceEngine {

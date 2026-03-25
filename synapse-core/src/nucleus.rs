@@ -39,9 +39,6 @@ impl WalEngine {
 
                 // io_uring requires explicit offsets. We can't just "append".
                 // We must query the OS for the current file_size to know where to start writing.
-                // let stat = file.statx().await.expect(" Failed to stat WAL file ");
-                // let current_offset = stat.stx_size;
-
                 let metadata = std::fs::metadata(&file_path).expect("Failed to stat WAL file");
                 let mut current_offset = metadata.len();
 
