@@ -34,6 +34,11 @@ pub struct SandboxContent {
     pub replay_responses: Vec<String>,
 }
 
+pub struct CheckPointTracker {
+    pub last_snapshot_tx: u64,
+    pub last_snapshot_time: u64,
+}
+
 pub struct WasmEngine {
     engine: Engine,
 }
