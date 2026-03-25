@@ -223,8 +223,42 @@ impl MemoryRouter {
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer).unwrap(); // Read the remainder of the file
 
-                //    let mut offse
+                let mut offset = 0;
+                while offset < buffer.len() {
+                    if offset + 4 > buffer.len() {
+                        break;
+                    }
+
+                    let mut len_bytes = [0u8; 4];
+                    len_bytes.copy_from_slice(&buffer[offset..offset + 4]);
+                    let entry_len = u32::from_le_bytes(len_bytes) as usize;
+                    offset += 4;
+
+                    let entry_slice = &buffer[offset..offset + entry_len];
+                    let archived_log = unsafe {
+                        rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice)
+                    };
+
+                    let current_tx = archived_log.state.transaction_id;
+
+                    if current_tx > target_tx_id {
+                        break;
+                    } // We reached the future. Stop reading.
+
+                    // Only collect logs belonging to this specific agent!
+                    if hex::encode(archived_log.agent_id.as_slice()) == agent_hex {
+                        // Deserialize here only because we're handling this to the WASM to execute.
+                        if let Ok(log) =
+                            rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
+                        {
+                            historical_oplogs.push(log);
+                        }
+                    }
+
+                    offset += entry_len;
+                }
             }
         }
+        Ok((memory_blob, historical_oplogs))
     }
 }

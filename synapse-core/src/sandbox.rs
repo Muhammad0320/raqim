@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::time::{SystemTime, UNIX_EPOCH};
 use wasmtime_wasi::WasiCtx;
 
 use crate::SystemEvent;
@@ -89,13 +90,13 @@ impl WasmEngine {
         &self,
         wasm_binary: &[u8],
         content: SandboxContent,
+        tracker: &mut CheckPointTracker,
+        current_tx_id: u64,
     ) -> Result<(), anyhow::Error> {
         let mut linker = Linker::new(&self.engine);
 
         // LINK WASI: This traps all OS calls (clock, random, HTTP) into our hypervisor.
-        wasmtime_wasi::preview1::add_to_linker(&mut linker, |ctx: &mut SandboxContent| {
-            &mut ctx.wasi
-        })?;
+        wasmtime_wasi::add_to_linker(&mut linker, |ctx: &mut SandboxContent| &mut ctx.wasi)?;
 
         // ===================================
         // THE ONLY DOOR TO THE OUTSIDE WORLD
@@ -265,16 +266,37 @@ impl WasmEngine {
         let module = Module::new(&self.engine, wasm_binary)?;
         let instance = linker.instantiate(&mut store, &module)?;
 
-        // THE DYNAMIC CHECKPOINT
-        let memory = instance
-            .get_memory(&mut store, "memory")
-            .ok_or(anyhow!("No more exported"))?;
-        let active_snapshot = Self::create_checkpoint(&mut store, memory);
+        // THE HYBRID CHECKPOINT
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
-        println!(
-            "[SYSTEM] Captured {} bytes of active WASM deterministic state (Base Time). ",
-            active_snapshot.len()
-        );
+        let tx_threshold_met = (current_tx_id - tracker.last_snapshot_tx) >= 10_000;
+        let time_threshold_met = (current_time - tracker.last_snapshot_time) >= 86_400;
+
+        // If either the volume or time threshold is breached, we snapshot the brain.
+        if tx_threshold_met || time_threshold_met {
+            let memory = instance.get_memory(&mut store, "memory").unwrap();
+
+            // Extract only the active mem pages. Not the entire 50MB void
+            let active_snapshot = Self::create_checkpoint(&mut store, memory);
+
+            // update the tracker metadata.
+            tracker.last_snapshot_time = current_time;
+            tracker.last_snapshot_tx = current_tx_id;
+
+            // TODO: In production we async send this active_snapshot to lanceDB here
+            println!(
+                "[CHECKPOINT] Captured {} bytes. Trigger: {} ",
+                active_snapshot.len(),
+                if tx_threshold_met {
+                    "Volume (10k Tx) "
+                } else {
+                    "Time (24h)"
+                }
+            );
+        }
 
         // Retreive the  'main' function of AI agent and execute it
         let agent_main = instance.get_typed_func::<(), ()>(&mut store, "agent_main")?;
