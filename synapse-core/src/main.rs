@@ -1,7 +1,8 @@
 use clap::Parser;
+use std::collections::HashMap;
 use std::fs;
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
 use synapse_core::axon::AxonGateKeeper;
 use synapse_core::compactor::WalCompactor;
 use synapse_core::config::RaqimConfig;
@@ -9,7 +10,7 @@ use synapse_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
 use synapse_core::lancedb_store::LanceEngine;
 use synapse_core::network::GlobalNetworkBridge;
 use synapse_core::nucleus::WalEngine;
-use synapse_core::sandbox::{SandboxContent, WasmEngine};
+use synapse_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use synapse_core::state::SwarmState;
 use synapse_core::{AgentState, SystemEvent, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
@@ -120,6 +121,7 @@ async fn main() {
     let w_brain = brain.clone();
     let w_axon = axon.clone();
     let w_wal = wal.clone();
+    let w_lance = lance_engine.clone();
     let w_cortex_tx = cortex_tx.clone();
     let w_global_net = global_net.clone();
     let w_wasm_engine = wasm_engine.clone();
@@ -159,6 +161,10 @@ async fn main() {
                         let g_clone = w_global_net.clone();
                         let t_clone = w_tx_couter.clone();
                         let tx_clone = w_event_tx.clone();
+                        let lance_clone = w_lance.clone();
+                        // When an agent connects or boots, we retreive or initialize its specific tracker
+                        // TODO: fix this trash
+                        let agent_id = "12b";
 
                         let content = SandboxContent {
                             axon: a_clone,
@@ -169,14 +175,37 @@ async fn main() {
                             global_tx_counter: t_clone,
                             event_tx: tx_clone,
                             wasi: wasi_ctx,
+                            agent_hex: agent_id.to_string(),
+                            lance: lance_clone,
                             live_responses: Vec::new(),
                             live_seeds: Vec::new(),
                             replay_responses: Vec::new(),
                             replay_seeds: Vec::new(),
                         };
 
+                        //  Initialize the Global Tracker
+                        let global_tracker: Arc<Mutex<HashMap<String, CheckPointTracker>>> =
+                            Arc::new(Mutex::new(HashMap::new()));
+
+                        let mut tracker_lock = global_tracker.lock().unwrap();
+                        let agent_tracker =
+                            tracker_lock
+                                .entry(agent_id.to_string())
+                                .or_insert(CheckPointTracker {
+                                    last_snapshot_tx: 0,
+                                    last_snapshot_time: 0,
+                                });
+
+                        // Get the exact current Transaction ID
+                        let current_tx = tx_counter.load(std::sync::atomic::Ordering::SeqCst);
+
                         // Execute the untrusted logic in the WASM cage
-                        if let Err(e) = w_wasm_engine.execute_agent(&wasm_bytes, content) {
+                        if let Err(e) = w_wasm_engine.execute_agent(
+                            &wasm_bytes,
+                            content,
+                            agent_tracker,
+                            current_tx,
+                        ) {
                             eprintln!("Plugin {:?} trapped/failed: {} ", &path, e);
                         }
 
