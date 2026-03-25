@@ -15,6 +15,7 @@ use synapse_core::{AgentState, SystemEvent, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc};
+use wasmtime_wasi::WasiCtxBuilder;
 
 // /// Synapse Daemon: The Agentic Control Plane
 // #[derive(Parser, Debug, Clone)]
@@ -113,6 +114,9 @@ async fn main() {
     let plugin_dir = "./plugins";
     fs::create_dir_all(plugin_dir).expect("Failed to create plugins dir");
 
+    // Inside main.rs where you configure the WASM engine:
+    let wasi_ctx = WasiCtxBuilder::new().build();
+
     let w_brain = brain.clone();
     let w_axon = axon.clone();
     let w_wal = wal.clone();
@@ -164,6 +168,11 @@ async fn main() {
                             global_net: g_clone,
                             global_tx_counter: t_clone,
                             event_tx: tx_clone,
+                            wasi: wasi_ctx,
+                            live_responses: Vec::new(),
+                            live_seeds: Vec::new(),
+                            replay_responses: Vec::new(),
+                            replay_seeds: Vec::new(),
                         };
 
                         // Execute the untrusted logic in the WASM cage
@@ -269,8 +278,8 @@ async fn main() {
                 global_publisher,
                 task_tx_couter,
                 task_event_tx,
-                vec![0],
-                vec!["".to_string()],
+                Vec::new(),
+                Vec::new(),
             )
             .await;
 
