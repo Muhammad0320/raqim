@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use wasmtime_wasi::WasiCtx;
 
 use crate::SystemEvent;
+use crate::lancedb_store::LanceEngine;
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
@@ -25,6 +26,8 @@ pub struct SandboxContent {
     pub global_tx_counter: Arc<AtomicU64>,
     pub event_tx: Sender<SystemEvent>,
     pub wasi: WasiCtx,
+    pub lance: Arc<LanceEngine>,
+    pub agent_hex: String,
 
     // LIVE MODE: We collect seeds and HTTP responses as they happen
     pub live_seeds: Vec<u64>,
@@ -96,7 +99,10 @@ impl WasmEngine {
         let mut linker = Linker::new(&self.engine);
 
         // LINK WASI: This traps all OS calls (clock, random, HTTP) into our hypervisor.
-        wasmtime_wasi::add_to_linker(&mut linker, |ctx: &mut SandboxContent| &mut ctx.wasi)?;
+        wasmtime_wasi::p1::wasi_snapshot_preview1::add_to_linker(
+            &mut linker,
+            |ctx: &mut SandboxContent| &mut ctx.wasi,
+        )?;
 
         // ===================================
         // THE ONLY DOOR TO THE OUTSIDE WORLD
@@ -252,7 +258,7 @@ impl WasmEngine {
                 .expect("Failed to write the network res to WASM memory");
 
                 // Return the actutal number of bytes written so the agent_knows how to much to read
-                bytes_to_write as i32;
+                bytes_to_write as i32
             },
         )?;
 

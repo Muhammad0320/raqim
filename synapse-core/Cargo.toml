@@ -40,3 +40,4 @@ memmap2 = "0.9"
 tokio-uring = "0.4"
 wasmtime-wasi = {version = "43.0.0" }
 rand = "0.10.0"
+reqwest = "0.13.2"
