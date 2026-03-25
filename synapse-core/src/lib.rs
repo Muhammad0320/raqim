@@ -1,3 +1,4 @@
+pub mod aegis;
 pub mod axon;
 pub mod compactor;
 pub mod config;
@@ -9,7 +10,7 @@ pub mod nucleus;
 pub mod sandbox;
 pub mod state;
 
-use rkyv::{Archive, Deserialize, Serialize, vec};
+use rkyv::{Archive, Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
