@@ -292,9 +292,13 @@ impl WasmEngine {
             tracker.last_snapshot_time = current_time;
             tracker.last_snapshot_tx = current_tx_id;
 
-            // TODO: In production we async send this active_snapshot to lanceDB here
+            // 3. THE TRUE BACKGROUND ASYNC DB WRITE
+            let lance_clone = content.lance.clone();
+            let agent_hex_clone = content.agent_hex.clone();
+            let snapshot_clone = active_snapshot.clone();
+
             println!(
-                "[CHECKPOINT] Captured {} bytes. Trigger: {} ",
+                "[CHECKPOINT]  Backgrounding {} bytes. Trigger: {} ",
                 active_snapshot.len(),
                 if tx_threshold_met {
                     "Volume (10k Tx) "
@@ -302,6 +306,18 @@ impl WasmEngine {
                     "Time (24h)"
                 }
             );
+
+            // Spawn an independent OS task to handle the heavy I/O
+            tokio::spawn(async move {
+                lance_clone
+                    .save_snapshot(current_tx_id as i64, &agent_hex_clone, snapshot_clone)
+                    .await;
+
+                println!(
+                    "[SYSTEM] LanceDB Snapshot Secured for TxID: {} ",
+                    current_tx_id
+                );
+            });
         }
 
         // Retreive the  'main' function of AI agent and execute it
