@@ -1,11 +1,13 @@
+use crate::SystemEvent;
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
+use std::sync::mpsc::channel;
 use std::{
     collections::{HashMap, HashSet},
     fs,
     sync::{Arc, RwLock},
 };
-use tokio::sync::mpsc;
+use tokio::sync::broadcast::Sender;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AegisPolicy {
@@ -27,11 +29,57 @@ pub struct AegisGateKeeper {
 }
 
 impl AegisGateKeeper {
-    pub fn new() -> Self {
-        Self {
-            policies: RwLock::new(HashMap::new()),
+    pub fn new(config_path: &str) -> Arc<Self> {
+        let initial_config = Self::parse_toml(&config_path);
+
+        let gatekeeper = Arc::new(Self {
+            policies: RwLock::new(initial_config),
             quarantine_blocklist: RwLock::new(HashSet::new()),
-        }
+        });
+
+        // Spawn a dedicated bg thread for the C-level fs watcher
+        let path_string = config_path.to_string();
+        let gk_clone = gatekeeper.clone();
+
+        // 3. The Async Tokio task that actually swaps the memory.
+        tokio::spawn(move || {
+            let (tx, rx) = channel();
+            let mut watcher =
+                notify::recommended_watcher(tx).expect("Failed to bind os file to watcher");
+            watcher
+                .watch(
+                    std::path::Path::new(&path_string),
+                    RecursiveMode::NonRecursive,
+                )
+                .unwrap();
+
+            // This thread blocks efficiently until the OS sends a file modifiication event.
+            for res in rx {
+                match res {
+                    Ok(event) => {
+                        // We only care if the file content were actually modified
+                        if let EventKind::Modify(_) = event.kind {
+                            println!("[AEGIS] Modification detected. Hot reloadidng ACL...");
+
+                            // Parse the updated file
+                            let new_policies = Self::parse_toml(&path_string);
+
+                            //  FAIL-SAFE: Only apply if the new file actually parsed correctly
+                            if !new_policies.is_empty() {
+                                // Obtain write lock, swap the mappig, instantly release the lock
+                                let mut write_lock = gk_clone.policies.write().unwrap();
+                                *write_lock = new_policies;
+                                println!("[AEGIS] ACL Hot-Reloaded Successfully.")
+                            }
+                        }
+                    }
+
+                    Err(e) => eprintln!("[AEGIS] Watcher Error: {:?}", e),
+                }
+            }
+        });
+
+        gatekeeper
     }
 
     /// Reads and deserialize the TOML file from the physical disk
@@ -55,7 +103,12 @@ impl AegisGateKeeper {
     }
 
     /// The Semantic Interdiction Switch. Returns TRUE if allowed, FALSE if malicious.
-    pub fn enforce_aegis_policy(&self, agent_hex: &str, intent_path: &str) -> bool {
+    pub fn enforce_aegis_policy(
+        &self,
+        agent_hex: &str,
+        intent_path: &str,
+        tx: Sender<SystemEvent>,
+    ) -> bool {
         // Check quarantine first (0(1) instant rejection )
         if self
             .quarantine_blocklist
@@ -76,13 +129,12 @@ impl AegisGateKeeper {
             // Check explicit Blocks (e.g., "rqm_finance/*")
             for blocked in &policy.blocked_namespaces {
                 if intent_path.starts_with(blocked) {
-                    self.trigger_quarantine(agent_hex, intent_path);
+                    self.trigger_quarantine(agent_hex, intent_path, tx);
                     return false;
                 }
             }
 
             // Check explicit allows
-
             for allowed in &policy.allowed_namespaces {
                 if intent_path.starts_with(allowed) {
                     return true;
@@ -90,7 +142,7 @@ impl AegisGateKeeper {
             }
 
             // Default Deny if not explicitly allowed
-            self.trigger_quarantine(agent_hex, intent_path);
+            self.trigger_quarantine(agent_hex, intent_path, tx);
             return false;
         }
 
@@ -99,12 +151,18 @@ impl AegisGateKeeper {
     }
 
     /// Locks down the agent globally across the OS
-    fn trigger_quarantine(&self, agent_hex: &str, target: &str) {
+    fn trigger_quarantine(&self, agent_hex: &str, target: &str, tx: Sender<SystemEvent>) {
         eprintln!(
             "\n[AEGIS RED ALERT] Unauthorized access attempts by {} on path: {} ",
             agent_hex, target
         );
-        eprintln!("[AEGIS] INITIATING GLOBAL AGENT QUARANTINE... ");
+
+        let _ = tx.send(SystemEvent::AegisInterdiction {
+            agent_id: agent_hex.to_string(),
+            attempted_path: target.to_string(),
+            rule_broken: "".to_string(),
+            payload: "".to_string(),
+        });
 
         self.quarantine_blocklist
             .write()
