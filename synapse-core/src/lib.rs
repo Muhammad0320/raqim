@@ -12,6 +12,7 @@ pub mod state;
 pub mod utils;
 
 use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -133,7 +134,7 @@ pub async fn execute_synapse_cascade(
     });
 }
 
-#[derive(Clone, Debug, Archive, Serialize, Deserialize)]
+#[derive(Clone, Debug, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize)]
 pub enum SystemEvent {
     ThoughtCommited {
         agent_id: String,
@@ -149,5 +150,16 @@ pub enum SystemEvent {
     },
     PluginLoaded {
         plugin_name: String,
+    },
+
+    AegisInterdiction {
+        agent_id: String,
+        attempted_path: String,
+        rule_broken: String,
+        payload: String,
+    },
+
+    SystemBoot {
+        message: String,
     },
 }

@@ -1,4 +1,4 @@
-use crate::OpLog;
+use crate::{OpLog, SystemEvent};
 use anyhow::Ok;
 use arrow_array::types::Float32Type;
 use arrow_array::{
@@ -11,6 +11,7 @@ use lancedb::connect;
 use lancedb::connection::Connection;
 use lancedb::query::QueryBase;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct LanceEngine {
     pub db: Connection,
@@ -62,13 +63,83 @@ impl LanceEngine {
         ]))
     }
 
-    // 2. Schema for WASM memory snapshot
+    /// Schema for WASM memory snapshot
     fn snapshot_schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
             Field::new("tx_id", DataType::Int64, false),
             Field::new("agent_id", DataType::Utf8, false),
             Field::new("memory_blob", DataType::Binary, false), // The actual WASM RAM
         ]))
+    }
+
+    /// The Unified Schema for all Systems and Security Events.
+    fn audit_schema(&self) -> Arc<Schema> {
+        Arc::new(Schema::new(vec![
+            Field::new("timestamp", DataType::Int64, false),
+            Field::new("event_type", DataType::Utf8, false),
+            Field::new("agent_id", DataType::Utf8, false),
+            Field::new("metadata", DataType::Utf8, false),
+        ]))
+    }
+
+    /// Appends an event to the immutable forensic ledger.
+    pub async fn log_system_events(&self, event: &SystemEvent) {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+
+        let (e_type, agent_id, meta) = match event {
+            SystemEvent::ThoughtCommited { agent_id, tx_id } => (
+                "ThoughtCommited",
+                agent_id.clone(),
+                format!(" {{\"tx_id\": {}}} ", tx_id),
+            ),
+
+            SystemEvent::AegisInterdiction {
+                agent_id,
+                attempted_path,
+                rule_broken,
+                payload,
+            } => {
+                let m = format!(
+                    "{{\"path\": \"{}\", \"rule\": \"{}\", \"payload\": \"{}\"}}",
+                    attempted_path, rule_broken, payload
+                );
+                ("AegisInterdiction", agent_id.clone(), m)
+            }
+
+            SystemEvent::CompactionTriggered { archived_count } => (
+                "CompactionTriggered",
+                "SYSTEM".to_string(),
+                format!(" {{ \"archived\": {} }} ", archived_count),
+            ),
+
+            SystemEvent::SystemBoot { message } => (
+                "SystemBoot",
+                "SYSTEM".to_string(),
+                format!(" { { \"message\": \"{}\" } } ", message),
+            ),
+
+            SystemEvent::PluginLoaded { plugin_name } => (
+                "PluginLoaded",
+                "SYSTEM".to_string(),
+                format!(" {{ \"plugin_name\": \"{}\" }} ", plugin_name),
+            ),
+
+            SystemEvent::SecurityBreach {
+                agent_id,
+                reason,
+                culprit_text,
+            } => {
+                let m = format!(
+                    "{{ \"culprit\": \"{}\", \"reason\": \"{}\"}}",
+                    culprit_text, reason
+                );
+
+                ("SecurityBreach", *agent_id, m)
+            }
+        };
     }
 
     /// Takes a batch of OpLogs and their corresponding calculated vectors
