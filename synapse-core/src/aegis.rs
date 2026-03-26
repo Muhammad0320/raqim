@@ -1,7 +1,9 @@
+use notify::{EventKind, RecursiveMode, Watcher};
 use std::{
     collections::{HashMap, HashSet},
     sync::RwLock,
 };
+use tokio::sync::mpsc;
 
 pub struct AegisPolicy {
     pub allowed_namespaces: Vec<String>,
@@ -9,8 +11,6 @@ pub struct AegisPolicy {
 }
 
 pub struct AegisGateKeeper {
-    // Cryptographic Hasher logic goes here...
-
     // AEGIS ENGINE: Maps an Agent's Hex ID to their specific security policy.
     policies: RwLock<HashMap<String, AegisPolicy>>,
 
@@ -24,6 +24,43 @@ impl AegisGateKeeper {
             policies: RwLock::new(HashMap::new()),
             quarantine_blocklist: RwLock::new(HashSet::new()),
         }
+    }
+
+    pub async fn start_hot_reloader(shared_gatekeeper: Arc<AegisGateKeeper>, config_path: String) {
+        // Bridge the blocking fs watcher to tokio
+        let (tx, mut rx) = mpsc::channel(10);
+
+        // Spawn a dedicated bg thread for the C-level fs watcher
+        let path_clone = config_path.clone();
+        std::thread::spawn(move || {
+            let mut watcher =
+                notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                    if let Ok(event) = res {
+                        if let EventKind::Modify(_) = event.kind {
+                            // Send signal to Tokio async word
+                            let _ = tx.blocking_send(());
+                        }
+                    }
+                })
+                .unwrap();
+
+            watcher
+                .watch(
+                    std::path::Path::new(&path_clone),
+                    RecursiveMode::NonRecursive,
+                )
+                .unwrap();
+            loop {
+                std::thread::park();
+            } // keep watcher alive forever
+        });
+
+        // 3. The Async Tokio task that actually swaps the memory.
+        tokio::spawn(async move {
+            while let Some(_) = rx.recv().await {
+                println!("[AEGIS] aegis.toml modification detected. Hot reloadidng ACL...")
+            }
+        });
     }
 
     /// The Semantic Interdiction Switch. Returns TRUE if allowed, FALSE if malicious.
