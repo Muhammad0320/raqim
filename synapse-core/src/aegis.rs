@@ -42,7 +42,7 @@ impl AegisGateKeeper {
         let gk_clone = gatekeeper.clone();
 
         // 3. The Async Tokio task that actually swaps the memory.
-        tokio::spawn(move || {
+        std::thread::spawn(move || {
             let (tx, rx) = channel();
             let mut watcher =
                 notify::recommended_watcher(tx).expect("Failed to bind os file to watcher");
