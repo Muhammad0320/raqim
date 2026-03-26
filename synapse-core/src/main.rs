@@ -93,6 +93,18 @@ async fn main() {
     let wasm_engine = Arc::new(WasmEngine::new());
     let tx_counter = Arc::new(AtomicU64::new(1));
 
+    // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
+
+    let lance_vault_clone = lance_engine.clone();
+
+    tokio::spawn(async move {
+        println!("[SYSTEM] Audit Valult Telemetry Sinker Active.");
+
+        while let Ok(event) = event_rx.recv().await {
+            lance_vault_clone.log_system_events(&event).await;
+        }
+    });
+
     // The Autonomous compactor (WAL reaper)
     let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone(), event_tx.clone());
     compactor.start_daemon();
@@ -163,7 +175,7 @@ async fn main() {
                         let tx_clone = w_event_tx.clone();
                         let lance_clone = w_lance.clone();
                         // When an agent connects or boots, we retreive or initialize its specific tracker
-                        // TODO: fix this trash
+                        // TODO: pull from config or CLI flag.
                         let agent_id = "12b";
 
                         let content = SandboxContent {
