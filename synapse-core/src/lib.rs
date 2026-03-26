@@ -9,6 +9,7 @@ pub mod network;
 pub mod nucleus;
 pub mod sandbox;
 pub mod state;
+pub mod utils;
 
 use rkyv::{Archive, Deserialize, Serialize};
 use std::sync::Arc;
