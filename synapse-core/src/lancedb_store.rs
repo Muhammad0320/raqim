@@ -118,7 +118,7 @@ impl LanceEngine {
             SystemEvent::SystemBoot { message } => (
                 "SystemBoot",
                 "SYSTEM".to_string(),
-                format!(" { { \"message\": \"{}\" } } ", message),
+                format!(" {{ \"message\": \"{}\" }} ", message),
             ),
 
             SystemEvent::PluginLoaded { plugin_name } => (
@@ -140,6 +140,81 @@ impl LanceEngine {
                 ("SecurityBreach", *agent_id, m)
             }
         };
+
+        let time_arr = Arc::new(Int64Array::from(vec![timestamp]));
+        let type_arr = Arc::new(StringArray::from(vec![e_type]));
+        let agent_arr = Arc::new(StringArray::from(vec![agent_id]));
+        let meta_arr = Arc::new(StringArray::from(vec![meta]));
+
+        let batch = RecordBatch::try_new(
+            self.audit_schema(),
+            vec![time_arr, type_arr, agent_arr, meta_arr],
+        );
+        let batches = RecordBatchIterator::new(vec![Ok(batch)], self.audit_schema());
+
+        let table_name = "system_audit_vault";
+        let table_names = self.db.table_names().execute().await.unwrap();
+
+        if table_names.contains(&table_name.to_string()) {
+            let table = self.db.open_table(table_name).execute().await.unwrap();
+            table.add(batches).execute().await.unwrap();
+        } else {
+            self.db
+                .create_table(table_name, batches)
+                .execute()
+                .await
+                .unwrap();
+        }
+    }
+
+    /// Generate the Enterprise Compliance Report for a specific Agent
+    pub async fn generate_compliance_report(
+        &self,
+        agent_hex: &str,
+    ) -> Result<Vec<String>, anyhow::Error> {
+        let table = self.db.open_table("system_audit_vault").execute().await?;
+
+        let mut stream = table
+            .query()
+            .filter(format!("agent_id = {}", agent_hex))
+            .execute()
+            .await?;
+
+        let mut report = Vec::new();
+        while let Some(batch_res) = stream.next().await {
+            let batch = batch_res?;
+            let time_col = batch
+                .column_by_name("timestamp")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>();
+            let event_col = batch
+                .column_by_name("event_type")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>();
+            let agent_col = batch
+                .column_by_name("agent_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>();
+            let meta_col = batch
+                .column_by_name("metadata")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>();
+
+            for i in 0..time_col.len() {
+                report.push(format!(
+                    "[{}] {}: Agent: {} - Details: {}",
+                    time_col.value(i),
+                    event_col.value(i),
+                    agent_col.value(i),
+                    meta_col.value(i)
+                ));
+            }
+        }
+        Ok(report)
     }
 
     /// Takes a batch of OpLogs and their corresponding calculated vectors
