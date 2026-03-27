@@ -106,12 +106,6 @@ impl WasmEngine {
             |ctx: &mut SandboxContent| &mut ctx.wasi,
         )?;
 
-        // ===================================
-        // THE ONLY DOOR TO THE OUTSIDE WORLD
-        // We define the 'host_emit_thought' fucntion for the WASM to call
-        // It takes memory pointers (offset and length) from the WASM's isolated RAM.
-        //  ===================================
-
         linker.func_wrap(
             "synapse_env",
             "host_emit_thought",
