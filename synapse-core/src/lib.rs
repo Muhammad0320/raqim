@@ -9,7 +9,6 @@ pub mod network;
 pub mod nucleus;
 pub mod sandbox;
 pub mod state;
-pb mod a2a;
 pub mod utils;
 
 use rkyv::{Archive, Deserialize, Serialize};
@@ -60,6 +59,15 @@ pub struct OpLog {
     pub entropy_seeds: Vec<u64>,
     pub network_responses: Vec<String>,
 }
+
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
+pub struct A2AEnvelope {
+    pub sender_id: [u8; 16];
+    pub target_capability: String, 
+    pub payload: Vec<u8>,
+    pub crypto_sig: [u8; 64]
+}
+
 
 pub async fn execute_synapse_cascade(
     archive_state: &rkyv::Archived<AgentState>, // True Zero Copy

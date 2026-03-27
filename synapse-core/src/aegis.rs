@@ -169,4 +169,29 @@ impl AegisGateKeeper {
             .unwrap()
             .insert(agent_hex.to_string());
     }
+
+
+    /// Evaluates if an agent is authorized to communicate with a specific service capability
+    pub fn enforce_a2a_policy(&self, sender_hex: &str, target_capability: &str ) -> bool {
+
+        if self.quarantine_blocklist.read().unwrap().contains(sender_hex) {
+            return false;
+        }
+
+        let policies = self.policies.read().unwrap();
+
+        if let Some(policy) = policies.get(sender_hex) {
+
+            // Checks if the agents allowed namespace covers the target capability
+            for allowed in &policy.allowed_namespaces {
+                if target_capability.starts_with(allowed) {
+                    return true;
+                }
+            }
+
+        }
+
+        false 
+    }
+
 }
