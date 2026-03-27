@@ -27,7 +27,7 @@ pub struct SandboxContent {
     pub global_net: Arc<GlobalNetworkBridge>,
     pub global_tx_counter: Arc<AtomicU64>,
     pub event_tx: Sender<SystemEvent>,
-    pub wasi: wasmtime_wasi::WasiP1Ctx,
+    pub wasi: WasiCtx,
     pub lance: Arc<LanceEngine>,
     pub agent_hex: String,
 
@@ -101,8 +101,7 @@ impl WasmEngine {
         let mut linker = Linker::new(&self.engine);
 
         // LINK WASI: This traps all OS calls (clock, random, HTTP) into our hypervisor.
-        wasmtime_wasi::add_to_linker_sync(&mut linker, |ctx: &mut SandboxContent| &mut ctx.wasi)
-            .map_error(|e| anyhow::anyhow!(e))?;
+        wasmtime_wasi::add_to_linker(&mut linker, |ctx: &mut SandboxContent| &mut ctx.wasi)?;
 
         linker.func_wrap(
             "synapse_env",
