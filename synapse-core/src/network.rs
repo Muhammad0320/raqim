@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmState;
 use crate::{A2AEnvelope, OpLog, SystemEvent};
-use rkyv::{Archive, Archived, to_bytes};
+use rkyv::{Archive, to_bytes};
 use tokio::sync::broadcast::Sender;
 use zenoh::Session;
 use zenoh::config::Config;
