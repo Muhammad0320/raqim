@@ -139,10 +139,10 @@ impl GlobalNetworkBridge {
         envelope: A2AEnvelope,
         aegis: Arc<AegisGateKeeper>,
     ) -> Result<Vec<u8>, anyhow::Error> {
-        let sender_hex = hex::encode(envelope.sender_id);
+        let sender_hex = hex::encode(envelope.sender_id.clone());
 
         // 1. AEGIS INTERCEPTION: Does this agent have clearance this question?
-        if !axon.enforce_a2a_policy(sender_hex, envelope.target_capability) {
+        if !aegis.enforce_a2a_policy(sender_hex.as_str(), &envelope.target_capability) {
             return Err(anyhow::anyhow!(
                 "AEGIS INTERDICTION: Unauthorized A2A Communucation"
             ));

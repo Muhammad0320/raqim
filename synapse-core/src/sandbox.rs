@@ -3,10 +3,11 @@ use std::sync::atomic::AtomicU64;
 use std::time::{SystemTime, UNIX_EPOCH};
 use wasmtime_wasi::WasiCtx;
 
-use crate::SystemEvent;
+use crate::aegis::AegisGateKeeper;
 use crate::lancedb_store::LanceEngine;
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
+use crate::{A2AEnvelope, SystemEvent};
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 use anyhow::Ok;
 use anyhow::anyhow;
@@ -19,6 +20,7 @@ use wasmtime::*;
 ///  so that the host fxns can interact with the rest of the synpase organism.
 pub struct SandboxContent {
     pub axon: Arc<AxonGateKeeper>,
+    pub aegis: Arc<AegisGateKeeper>,
     pub brain: Arc<SwarmState>,
     pub wal: Arc<WalEngine>,
     pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -258,6 +260,62 @@ impl WasmEngine {
                 .expect("Failed to write the network res to WASM memory");
 
                 // Return the actutal number of bytes written so the agent_knows how to much to read
+                bytes_to_write as i32
+            },
+        )?;
+
+        linker.func_wrap(
+            "synapse_env",
+            "host_ask_agent",
+            move |mut caller: Caller<'_, SandboxContent>,
+                  cap_ptr: i32,
+                  cap_len: i32,
+                  payload_ptr: i32,
+                  payload_len: i32,
+                  out_ptr: i32,
+                  out_len: i32,
+                  max_len: i32|
+                  -> i32 {
+                let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
+                let mem_slice = mem.data(&caller);
+
+                // Read Capability String (e.g., "rqm_finance/ledger" )
+                let cap_bytes = &mem_slice[cap_ptr as usize..(cap_ptr + cap_len) as usize];
+                let capability = std::str::from_utf8(cap_bytes).unwrap().to_string();
+
+                // Read Question Payload
+                let payload_bytes =
+                    &mem_slice[payload_ptr as usize..(payload_ptr + payload_len) as usize];
+
+                let content = caller.data_mut();
+
+                // Construct the Envelope
+                let envelope = A2AEnvelope {
+                    sender_id: content.agent_hex.as_bytes().try_into().unwrap_or([0; 16]),
+                    target_capability: capability.clone(),
+                    payload: payload_bytes.to_vec(),
+                    crypto_sig: [0; 64],
+                };
+
+                // Execute the actual RPC call (block_in_place because WASM calls are sync)
+                let net_clone = content.global_net.clone();
+                let aegis_clone = content.aegis.clone();
+
+                let response_bytes = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current()
+                        .block_on(net_clone.execute_a2a_rpc(envelope, aegis_clone))
+                })
+                .unwrap_or_else(|e| e.to_string().into_bytes());
+
+                // Zero-copy injectiton of the answer back into WASM memory
+                let bytes_to_write = std::cmp::min(response_bytes.len(), max_len as usize);
+                mem.write(
+                    &mut caller,
+                    out_ptr as usize,
+                    &response_bytes[..bytes_to_write],
+                )
+                .unwrap();
+
                 bytes_to_write as i32
             },
         )?;

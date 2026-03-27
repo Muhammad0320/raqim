@@ -11,7 +11,7 @@ use std::{
     io::{Result, stdout},
     time::Duration,
 };
-use synapse_core::{OpLog, SystemEvent};
+use synapse_core::{OpLog, SystemEvent, config::RaqimConfig};
 use tokio::sync::mpsc::channel;
 
 // 1. The State machine
@@ -44,13 +44,11 @@ impl AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let config = RaqimConfig::load_or_bootstrap();
+
     // Extract ENV vars
-    let args: Vec<String> = std::env::args().collect();
-    let wal_path = if args.len() > 1 {
-        args[1].clone()
-    } else {
-        "./production.wal".to_string()
-    };
+
+    let wal_path = config.wal_path;
 
     // 2. Terminal Hijack (Raw mode)
     enable_raw_mode()?;
