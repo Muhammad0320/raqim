@@ -101,7 +101,8 @@ impl WasmEngine {
         let mut linker = Linker::new(&self.engine);
 
         // LINK WASI: This traps all OS calls (clock, random, HTTP) into our hypervisor.
-        wasmtime_wasi::add_to_linker_sync(&mut linker, |ctx: &mut SandboxContent| &mut ctx.wasi)?;
+        wasmtime_wasi::add_to_linker_sync(&mut linker, |ctx: &mut SandboxContent| &mut ctx.wasi)
+            .map_error(|e| anyhow::anyhow!(e))?;
 
         linker.func_wrap(
             "synapse_env",
@@ -229,7 +230,7 @@ impl WasmEngine {
                     // LIVE: We excute a real, blocking http request.
                     let res = tokio::task::block_in_place(|| {
                         reqwest::blocking::get(url)
-                            .map(|r| r.text().unwrap_or_default())
+                            .map(|r: reqwest::blocking::Response| r.text().unwrap_or_default())
                             .unwrap_or_default()
                     });
 
