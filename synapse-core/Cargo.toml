@@ -27,7 +27,6 @@ lancedb = "0.9"
 arrow-array = "52.2"
 arrow-schema = "52.2"
 
-wasmtime = "18.0"
 anyhow = "1.0"
 
 fastembed = "5.12"
@@ -38,7 +37,8 @@ serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 memmap2 = "0.9" 
 tokio-uring = "0.4"
-wasmtime-wasi = {version = "43.0.0" }
+wasmtime = "29.0.0"
+wasmtime-wasi = "29.0.0"
 rand = "0.10.0"
 reqwest = "0.13.2"
 notify = "8.2.0"
