@@ -112,7 +112,10 @@ impl GlobalNetworkBridge {
             println!("[A2A] Capability Registered: Listening on {} ", key_expr);
 
             while let Ok(query) = queryable.recv_async().await {
-                let payload_bytes = query.value().unwrap().payload().contiguous();
+                let payload_bytes = match query.payload() {
+                    Some(p) => p.contiguous().into_owned(),
+                    None => continue,
+                };
 
                 let archievd_envelope = unsafe {
                     rkyv::access_unchecked::<<A2AEnvelope as Archive>::Archived>(&payload_bytes)
@@ -125,10 +128,7 @@ impl GlobalNetworkBridge {
                 let answer_bytes = response_handler(question_payload);
 
                 // Send the answer directly ack to the asking agent
-                query
-                    .reply(Ok(Sample::new(query.key_expr().clone(), answer_bytes)))
-                    .await
-                    .unwrap();
+                query.reply(query.key_expr(), answer_bytes).await.unwrap();
             }
         });
     }
@@ -159,7 +159,7 @@ impl GlobalNetworkBridge {
 
         // 3. Zenoh GET request (The RPC )
         // We broadcast the question and wait for the authoritative answer to reply.
-        let mut replies = self.session.get(&key_expr).with_value(bytes).await.unwrap();
+        let mut replies = self.session.get(&key_expr).payload(bytes).await.unwrap();
 
         // 4. Await the response from the target agent
         if let Some(reply) = replies.recv_async().await {

@@ -286,7 +286,7 @@ impl WasmEngine {
                     sender_id: content.agent_hex.as_bytes().try_into().unwrap_or([0; 16]),
                     target_capability: capability.clone(),
                     payload: payload_bytes.to_vec(),
-                    crypto_sig: [0; 64],
+                    signature: [0; 64],
                 };
 
                 // Execute the actual RPC call (block_in_place because WASM calls are sync)

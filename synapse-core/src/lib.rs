@@ -60,12 +60,13 @@ pub struct OpLog {
     pub network_responses: Vec<String>,
 }
 
-#[derive(Archive, Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
+#[rkyv(compare(PartialEq))]
 pub struct A2AEnvelope {
     pub sender_id: [u8; 16],
     pub target_capability: String,
     pub payload: Vec<u8>,
-    pub crypto_sig: [u8; 64],
+    pub signature: [u8; 64], // using ed25519
 }
 
 pub async fn execute_synapse_cascade(
