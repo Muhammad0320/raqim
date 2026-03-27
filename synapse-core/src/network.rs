@@ -121,10 +121,10 @@ impl GlobalNetworkBridge {
                 // Extract the raw question bytes
                 let question_payload = archievd_envelope.payload.as_slice();
 
-                // Executes the agent's internal logic to generate answer
+                // Executes the agent's internal logic  to generate answer
                 let answer_bytes = response_handler(question_payload);
 
-                // Send the answer rdirectly ack to the asking agent
+                // Send the answer directly ack to the asking agent
                 query
                     .reply(Ok(Sample::new(query.key_expr().clone(), answer_bytes)))
                     .await
