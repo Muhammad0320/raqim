@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmState;
-use crate::{OpLog, SystemEvent};
+use crate::{A2AEnvelope, OpLog, SystemEvent};
 use rkyv::{Archive, Archived, to_bytes};
 use tokio::sync::broadcast::Sender;
 use zenoh::Session;
 use zenoh::config::Config;
+
+use crate::aegis::AegisGateKeeper;
+use zenoh::prelude::r#async::*;
 
 pub struct GlobalNetworkBridge {
     session: Arc<Session>,
@@ -91,5 +94,84 @@ impl GlobalNetworkBridge {
                 }
             }
         });
+    }
+
+    /// Binds an agent to a Semantic capability. It will listen for incoming A2A questions.
+    pub async fn register_agent_capability(
+        &self,
+        capability_path: &str,
+        mut response_handler: impl FnMut(&[u8]) -> Vec<u8> + Send + 'static,
+    ) {
+        let key_expr = format!("{}/a2a/{}", self.workspace_prefix, capability_path);
+        let session = self.session.clone();
+
+        tokio::spawn(async move {
+            // A Queryable tells the global network: "I can answer questions for this topic"
+            let queryable = session.declare_queryable(&key_expr).await.unwrap();
+
+            println!("[A2A] Capability Registered: Listening on {} ", key_expr);
+
+            while let Ok(query) = queryable.recv_async().await {
+                let payload_bytes = query.value().unwrap().payload().contiguous();
+
+                let archievd_envelope = unsafe {
+                    rkyv::access_unchecked::<<A2AEnvelope as Archive>::Archived>(&payload_bytes)
+                };
+
+                // Extract the raw question bytes
+                let question_payload = archievd_envelope.payload.as_slice();
+
+                // Executes the agent's internal logic to generate answer
+                let answer_bytes = response_handler(question_payload);
+
+                // Send the answer rdirectly ack to the asking agent
+                query
+                    .reply(Ok(Sample::new(query.key_expr().clone(), answer_bytes)))
+                    .await
+                    .unwrap();
+            }
+        });
+    }
+
+    /// Asks a a question to the swarm. Returns the answer
+    pub async fn execute_a2a_rpc(
+        &self,
+        envelope: A2AEnvelope,
+        aegis: Arc<AegisGateKeeper>,
+    ) -> Result<Vec<u8>, anyhow::Error> {
+        let sender_hex = hex::encode(envelope.sender_id);
+
+        // 1. AEGIS INTERCEPTION: Does this agent have clearance this question?
+        if !axon.enforce_a2a_policy(sender_hex, envelope.target_capability) {
+            return Err(anyhow::anyhow!(
+                "AEGIS INTERDICTION: Unauthorized A2A Communucation"
+            ));
+        }
+
+        // 2. Zero-Copy Serializarion of envelope
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope)
+            .unwrap()
+            .into_vec();
+        let key_expr = format!(
+            "{}/a2a/{}",
+            self.workspace_prefix, envelope.target_capability
+        );
+
+        // 3. Zenoh GET request (The RPC )
+        // We broadcast the question and wait for the authoritative answer to reply.
+        let mut replies = self.session.get(&key_expr).with_value(bytes).await.unwrap();
+
+        // 4. Await the response from the target agent
+        if let Some(reply) = replies.recv_async().await {
+            if let Ok(sample) = reply.sample {
+                // Return the answer bytes back to the caller
+                return Ok(sample.payload().contiguous().into_owned());
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "A2A Timeout: No agent responded to capability {}",
+            envelope.target_capability
+        ))
     }
 }
