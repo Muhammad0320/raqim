@@ -178,7 +178,7 @@ impl LanceEngine {
 
         let mut stream = table
             .query()
-            .filter(format!("agent_id = {}", agent_hex))
+            .only_if(format!("agent_id = '{}'", agent_hex))
             .execute()
             .await?;
 
@@ -402,7 +402,7 @@ impl LanceEngine {
         // SQL-Style Filter: Find the highest TxID for this agent that's <= target.
         let mut stream = table
             .query()
-            .filter(format!(
+            .only_if(format!(
                 "agent_id = '{}' AND tx_id <= {} ",
                 agent_hex, target_tx_id
             ))

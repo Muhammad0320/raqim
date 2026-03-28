@@ -16,7 +16,6 @@ use crate::{
     OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
     state::SwarmState,
 };
-use futures::StreamExt;
 
 pub struct MemoryRouter {
     wal_path: String,
