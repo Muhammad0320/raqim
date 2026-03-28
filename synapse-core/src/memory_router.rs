@@ -95,7 +95,7 @@ impl MemoryRouter {
         // LanceDB allows SQL-style filtering directly on the Arrow columns
         let mut stream = table
             .query()
-            .filter(format!("tx_id = {}", target_tx_id))
+            .only_if(format!("tx_id = {}", target_tx_id))
             .limit(1)
             .execute()
             .await?;
