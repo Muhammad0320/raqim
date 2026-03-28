@@ -188,7 +188,11 @@ impl AegisGateKeeper {
             // 1. Checks Explicit Blocks first
             for blocked in &policy.blocked_namespaces {
                 if target_capability.starts_with(blocked) {
-                    self.trigger_quarantine(sender_hex, target, "A2A Blocked Namespace Violation");
+                    self.trigger_quarantine(
+                        sender_hex,
+                        target_capability,
+                        "A2A Blocked Namespace Violation",
+                    );
                     return false;
                 }
             }
@@ -202,7 +206,27 @@ impl AegisGateKeeper {
         }
 
         // Zero-Trust Default Deny
-        self.trigger_quarantine(sender_hex, target, "A2A Unauthorized Capability Access");
+        self.trigger_quarantine(
+            sender_hex,
+            target_capability,
+            "A2A Unauthorized Capability Access",
+        );
         false
+    }
+
+    /// Unfreezes an agent.
+    pub fn lift_quaratine(&self, agent_hex: &str) {
+        let mut blocklist = self.quarantine_blocklist.write().unwrap();
+        if blocklist.remove(agent_hex) {
+            println!(
+                "[AEGIS ADMIN] Quarantine lifted for agent {}. Ready for resurrection. ",
+                agent_hex
+            );
+        }
+    }
+
+    /// Fetches the live qurantine list for the Admin Dashboard
+    pub fn fetch_quaratined_agents(&self) -> Vec<String> {
+        self.quarantine_blocklist.read().unwrap().iter().collect()
     }
 }
