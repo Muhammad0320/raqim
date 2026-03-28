@@ -7,12 +7,13 @@ use arrow_array::{
 use arrow_schema::{ArrowError, DataType, Field, Schema};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::StreamExt;
+use futures::StreamExt;
 use lancedb::connect;
 use lancedb::connection::Connection;
+use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-
 pub struct LanceEngine {
     pub db: Connection,
     pub history_table: String,

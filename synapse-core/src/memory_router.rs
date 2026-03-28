@@ -1,10 +1,11 @@
+use futures::StreamExt;
+use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
+use rkyv::{Archive, Archived};
 use std::io::{Read, Seek, SeekFrom};
 use std::{fs::File, sync::Arc, u64};
 use tokio::sync::broadcast;
-
-use rkyv::{Archive, Archived, vec};
 
 pub enum RebuildMode {
     Resurrection,

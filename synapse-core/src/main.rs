@@ -45,7 +45,7 @@ async fn main() {
     println!("Bismillah. Booting Raqim Daemon on port {}...", config.port);
 
     // ==============================
-    // THE INTERNAL EVENT bUS
+    // THE INTERNAL EVENT BUS
 
     let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(1000);
 
@@ -76,7 +76,6 @@ async fn main() {
     });
 
     // ===============================
-
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain = Arc::new(SwarmState::new(&config.topic, event_tx.clone()));
     let axon = Arc::new(AxonGateKeeper::new());
