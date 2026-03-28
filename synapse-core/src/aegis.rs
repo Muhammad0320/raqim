@@ -129,7 +129,7 @@ impl AegisGateKeeper {
                     self.trigger_quarantine(
                         agent_hex,
                         intent_path,
-                        "A2A Blocked Namespace Violation",
+                        "AEGIS Blocked Namespace Violation",
                     );
                     return false;
                 }
@@ -143,7 +143,11 @@ impl AegisGateKeeper {
             }
 
             // Default Deny if not explicitly allowed
-            self.trigger_quarantine(agent_hex, intent_path, tx);
+            self.trigger_quarantine(
+                agent_hex,
+                intent_path,
+                "AEGIS Unauthorized Capability Access",
+            );
             return false;
         }
 
@@ -158,11 +162,11 @@ impl AegisGateKeeper {
             agent_hex, target
         );
 
-        let _ = tx.send(SystemEvent::AegisInterdiction {
+        let _ = self.tx.send(SystemEvent::AegisInterdiction {
             agent_id: agent_hex.to_string(),
             attempted_path: target.to_string(),
             rule_broken: "".to_string(),
-            payload: "".to_string(),
+            payload: reason.to_string(),
         });
 
         self.quarantine_blocklist
