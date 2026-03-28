@@ -26,15 +26,17 @@ pub struct AegisGateKeeper {
 
     // QUARANTINE: Agents in this list are completely paralysed at the network level
     pub quarantine_blocklist: RwLock<HashSet<String>>,
+    tx: Sender<SystemEvent>,
 }
 
 impl AegisGateKeeper {
-    pub fn new(config_path: &str) -> Arc<Self> {
+    pub fn new(config_path: &str, tx: Sender<SystemEvent>) -> Arc<Self> {
         let initial_config = Self::parse_toml(&config_path);
 
         let gatekeeper = Arc::new(Self {
             policies: RwLock::new(initial_config),
             quarantine_blocklist: RwLock::new(HashSet::new()),
+            tx,
         });
 
         // Spawn a dedicated bg thread for the C-level fs watcher
@@ -103,12 +105,7 @@ impl AegisGateKeeper {
     }
 
     /// The Semantic Interdiction Switch. Returns TRUE if allowed, FALSE if malicious.
-    pub fn enforce_aegis_policy(
-        &self,
-        agent_hex: &str,
-        intent_path: &str,
-        tx: Sender<SystemEvent>,
-    ) -> bool {
+    pub fn enforce_aegis_policy(&self, agent_hex: &str, intent_path: &str) -> bool {
         // Check quarantine first (0(1) instant rejection )
         if self
             .quarantine_blocklist
@@ -129,7 +126,11 @@ impl AegisGateKeeper {
             // Check explicit Blocks (e.g., "rqm_finance/*")
             for blocked in &policy.blocked_namespaces {
                 if intent_path.starts_with(blocked) {
-                    self.trigger_quarantine(agent_hex, intent_path, tx);
+                    self.trigger_quarantine(
+                        agent_hex,
+                        intent_path,
+                        "A2A Blocked Namespace Violation",
+                    );
                     return false;
                 }
             }
@@ -151,7 +152,7 @@ impl AegisGateKeeper {
     }
 
     /// Locks down the agent globally across the OS
-    fn trigger_quarantine(&self, agent_hex: &str, target: &str, tx: Sender<SystemEvent>) {
+    fn trigger_quarantine(&self, agent_hex: &str, target: &str, reason: &str) {
         eprintln!(
             "\n[AEGIS RED ALERT] Unauthorized access attempts by {} on path: {} ",
             agent_hex, target
@@ -170,17 +171,27 @@ impl AegisGateKeeper {
             .insert(agent_hex.to_string());
     }
 
-
     /// Evaluates if an agent is authorized to communicate with a specific service capability
-    pub fn enforce_a2a_policy(&self, sender_hex: &str, target_capability: &str ) -> bool {
-
-        if self.quarantine_blocklist.read().unwrap().contains(sender_hex) {
+    pub fn enforce_a2a_policy(&self, sender_hex: &str, target_capability: &str) -> bool {
+        if self
+            .quarantine_blocklist
+            .read()
+            .unwrap()
+            .contains(sender_hex)
+        {
             return false;
         }
 
         let policies = self.policies.read().unwrap();
 
         if let Some(policy) = policies.get(sender_hex) {
+            // 1. Checks Explicit Blocks first
+            for blocked in &policy.blocked_namespaces {
+                if target_capability.starts_with(blocked) {
+                    self.trigger_quarantine(sender_hex, target, "A2A Blocked Namespace Violation");
+                    return false;
+                }
+            }
 
             // Checks if the agents allowed namespace covers the target capability
             for allowed in &policy.allowed_namespaces {
@@ -188,10 +199,10 @@ impl AegisGateKeeper {
                     return true;
                 }
             }
-
         }
 
-        false 
+        // Zero-Trust Default Deny
+        self.trigger_quarantine(sender_hex, target, "A2A Unauthorized Capability Access");
+        false
     }
-
 }
