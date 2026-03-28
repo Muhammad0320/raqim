@@ -4,7 +4,7 @@ use arrow_array::types::Float32Type;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
 };
-use arrow_schema::{DataType, Field, Schema};
+use arrow_schema::{ArrowError, DataType, Field, Schema};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::StreamExt;
 use lancedb::connect;
@@ -150,7 +150,8 @@ impl LanceEngine {
             self.audit_schema(),
             vec![time_arr, type_arr, agent_arr, meta_arr],
         );
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], self.audit_schema());
+        let batches =
+            RecordBatchIterator::new(vec![Ok::<_, ArrowError>(batch)], self.audit_schema());
 
         let table_name = "system_audit_vault";
         let table_names = self.db.table_names().execute().await.unwrap();

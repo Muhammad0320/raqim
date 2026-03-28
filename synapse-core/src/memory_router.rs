@@ -1,7 +1,7 @@
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
 use std::io::{Read, Seek, SeekFrom};
-use std::{fs::File, io::Seek, sync::Arc, u64};
+use std::{fs::File, sync::Arc, u64};
 use tokio::sync::broadcast;
 
 use rkyv::{Archive, Archived, vec};
@@ -37,7 +37,7 @@ impl MemoryRouter {
     where
         F: FnMut(&Archived<OpLog>),
     {
-        if let Ok(mut file) = File::open(&self.wal_path) {
+        if let Ok(file) = File::open(&self.wal_path) {
             if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
                 let mut offset = 0;
                 while offset < mmap.len() {
