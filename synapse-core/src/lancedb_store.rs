@@ -5,7 +5,7 @@ use arrow_array::types::Float32Type;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
 };
-use arrow_schema::{ArrowError, DataType, Field, Schema};
+use arrow_schema::{DataType, Field, Schema};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::StreamExt;
 use lancedb::connect;
@@ -299,7 +299,7 @@ impl LanceEngine {
 
     // REAL RAG: Seaches semantic history using methematical vector proximity
     pub async fn search_memory(
-        &self,
+        &mut self,
         query: &str,
         limit: usize,
     ) -> Result<Vec<String>, anyhow::Error> {
