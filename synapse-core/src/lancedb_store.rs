@@ -353,7 +353,10 @@ impl LanceEngine {
                 // Construct a hyper rich string for the LLM's context window
                 let memory_str = format!(
                     "[Time: {}] Agent: '{}' ({}) noted: {}",
-                    timestamp_col[i], agent_id_col[i], status_col[i], text_col[i]
+                    timestamp_col.value(i),
+                    agent_id_col.value(i),
+                    status_col.value(i),
+                    text_col.value(i)
                 );
 
                 results.push(memory_str);
@@ -371,8 +374,7 @@ impl LanceEngine {
         let batch = RecordBatch::try_new(
             self.snapshot_schema(),
             vec![tx_array, agent_array, blob_array],
-        )
-        .expect("Failed to build Agent snapshot RecordBatch");
+        );
 
         // THE FIX: Wrap the batch in a RecordBatchIterator with the correct schema
         let batches = RecordBatchIterator::new(vec![batch], self.snapshot_schema());
