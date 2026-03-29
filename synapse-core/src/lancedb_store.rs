@@ -7,7 +7,6 @@ use arrow_array::{
 use arrow_schema::{ArrowError, DataType, Field, Schema};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::StreamExt;
-use futures::StreamExt;
 use lancedb::connect;
 use lancedb::connection::Connection;
 use lancedb::query::ExecutableQuery;
@@ -189,22 +188,26 @@ impl LanceEngine {
                 .column_by_name("timestamp")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<Int64Array>();
+                .downcast_ref::<Int64Array>()
+                .expect("FATAL: timestamp column isn't Int64Array");
             let event_col = batch
                 .column_by_name("event_type")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<StringArray>();
+                .downcast_ref::<StringArray>()
+                .expect("FATAL: event-type column isn't StringArray");
             let agent_col = batch
                 .column_by_name("agent_id")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<StringArray>();
+                .downcast_ref::<StringArray>()
+                .expect("FATAL: agent_id column isn't StringArray");
             let meta_col = batch
                 .column_by_name("metadata")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<StringArray>();
+                .downcast_ref::<StringArray>()
+                .expect("FATAL: metadata column isn't StringArray");
 
             for i in 0..time_col.len() {
                 report.push(format!(
@@ -275,10 +278,10 @@ impl LanceEngine {
         let batches = RecordBatchIterator::new(vec![result], self.schema());
 
         let table_names = self.db.table_names().execute().await.unwrap();
-        if table_names.contains(&self.table_name) {
+        if table_names.contains(&self.history_table) {
             let table = self
                 .db
-                .open_table(&self.table_name)
+                .open_table(&self.history_table)
                 .execute()
                 .await
                 .unwrap();
@@ -286,7 +289,7 @@ impl LanceEngine {
             table.add(batches).execute().await.unwrap()
         } else {
             self.db
-                .create_table(&self.table_name, batches)
+                .create_table(&self.history_table, batches)
                 .execute()
                 .await
                 .unwrap();
@@ -304,7 +307,7 @@ impl LanceEngine {
         let query_vector = embedding[0].clone();
 
         // 2. Open the table
-        let table = self.db.open_table(&self.table_name).execute().await?;
+        let table = self.db.open_table(&self.history_table).execute().await?;
 
         // 3. Execute High-Speed vector search (IVF-PQ Algorithm)
         let mut stream = table
