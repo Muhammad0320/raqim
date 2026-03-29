@@ -1,3 +1,4 @@
+use arrow_array::Array;
 use futures::StreamExt;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
@@ -107,7 +108,7 @@ impl MemoryRouter {
                 .unwrap()
                 .as_any()
                 .downcast_ref::<arrow_array::StringArray>()
-                .unwrap();
+                .expect("FATAL: text column isn't StringArray");
 
             if text_col.len() > 0 {
                 return Ok(format!(

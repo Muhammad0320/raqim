@@ -1,5 +1,6 @@
 use crate::{OpLog, SystemEvent};
 use anyhow::Ok;
+use arrow_array::Array;
 use arrow_array::types::Float32Type;
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
@@ -13,6 +14,7 @@ use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
 pub struct LanceEngine {
     pub db: Connection,
     pub history_table: String,
@@ -137,7 +139,7 @@ impl LanceEngine {
                     culprit_text, reason
                 );
 
-                ("SecurityBreach", *agent_id, m)
+                ("SecurityBreach", agent_id.to_string(), m)
             }
         };
 
@@ -150,8 +152,7 @@ impl LanceEngine {
             self.audit_schema(),
             vec![time_arr, type_arr, agent_arr, meta_arr],
         );
-        let batches =
-            RecordBatchIterator::new(vec![Ok::<_, ArrowError>(batch)], self.audit_schema());
+        let batches = RecordBatchIterator::new(vec![batch], self.audit_schema());
 
         let table_name = "system_audit_vault";
         let table_names = self.db.table_names().execute().await.unwrap();
@@ -374,7 +375,7 @@ impl LanceEngine {
         .expect("Failed to build Agent snapshot RecordBatch");
 
         // THE FIX: Wrap the batch in a RecordBatchIterator with the correct schema
-        let batches = RecordBatchIterator::new(vec![Ok(batch)], self.snapshot_schema());
+        let batches = RecordBatchIterator::new(vec![batch], self.snapshot_schema());
 
         let table_names = self.db.table_names().execute().await.unwrap();
         if table_names.contains(&self.snapshot_table) {
