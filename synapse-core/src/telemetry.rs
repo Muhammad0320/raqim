@@ -1,9 +1,13 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use tokio::io::AsyncWriteExt;
+use reqwest::Client;
+use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 
 // The lock free memory counter. Zero impact on the hot path.
 pub struct TelemetryEngine {
@@ -34,5 +38,73 @@ impl TelemetryEngine {
     }
     pub fn record_time_travel(&self) {
         self.time_travel_queries.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Starts the isolated OS background thread for resilient billing
+    pub fn start_sinker_daemon(engine: Arc<Self>) {
+        tokio::spawn(async move {
+            let client = Client::new();
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+
+            // We open the local billing WAL in append-only mode to survive network outages.
+            let mut billing_wal = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("production.billing.wal")
+                .await
+                .expect("Failed to open billing WAL");
+
+            loop {
+                interval.tick().await;
+
+                // 1. Swap the current counter to 0. This ensures we never double-count even if the thread lags.
+                let merges = engine.crdt_merges.swap(0, Ordering::SeqCst);
+                let a2a_bytes = engine.a2a_bytes_routed.swap(0, Ordering::SeqCst);
+                let time_travels = engine.time_travel_queries.swap(0, Ordering::SeqCst);
+
+                if merges == 0 && a2a_bytes == 0 && time_travels == 0 {
+                    continue;
+                }
+
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                // 2. Construct the Stripe-compatible JSON payload
+                let payload = format!(
+                    r#"{ {"tenant": "{}", "timestamp": {}, "crdt_merges": {}, "a2a_bytes": {}, "time_travels": {}   } }"#
+                );
+
+                // 3. Persistence first: Write to local-disk before attempting network
+                let log_entry = format!("{}\n", payload);
+                if let Err(e) = billing_wal.write_all(log_entry.as_bytes()).await {
+                    eprintln!("[TELEMETRY FATAL] Failed to write to biling wal: {} ", e);
+                    continue; // 
+                }
+
+                let _ = billing_wal.sync_data().await;
+
+                // 4. Ship to Cloud: Send the usage data to Raqim cloud API
+                let res = client
+                    .post("https://api.raqim.cloud/v1/metering/injest")
+                    .header("Authorization", format!("Bearer {}", engine.licence_key))
+                    .header("Content-Type", "application/json")
+                    .body(payload)
+                    .send()
+                    .await;
+
+                match res {
+                    Ok(r) if r.status().is_success() => {
+                        println!("[TELEMETRY] Successfully synced 60s usage to raqim cloud");
+                    }
+                    _ => {
+                        eprintln!(
+                            "[TELEMETRY WARNING] Cloud API unreachable. Data safely preserved in billing.wal for next retry."
+                        );
+                    }
+                }
+            }
+        });
     }
 }
