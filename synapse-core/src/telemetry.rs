@@ -62,7 +62,7 @@ impl TelemetryEngine {
                 let a2a_bytes = engine.a2a_bytes_routed.swap(0, Ordering::SeqCst);
                 let time_travels = engine.time_travel_queries.swap(0, Ordering::SeqCst);
 
-                if merges == 0 && a2a_bytes == 0 && time_travels == 0 {
+                if crdt_merges == 0 && a2a_bytes == 0 && time_travels == 0 {
                     continue;
                 }
 
@@ -85,18 +85,27 @@ impl TelemetryEngine {
 
                 let _ = billing_wal.sync_data().await;
 
+                // Read the entire WAL file For it might contain failed batches
+                let pending_data = tokio::fs::read_to_string("production.billing.wal")
+                    .await
+                    .unwrap_or_default();
+
                 // 4. Ship to Cloud: Send the usage data to Raqim cloud API
                 let res = client
                     .post("https://api.raqim.cloud/v1/metering/injest")
                     .header("Authorization", format!("Bearer {}", engine.licence_key))
-                    .header("Content-Type", "application/json")
-                    .body(payload)
+                    .header("Content-Type", "application/x-ndjson") // NDJSON for multiple lines
+                    .body(pending_data)
                     .send()
                     .await;
 
                 match res {
                     Ok(r) if r.status().is_success() => {
                         println!("[TELEMETRY] Successfully synced 60s usage to raqim cloud");
+                        billing_wal
+                            .set_len(0)
+                            .await
+                            .expect("Failed to truncate billing WAL");
                     }
                     _ => {
                         eprintln!(
