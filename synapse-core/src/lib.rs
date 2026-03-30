@@ -20,6 +20,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 use uuid::Uuid;
 
+use crate::telemetry::TelemetryEngine;
 use crate::{
     axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine, state::SwarmState,
 };
@@ -81,6 +82,7 @@ pub async fn execute_synapse_cascade(
     tx: Sender<SystemEvent>,
     seeds: Vec<u64>,
     responses: Vec<String>,
+    telemetry: Arc<TelemetryEngine>,
 ) {
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];
@@ -112,6 +114,7 @@ pub async fn execute_synapse_cascade(
 
     //
     let delta = brain.update_agent_state(&agent_hex, &enriched_state);
+    telemetry.record_crdt_merge();
 
     // Contruct the raw log
     let raw_log = OpLog {

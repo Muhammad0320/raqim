@@ -58,7 +58,7 @@ impl TelemetryEngine {
                 interval.tick().await;
 
                 // 1. Swap the current counter to 0. This ensures we never double-count even if the thread lags.
-                let merges = engine.crdt_merges.swap(0, Ordering::SeqCst);
+                let crdt_merges = engine.crdt_merges.swap(0, Ordering::SeqCst);
                 let a2a_bytes = engine.a2a_bytes_routed.swap(0, Ordering::SeqCst);
                 let time_travels = engine.time_travel_queries.swap(0, Ordering::SeqCst);
 
@@ -73,9 +73,9 @@ impl TelemetryEngine {
 
                 // 2. Construct the Stripe-compatible JSON payload
                 let payload = format!(
-                    r#"{ {"tenant": "{}", "timestamp": {}, "crdt_merges": {}, "a2a_bytes": {}, "time_travels": {}   } }"#
+                    r#"{{"tenant": "{}", "timestamp": {}, "crdt_merges": {}, "a2a_bytes": {}, "time_travels": {}   }}"#,
+                    engine.tenant_id, timestamp, crdt_merges, a2a_bytes, time_travels
                 );
-
                 // 3. Persistence first: Write to local-disk before attempting network
                 let log_entry = format!("{}\n", payload);
                 if let Err(e) = billing_wal.write_all(log_entry.as_bytes()).await {

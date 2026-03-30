@@ -13,6 +13,7 @@ pub enum RebuildMode {
     TimeTravel(u64), //
 }
 
+use crate::telemetry::TelemetryEngine;
 use crate::{
     OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
     state::SwarmState,
@@ -189,7 +190,10 @@ impl MemoryRouter {
         agent_hex: &str,
         target_tx_id: u64,
         wal_engine: Arc<WalEngine>,
+        telemetry: Arc<TelemetryEngine>,
     ) -> Result<(Vec<u8>, Vec<OpLog>), anyhow::Error> {
+        telemetry.record_time_travel();
+
         // 1. O(1) COLD MEMORY JUMP (LanceDB)
         let (snapshot_txid, memory_blob) = self
             .lance_engine
