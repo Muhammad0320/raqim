@@ -56,7 +56,7 @@ impl WasmEngine {
         // 1. Enable CPU fuels to prevent infinite loop attacks
         config.consume_fuel(true);
         // 2. Restrict maximum memory allocation to prevnt OOM attacks - Absoslute hardware ceiling
-        config.static_memory_maximum_size(50 * 1024 * 1024);
+        config.memory_reservation(50 * 1024 * 1024);
 
         Self {
             engine: Engine::new(&config).expect("Failed to initialize wastime engine"),
@@ -101,7 +101,9 @@ impl WasmEngine {
         let mut linker = Linker::new(&self.engine);
 
         // LINK WASI: This traps all OS calls (clock, random, HTTP) into our hypervisor.
-        wasmtime_wasi::add_to_linker(&mut linker, |ctx: &mut SandboxContent| &mut ctx.wasi)?;
+        wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |ctx: &mut SandboxContent| {
+            &mut ctx.wasi
+        })?;
 
         linker.func_wrap(
             "synapse_env",

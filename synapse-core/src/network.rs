@@ -167,7 +167,7 @@ impl GlobalNetworkBridge {
         let mut replies = self.session.get(&key_expr).payload(bytes).await.unwrap();
 
         // 4. Await the response from the target agent
-        if let Some(reply) = replies.recv_async().await {
+        if let Ok(reply) = replies.recv_async().await {
             if let Ok(sample) = reply.sample {
                 // Return the answer bytes back to the caller
                 let res_bytes = sample.payload().to_bytes().to_vec();
