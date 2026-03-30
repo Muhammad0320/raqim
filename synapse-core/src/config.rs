@@ -1,3 +1,8 @@
+use clap::Parser;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
+
 #[derive(Parser, Debug)]
 #[command(author, version, about = "RQM Daemon configuration")]
 pub struct CliArgs {
@@ -11,13 +16,22 @@ pub struct CliArgs {
     pub lance_path: Option<String>,
 
     #[arg(short, long)]
+    pub aegis_path: Option<String>,
+
+    #[arg(long)]
+    pub tenant_id: Option<String>,
+
+    #[arg(long)]
+    pub license_key: Option<String>,
+
+    #[arg(short, long)]
     pub dims: Option<i32>,
 
     #[arg(short, long)]
     pub limit: Option<usize>,
 
-    #[arg(short, long, default_value_t = 8080)]
-    port: u16,
+    #[arg(short, long)]
+    port: Option<u16>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -25,7 +39,10 @@ pub struct RaqimConfig {
     pub topic: String,
     pub wal_path: String,
     pub lance_path: String,
+    pub aegis_path: String,
     pub table_name: String,
+    pub tenant_id: String,
+    pub license_key: String,
     pub dims: i32,
     pub limit: usize,
     pub port: u16,
@@ -37,7 +54,10 @@ impl Default for RaqimConfig {
             topic: "rqm_default".to_string(),
             wal_path: "./production.wal".to_string(),
             lance_path: "./production_semantic.lancedb".to_string(),
+            aegis_path: "./aegis.toml".to_string(),
             table_name: "agent_history".to_string(),
+            tenant_id: "open_core_local".to_string(),
+            license_key: "dev_move".to_string(),
             dims: 384,
             limit: 5,
             port: 8080,
@@ -50,41 +70,24 @@ impl RaqimConfig {
         let args = CliArgs::parse();
         let config_path = "raqim.toml";
 
+        // Load from the disk or rely on default
         let mut config = if Path::new(config_path).exists() {
-            let contents = fs::read_to_string(config_path).expect("Failed to read roqim.toml");
+            let content =
+                fs::read_to_string(config_path).expect("[FATAL] Failed to read roqim.toml");
 
-            toml::from_str(&content).expect("Imvalid toml format")
+            toml::from_str(&content).expect("[FATAL] Invalid TOML syntax in raqim.toml")
         } else {
-            // BOOTSTRAP: File is missing create it using defaults + CLI args.
-            let mut new_config = Self::default();
-            if let Some(t) = &args.topic {
-                new_config.topic = t.clone();
-            }
-            if let Some(w) = &args.wal_path {
-                new_config.wal_path = t.clone();
-            }
-            if let Some(l) = &args.lance_path {
-                new_config.lance_path = l.clone();
-            }
-            if let Some(d) = args.dims {
-                new_config.dims = d;
-            }
-            if let Some(l) = args.limit {
-                new_config.dims = l;
-            }
-
-            if let Some(p) = args.port {
-                new_config.port = p
-            }
-
-            let toml_string = toml::to_string(&new_config).unwrap();
+            let default_cfg = Self::default();
+            let toml_string = toml::to_string(&default_cfg).unwrap();
             fs::write(config_path, toml_string).expect("Failed to bootstap raqim.toml");
-            println!("[SYSTEM] Bootstrapped new config file at {} ", config_path);
-
-            return new_config;
+            println!(
+                "[SYSTEM] Bootstapped  default configuration at {}",
+                config_path
+            );
+            default_cfg
         };
 
-        //  OVERRIDE: File exists. Override in memory with CLI Args
+        //  THE OVERRIDE MATRIX: CLI Args always win if provided
         if let Some(t) = args.topic {
             config.topic = t;
         }
@@ -97,6 +100,18 @@ impl RaqimConfig {
         if let Some(d) = args.dims {
             config.dims = d;
         }
+        if Some(t_id) = args.tenant_id {
+            config.tenant_id = t_id;
+        }
+
+        if Some(a) = args.aegis_path {
+            config.aegis_path = a;
+        }
+
+        if Some(key) = args.license_key {
+            config.license_key = key;
+        }
+
         if let Some(l) = args.limit {
             config.limit = l;
         }
