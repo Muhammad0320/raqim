@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmState;
+use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, OpLog, SystemEvent};
 use rkyv::{Archive, to_bytes};
 use tokio::sync::broadcast::Sender;
@@ -138,6 +139,7 @@ impl GlobalNetworkBridge {
         &self,
         envelope: A2AEnvelope,
         aegis: Arc<AegisGateKeeper>,
+        telemetry: Arc<TelemetryEngine>,
     ) -> Result<Vec<u8>, anyhow::Error> {
         let sender_hex = hex::encode(envelope.sender_id.clone());
 
@@ -157,6 +159,9 @@ impl GlobalNetworkBridge {
             self.workspace_prefix, envelope.target_capability
         );
 
+        // Billing: Record the outbound request size
+        telemetry.record_a2a_bytes(bytes.len() as u64);
+
         // 3. Zenoh GET request (The RPC )
         // We broadcast the question and wait for the authoritative answer to reply.
         let mut replies = self.session.get(&key_expr).payload(bytes).await.unwrap();
@@ -165,7 +170,9 @@ impl GlobalNetworkBridge {
         if let Some(reply) = replies.recv_async().await {
             if let Ok(sample) = reply.sample {
                 // Return the answer bytes back to the caller
-                return Ok(sample.payload().contiguous().into_owned());
+                let res_bytes = sample.payload().to_bytes().to_vec();
+                telemetry.record_a2a_bytes(res_bytes.len() as u64);
+                return Ok(res_bytes);
             }
         }
 
