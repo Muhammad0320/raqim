@@ -114,7 +114,7 @@ impl GlobalNetworkBridge {
 
             while let Ok(query) = queryable.recv_async().await {
                 let payload_bytes = match query.payload() {
-                    Some(p) => p.contiguous().into_owned(),
+                    Some(p) => p.to_bytes().to_vec(),
                     None => continue,
                 };
 
