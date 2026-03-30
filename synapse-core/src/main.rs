@@ -18,26 +18,6 @@ use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc};
 use wasmtime_wasi::WasiCtxBuilder;
 
-// /// Synapse Daemon: The Agentic Control Plane
-// #[derive(Parser, Debug, Clone)]
-// #[command(author, version, about)]
-// struct DameonConfig {
-//     /// The namespace for this specific agent swarm
-//     #[arg(short, long, env = "RAQIM_SWARM_TOPIC")]
-//     topic: String,
-
-//     /// Path to append-only wal file.
-//     #[arg(short, long, env = "RAQIM_WAL_PATH")]
-//     wal_path: String,
-
-//     /// The Embedding dimension for vector search
-//     #[arg(short, long, env = "ROQIM_EMBEDDING_DIMS")]
-//     embedding_dims: i32,
-
-//     /// Port for local python agent to connect to
-
-// }
-
 #[tokio::main]
 async fn main() {
     let config = RaqimConfig::load_or_bootstrap();
