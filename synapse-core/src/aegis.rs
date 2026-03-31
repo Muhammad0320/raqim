@@ -219,7 +219,7 @@ impl AegisGateKeeper {
     }
 
     /// Unfreezes an agent.
-    pub fn lift_quaratine(&self, agent_hex: &str) {
+    pub fn lift_quarantine(&self, agent_hex: &str) {
         let mut blocklist = self.quarantine_blocklist.write().unwrap();
         if blocklist.remove(agent_hex) {
             println!(

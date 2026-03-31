@@ -339,6 +339,8 @@ impl WasmEngine {
             },
         )?;
 
+        linker.func_wrap("synapse_env", "host_register_capability", move || {})?;
+
         // Initialize the Sandbox Context
         let mut store = Store::new(&self.engine, content);
 

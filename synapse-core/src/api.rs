@@ -1,51 +1,59 @@
 use axum::{
     Json, Router,
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Request, StatusCode},
+    middleware::{self, Next},
+    response::Response,
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{aegis::AegisGateKeeper, config::RaqimConfig};
+use crate::{
+    aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter, sandbox::WasmEngine,
+};
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ApiState {
     pub config: RaqimConfig,
     pub aegis: Arc<AegisGateKeeper>,
+    pub router: Arc<MemoryRouter>,
+    pub wasm_engine: Arc<WasmEngine>,
 }
 
 // Authorization middleware ( The enterprise firewall )
-fn authenticate(headers: &HeaderMap, expected_key: &str) -> Result<(), StatusCode> {
-    if let Some(auth_header) = headers.get("Authorization") {
+async fn auth_middleware(
+    State(state): State<ApiState>,
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    if let Some(auth_header) = req.headers().get("Authorization") {
         if let Ok(auth_str) = auth_header.to_str() {
-            if auth_str == format!("Bearer {}", expected_key) {
-                return Ok(());
+            if auth_str == format!("Bearer {}", state.config.license_key) {
+                return Ok(next.run(req).await);
             }
         }
     }
 
-    eprintln!("[SECURITY] Unauthorized API access atttempt blocked.");
+    eprintln!(
+        "[SECURITY] Blocked unauthorized API request to {}",
+        req.uri()
+    );
     Err(StatusCode::UNAUTHORIZED)
 }
 
-async fn get_quarantine(
-    headers: HeaderMap,
-    State(state): State<ApiState>,
-) -> Result<Json<Vec<String>>, StatusCode> {
-    authenticate(&headers, &state.config.license_key)?;
-    Ok(Json(state.aegis.get_quarantined_agents()))
+async fn get_quarantine(State(state): State<ApiState>) -> Result<Json<Vec<String>>, StatusCode> {
+    Ok(Json(state.aegis.fetch_quaratined_agents()))
 }
 
 #[derive(Deserialize)]
-struct LiftRequest {
+struct ResurrectPayload {
     agent_id: String,
 }
 
-async fn lift_qurantitne(
-    headers: HeaderMap,
+async fn lift_qurantine_and_resurrect(
     State(state): State<ApiState>,
-    Json(payload): Json<LiftRequest>,
+    Json(payload): Json<ResurrectPayload>,
 ) -> Result<StatusCode, StatusCode> {
     authenticate(&headers, &state.config.license_key)?;
     state.aegis.lift_quarantine(&payload.agent_id);
@@ -56,6 +64,13 @@ async fn lift_qurantitne(
 pub fn build_admin_router(state: ApiState) -> Router {
     Router::new()
         .route("/v1/admin/quarantine", get(get_quarantine))
-        .route("/v1/admin/quarantine/lift", post(lift_qurantitne))
+        .route(
+            "/v1/admin/quarantine/lift",
+            post(lift_qurantine_and_resurrect),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
         .with_state(state)
 }
