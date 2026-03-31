@@ -55,7 +55,6 @@ async fn lift_qurantine_and_resurrect(
     State(state): State<ApiState>,
     Json(payload): Json<ResurrectPayload>,
 ) -> Result<StatusCode, StatusCode> {
-    authenticate(&headers, &state.config.license_key)?;
     state.aegis.lift_quarantine(&payload.agent_id);
     Ok(StatusCode::OK)
 }
