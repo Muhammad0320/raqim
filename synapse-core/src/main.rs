@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
+use synapse_core::aegis::AegisGateKeeper;
+use synapse_core::api::ApiState;
 use synapse_core::axon::AxonGateKeeper;
 use synapse_core::compactor::WalCompactor;
 use synapse_core::config::RaqimConfig;
@@ -62,8 +64,10 @@ async fn main() {
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain = Arc::new(SwarmState::new(&config.topic, event_tx.clone()));
     let axon = Arc::new(AxonGateKeeper::new());
+    let aegis = AegisGateKeeper::new("aegis.toml", event_tx);
     let wal = Arc::new(WalEngine::start(config.wal_path.clone()).await);
     let global_net = Arc::new(GlobalNetworkBridge::new(&config.topic).await);
+
     let lance_engine = Arc::new(
         LanceEngine::new(
             &format!("{}_semantic.lancedb", &config.topic),
@@ -76,7 +80,6 @@ async fn main() {
     let tx_counter = Arc::new(AtomicU64::new(1));
 
     // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
-
     let lance_vault_clone = lance_engine.clone();
 
     tokio::spawn(async move {
@@ -86,6 +89,13 @@ async fn main() {
             lance_vault_clone.log_system_events(&event).await;
         }
     });
+
+    // BOOT THE AXUM CONTROL PLANE (port + 1 to keep it off the raw TCP port)
+
+    let api_state = ApiState {
+        config: config.clone(),
+        aegis: aegis.clone(),
+    };
 
     // The Autonomous compactor (WAL reaper)
     let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone(), event_tx.clone());
@@ -102,15 +112,15 @@ async fn main() {
 
     // Channel to talk to the publisher safely accross threads
     let (cortex_tx, mut cortex_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-
     let topic_clone = config.topic.clone();
 
     // The WASM plugign Orchestrator
     let plugin_dir = "./plugins";
     fs::create_dir_all(plugin_dir).expect("Failed to create plugins dir");
 
-    // Inside main.rs where you configure the WASM engine:
-    let wasi_ctx = WasiCtxBuilder::new().build();
+    // Initialize global tracker ONCE outside the loop
+    let global_tracker: Arc<Mutex<HashMap<String, CheckPointTracker>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     let w_brain = brain.clone();
     let w_axon = axon.clone();
@@ -121,6 +131,7 @@ async fn main() {
     let w_wasm_engine = wasm_engine.clone();
     let w_tx_couter = tx_counter.clone();
     let w_event_tx = event_tx.clone();
+    let w_aegis = aegis.clone();
 
     // Spawns a dedicated background thread to monitor the plugins folder
     tokio::spawn(async move {
@@ -147,6 +158,9 @@ async fn main() {
                             plugin_name: entry.file_name().to_string_lossy().to_string(),
                         });
 
+                        // WASI Context Must be built per-execution
+                        let wasi_ctx = WasiCtxBuilder::new().build();
+
                         // We must clone the layers for the specific execution
                         let a_clone = w_axon.clone();
                         let b_clone = w_brain.clone();
@@ -156,6 +170,7 @@ async fn main() {
                         let t_clone = w_tx_couter.clone();
                         let tx_clone = w_event_tx.clone();
                         let lance_clone = w_lance.clone();
+                        let ae_clone = w_aegis.clone();
                         // When an agent connects or boots, we retreive or initialize its specific tracker
                         // TODO: pull from config or CLI flag.
                         let agent_id = "12b";
@@ -171,15 +186,14 @@ async fn main() {
                             wasi: wasi_ctx,
                             agent_hex: agent_id.to_string(),
                             lance: lance_clone,
+                            aegis: ae_clone,
                             live_responses: Vec::new(),
                             live_seeds: Vec::new(),
+                            live_timestamps: Vec::new(),
                             replay_responses: Vec::new(),
                             replay_seeds: Vec::new(),
+                            replay_timestamps: Vec::new(),
                         };
-
-                        //  Initialize the Global Tracker
-                        let global_tracker: Arc<Mutex<HashMap<String, CheckPointTracker>>> =
-                            Arc::new(Mutex::new(HashMap::new()));
 
                         let mut tracker_lock = global_tracker.lock().unwrap();
                         let agent_tracker =
@@ -259,6 +273,7 @@ async fn main() {
         let (mut socket, addr) = listener.accept().await.unwrap();
         println!("External Agent connected from: {}", addr);
 
+        let task_telemetry = telemetry.clone();
         let task_brain = brain.clone();
         let task_axon = axon.clone();
         let task_cortex_tx = cortex_tx.clone();
@@ -303,6 +318,7 @@ async fn main() {
                 task_event_tx,
                 Vec::new(),
                 Vec::new(),
+                task_telemetry,
             )
             .await;
 
