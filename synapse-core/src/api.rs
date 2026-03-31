@@ -4,10 +4,10 @@ use axum::{
     http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::{aegis::AegisGateKeeper, config::RaqimConfig};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ApiState {
