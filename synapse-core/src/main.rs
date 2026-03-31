@@ -12,6 +12,7 @@ use synapse_core::network::GlobalNetworkBridge;
 use synapse_core::nucleus::WalEngine;
 use synapse_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use synapse_core::state::SwarmState;
+use synapse_core::telemetry::TelemetryEngine;
 use synapse_core::{AgentState, SystemEvent, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -24,9 +25,11 @@ async fn main() {
 
     println!("Bismillah. Booting Raqim Daemon on port {}...", config.port);
 
-    // ==============================
-    // THE INTERNAL EVENT BUS
+    // BOOT TELEMETRY SINKER
+    let telemetry = TelemetryEngine::new(&config.tenant_id, &config.license_key);
+    TelemetryEngine::start_sinker_daemon(telemetry.clone());
 
+    // THE INTERNAL EVENT BUS
     let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(1000);
 
     let telemetry_topic = format!("{}_telemetry", config.topic);
