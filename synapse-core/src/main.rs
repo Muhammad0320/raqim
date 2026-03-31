@@ -4,7 +4,7 @@ use std::fs;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use synapse_core::aegis::AegisGateKeeper;
-use synapse_core::api::ApiState;
+use synapse_core::api::{ApiState, build_admin_router};
 use synapse_core::axon::AxonGateKeeper;
 use synapse_core::compactor::WalCompactor;
 use synapse_core::config::RaqimConfig;
@@ -91,11 +91,19 @@ async fn main() {
     });
 
     // BOOT THE AXUM CONTROL PLANE (port + 1 to keep it off the raw TCP port)
-
     let api_state = ApiState {
         config: config.clone(),
         aegis: aegis.clone(),
     };
+    let axum_app = build_admin_router(api_state);
+    let api_port = config.port + 1;
+    tokio::spawn(async move {
+        let listener = TcpListener::bind(format!("0.0.0.0:{}", api_port))
+            .await
+            .unwrap();
+        println!("[SYSTEM] Axum control plane live on port {} ", api_port);
+        axum::serve(listener, axum_app).await.unwrap();
+    });
 
     // The Autonomous compactor (WAL reaper)
     let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone(), event_tx.clone());
@@ -264,7 +272,7 @@ async fn main() {
     });
 
     // 3. The Production TCP ingress.
-    let listener = TcpListener::bind(format!("127.0.0.1:{}", config.port))
+    let listener = TcpListener::bind(format!("0.0.0.0:{}", config.port))
         .await
         .unwrap();
     println!("Organism live. Awaiting LLM Agent TCP Connections...");
