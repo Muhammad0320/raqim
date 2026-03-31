@@ -10,7 +10,6 @@ use zenoh::Session;
 use zenoh::config::Config;
 
 use crate::aegis::AegisGateKeeper;
-use zenoh::prelude::r#async::*;
 
 pub struct GlobalNetworkBridge {
     session: Arc<Session>,
@@ -168,7 +167,7 @@ impl GlobalNetworkBridge {
 
         // 4. Await the response from the target agent
         if let Ok(reply) = replies.recv_async().await {
-            if let Ok(sample) = reply.sample {
+            if let Ok(sample) = reply.result() {
                 // Return the answer bytes back to the caller
                 let res_bytes = sample.payload().to_bytes().to_vec();
                 telemetry.record_a2a_bytes(res_bytes.len() as u64);
