@@ -34,10 +34,12 @@ pub struct SandboxContent {
     // LIVE MODE: We collect seeds and HTTP responses as they happen
     pub live_seeds: Vec<u64>,
     pub live_responses: Vec<String>,
+    pub live_timestamps: Vec<i64>,
 
     // REPLAY MODE: We load the seeds and HTTP responses here before booting
     pub replay_seeds: Vec<u64>,
     pub replay_responses: Vec<String>,
+    pub replay_timestamps: Vec<i64>,
 }
 
 pub struct CheckPointTracker {
@@ -310,6 +312,30 @@ impl WasmEngine {
                 .unwrap();
 
                 bytes_to_write as i32
+            },
+        )?;
+
+        // The Perception of Time
+        linker.func_wrap(
+            "synapse_env",
+            "host_get_time",
+            move |mut caller: Caller<'_, SandboxContent>| -> i64 {
+                let content = caller.data_mut();
+
+                // REPLAY MODE: If we're time-travelling, we feed the exact historical timestamp
+                if !content.replay_timestamps.is_empty() {
+                    return content.replay_timestamps.remove(0);
+                }
+
+                // LIVE MODE: We get the real CPU time and save it to the live queue for future replays
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+
+                content.live_timestamps.push(now);
+
+                now
             },
         )?;
 
