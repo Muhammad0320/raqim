@@ -9,7 +9,14 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter, sandbox::WasmEngine,
+    aegis::AegisGateKeeper,
+    axon::{self, AxonGateKeeper},
+    config::RaqimConfig,
+    lancedb_store::LanceEngine,
+    memory_router::MemoryRouter,
+    nucleus::WalEngine,
+    sandbox::{SandboxContent, WasmEngine},
+    state::SwarmState,
     telemetry::TelemetryEngine,
 };
 use std::sync::Arc;
@@ -18,9 +25,26 @@ use std::sync::Arc;
 pub struct ApiState {
     pub config: RaqimConfig,
     pub aegis: Arc<AegisGateKeeper>,
+    pub axon: Arc<AxonGateKeeper>,
+    pub brain: Arc<SwarmState>,
     pub router: Arc<MemoryRouter>,
     pub wasm_engine: Arc<WasmEngine>,
     pub telemetry: Arc<TelemetryEngine>,
+    pub wal_engine: Arc<WalEngine>,
+    pub lance: Arc<LanceEngine>,
+    pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
+    pub global_net: Arc<GlobalNetworkBridge>,
+    pub global_tx_counter: Arc<AtomicU64>,
+    pub event_tx: Sender<SystemEvent>,
+    pub wasi: WasiCtx,
+
+    pub live_seeds: Vec<u64>,
+    pub live_responses: Vec<String>,
+    pub live_timestamps: Vec<i64>,
+
+    pub replay_seeds: Vec<u64>,
+    pub replay_responses: Vec<String>,
+    pub replay_timestamps: Vec<i64>,
 }
 
 // Authorization middleware ( The enterprise firewall )
@@ -62,12 +86,50 @@ async fn lift_qurantine_and_resurrect(
     state.aegis.lift_quarantine(&payload.agent_id);
 
     // 2. Rebuild the Timeline
-    let (base_snapshot, historical_oplog) = state.router.rebuild_agent_timeline(
-        &payload.agent_id,
-        payload.target_tx_id,
-        state.wasm_engine.clone(),
-        state.telemetry.clone(),
-    );
+    let (base_snapshot, historical_oplog) = state
+        .router
+        .rebuild_agent_timeline(
+            &payload.agent_id,
+            payload.target_tx_id,
+            state.wal_engine.clone(),
+            state.telemetry.clone(),
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // 3. Extract the Deterministic Variables for WASM injection
+    let mut replay_seeds = Vec::new();
+    let mut replay_responses = Vec::new();
+    let mut replay_timestamps = Vec::new();
+
+    for log in historical_oplog {
+        replay_seeds.extend(log.entropy_seeds);
+        replay_responses.extend(log.network_responses);
+        replay_responses.extend(log.state.timestamp);
+    }
+
+    // 4. Construct the Sandbox Content for Resurrection
+    let content = SandboxContent {
+        axon: state.axon,
+        aegis: state.aegis,
+        brain: state.brain,
+
+        wal: state.wal_engine,
+        cortex_tx: state.cortex_tx,
+        global_net: state.global_net,
+        global_tx_counter: state.global_tx_counter,
+        event_tx: state.event_tx,
+        wasi: state.wasi,
+        lance: state.lance,
+        agent_hex: payload.agent_id,
+        live_responses: Vec::new(),
+        live_seeds: Vec::new(),
+        live_timestamps: Vec::new(),
+
+        replay_responses: replay_responses,
+        replay_seeds: replay_seeds,
+        replay_timestamps: replay_timestamps,
+    };
 
     Ok(StatusCode::OK)
 }
