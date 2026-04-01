@@ -31,7 +31,7 @@ pub struct SandboxContent {
     pub wasi: WasiCtx,
     pub lance: Arc<LanceEngine>,
     pub agent_hex: String,
-    pub telemetry: Arc<TelemetryEngine>
+    pub telemetry: Arc<TelemetryEngine>,
 
     // LIVE MODE: We collect seeds and HTTP responses as they happen
     pub live_seeds: Vec<u64>,
@@ -134,6 +134,7 @@ impl WasmEngine {
                 let event_tx_clone = layers.event_tx.clone();
                 let seeds_to_save = layers.live_seeds.clone();
                 let network_to_save = layers.replay_responses.clone();
+                let telemetry_clone = layers.telemetry.clone();
 
                 // Clear the live queues for the next thought cycle
                 caller.data_mut().live_responses.clear();
@@ -161,6 +162,7 @@ impl WasmEngine {
                         event_tx_clone,
                         seeds_to_save,
                         network_to_save,
+                        telemetry_clone,
                     )
                     .await;
                 });
@@ -291,16 +293,19 @@ impl WasmEngine {
                 // Execute the actual RPC call (block_in_place because WASM calls are sync)
                 let net_clone = content.global_net.clone();
                 let aegis_clone = content.aegis.clone();
-                let telemetry_clone = content.telemetry.clone()
+                let telemetry_clone = content.telemetry.clone();
 
                 let response_bytes = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current()
-                        .block_on(net_clone.execute_a2a_rpc(envelope, aegis_clone, telemetry_clone ))
+                    tokio::runtime::Handle::current().block_on(net_clone.execute_a2a_rpc(
+                        envelope,
+                        aegis_clone,
+                        telemetry_clone,
+                    ))
                 })
                 .unwrap_or_else(|e| e.to_string().into_bytes());
 
                 if max_len == 0 {
-                    return response_bytes.len() as i32   
+                    return response_bytes.len() as i32;
                 }
 
                 // Zero-copy injectiton of the answer back into WASM memory
