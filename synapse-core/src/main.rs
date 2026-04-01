@@ -15,6 +15,7 @@ use synapse_core::nucleus::WalEngine;
 use synapse_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use synapse_core::state::SwarmState;
 use synapse_core::telemetry::TelemetryEngine;
+use synapse_core::utils::parse_agent_id;
 use synapse_core::{AgentState, SystemEvent, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -162,6 +163,25 @@ async fn main() {
                         println!("Discovered a new WASM Plugin: {:?}", path);
 
                         let wasm_bytes = fs::read(&path).unwrap();
+
+                        //  Extract the agent_id directly from the filename
+                        let file_stem = path.file_stem().unwrap().to_str().unwrap();
+
+                        // Validate ID
+                        let agent_id_bytes = match parse_agent_id(file_stem) {
+                            Ok(bytes) => bytes,
+                            Err(_) => {
+                                eprintln!(
+                                    "[SYSTEM WARN] Invalid Agent ID filename: {}. Skipping...",
+                                    file_stem
+                                );
+                                continue;
+                            }
+                        };
+
+                        let agent_hex = hex::encode(agent_id_bytes);
+                        println!("[SYSTEM] Deploying Agent: {} ", &agent_hex);
+
                         let _ = w_event_tx.send(SystemEvent::PluginLoaded {
                             plugin_name: entry.file_name().to_string_lossy().to_string(),
                         });
@@ -179,10 +199,8 @@ async fn main() {
                         let tx_clone = w_event_tx.clone();
                         let lance_clone = w_lance.clone();
                         let ae_clone = w_aegis.clone();
-                        // When an agent connects or boots, we retreive or initialize its specific tracker
-                        // TODO: pull from config or CLI flag.
-                        let agent_id = "12b";
 
+                        // When an agent connects or boots, we retreive or initialize its specific tracker
                         let content = SandboxContent {
                             axon: a_clone,
                             brain: b_clone,
@@ -192,7 +210,7 @@ async fn main() {
                             global_tx_counter: t_clone,
                             event_tx: tx_clone,
                             wasi: wasi_ctx,
-                            agent_hex: agent_id.to_string(),
+                            agent_hex: agent_hex.clone(),
                             lance: lance_clone,
                             aegis: ae_clone,
                             live_responses: Vec::new(),
@@ -205,12 +223,10 @@ async fn main() {
 
                         let mut tracker_lock = global_tracker.lock().unwrap();
                         let agent_tracker =
-                            tracker_lock
-                                .entry(agent_id.to_string())
-                                .or_insert(CheckPointTracker {
-                                    last_snapshot_tx: 0,
-                                    last_snapshot_time: 0,
-                                });
+                            tracker_lock.entry(agent_hex).or_insert(CheckPointTracker {
+                                last_snapshot_tx: 0,
+                                last_snapshot_time: 0,
+                            });
 
                         // Get the exact current Transaction ID
                         let current_tx = tx_counter.load(std::sync::atomic::Ordering::SeqCst);
