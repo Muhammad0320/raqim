@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter, sandbox::WasmEngine,
+    telemetry::TelemetryEngine,
 };
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ pub struct ApiState {
     pub aegis: Arc<AegisGateKeeper>,
     pub router: Arc<MemoryRouter>,
     pub wasm_engine: Arc<WasmEngine>,
+    pub telemetry: Arc<TelemetryEngine>,
 }
 
 // Authorization middleware ( The enterprise firewall )
@@ -49,13 +51,24 @@ async fn get_quarantine(State(state): State<ApiState>) -> Result<Json<Vec<String
 #[derive(Deserialize)]
 struct ResurrectPayload {
     agent_id: String,
+    target_tx_id: u64,
 }
 
 async fn lift_qurantine_and_resurrect(
     State(state): State<ApiState>,
     Json(payload): Json<ResurrectPayload>,
 ) -> Result<StatusCode, StatusCode> {
+    // List the Aegis Block.
     state.aegis.lift_quarantine(&payload.agent_id);
+
+    // 2. Rebuild the Timeline
+    let (base_snapshot, historical_oplog) = state.router.rebuild_agent_timeline(
+        &payload.agent_id,
+        payload.target_tx_id,
+        state.wasm_engine.clone(),
+        state.telemetry.clone(),
+    );
+
     Ok(StatusCode::OK)
 }
 
