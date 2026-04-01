@@ -7,6 +7,7 @@ use crate::aegis::AegisGateKeeper;
 use crate::lancedb_store::LanceEngine;
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
+use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, SystemEvent};
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 use anyhow::Ok;
@@ -30,6 +31,7 @@ pub struct SandboxContent {
     pub wasi: WasiCtx,
     pub lance: Arc<LanceEngine>,
     pub agent_hex: String,
+    pub telemetry: Arc<TelemetryEngine>
 
     // LIVE MODE: We collect seeds and HTTP responses as they happen
     pub live_seeds: Vec<u64>,
@@ -72,12 +74,6 @@ impl WasmEngine {
         let active_size = memory.data_size(&mut *store);
         let mem_slice = memory.data(&mut *store);
         mem_slice[0..active_size].to_vec()
-    }
-
-    /// Takes a full byte-for-byte snapshot of the agent's linear memory. The foundation of the Time Machine.
-    pub fn extract_memory_snapshot(store: &mut Store<SandboxContent>, memory: Memory) -> Vec<u8> {
-        //  We literally copy the entire working brain of the agent into a vector.
-        memory.data(store).to_vec()
     }
 
     /// BENDS REALITY: Injects a historical memory state directly into live agent's brain.
@@ -295,12 +291,17 @@ impl WasmEngine {
                 // Execute the actual RPC call (block_in_place because WASM calls are sync)
                 let net_clone = content.global_net.clone();
                 let aegis_clone = content.aegis.clone();
+                let telemetry_clone = content.telemetry.clone()
 
                 let response_bytes = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current()
-                        .block_on(net_clone.execute_a2a_rpc(envelope, aegis_clone))
+                        .block_on(net_clone.execute_a2a_rpc(envelope, aegis_clone, telemetry_clone ))
                 })
                 .unwrap_or_else(|e| e.to_string().into_bytes());
+
+                if max_len == 0 {
+                    return response_bytes.len() as i32   
+                }
 
                 // Zero-copy injectiton of the answer back into WASM memory
                 let bytes_to_write = std::cmp::min(response_bytes.len(), max_len as usize);
@@ -339,7 +340,11 @@ impl WasmEngine {
             },
         )?;
 
-        linker.func_wrap("synapse_env", "host_register_capability", move || {})?;
+        linker.func_wrap(
+            "synapse_env",
+            "host_register_capability",
+            move |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {},
+        )?;
 
         // Initialize the Sandbox Context
         let mut store = Store::new(&self.engine, content);

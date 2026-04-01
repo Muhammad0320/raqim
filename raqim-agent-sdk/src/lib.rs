@@ -10,6 +10,7 @@ extern "C" {
         payload_ptr: *const u8, payload_len: usize,
         out_ptr: *mut u8, max_len: usize
     ) -> 132;
+    fn host_register_capability(ptr: *const u8, len: usize);
 
 }
 
@@ -25,8 +26,24 @@ impl Raqim {
 
     pub fn ask_swarm(capability: &str, question: &[u8]) -> Result<Vec<u8>, String> {
 
-        // Pre-allocate a 1MB buffer for response
-        let mut res_buffer = vec![0u8; 1024 * 1024];
+        // TODO: Hard cap to 1mb.
+        // PASS 1: Ask the required buffer size 
+        let required_size = unsafe {
+            host_ask_agent(capability.as_ptr(), capability.len(), question.as_ptr(), question.len(), std::ptr::null_mut(), 0 )
+        };
+
+        if required_size < 0 {
+            return Err("A2A Request Failed".to_string());
+        }
+
+        if required_size == 0 {
+            return Ok(Vec::new())
+        }
+
+        
+        
+        // PASS 2: Allocate exactly what is needed and fetch the data
+        let mut res_buffer = vec![0u8; required_size as usize];
 
         let bytes_written = unsafe {
             host_ask_agent(
@@ -36,20 +53,27 @@ impl Raqim {
             )
         };
 
-        if bytes_written < 0 {
-            return Err("A2A Request Failed".to_string());
+        if bytes_written != required_size {
+            return Err("Memory mismatch during 2-pass allocation".to_string());
         }
 
-        res_buffer.truncate(bytes_written as usize);
-        Ok(res_buffer)
 
+        Ok(res_buffer)
     }
 
-    pub fn emit_thought(text: &str) {
-
-        let bytes = text.as_bytes();
+    pub fn emit_thought(state: &AgentState) {
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(state);
         unsafe {
-            host_emit_thought(bytes.as_ptr(), bytes.len() );
+            host_emit_thought(bytes.as_ptr(), bytes.len());
+        }
+    }
+
+    pub fn register_capability(path: &str) {
+
+        let bytes = path.as_bytes();
+
+        unsafe {
+            host_register_capability(bytes.as_ptr(), bytes.len())
         }
 
     }
