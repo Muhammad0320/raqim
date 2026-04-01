@@ -1,11 +1,13 @@
 use axum::{
     Json, Router,
-    extract::State,
+    extract::{Multipart, State},
     http::{HeaderMap, Request, StatusCode},
     middleware::{self, Next},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use serde::{Deserialize, Serialize};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast::Sender, mpsc};
 use wasmtime_wasi::WasiCtx;
@@ -23,7 +25,10 @@ use crate::{
     state::SwarmState,
     telemetry::TelemetryEngine,
 };
-use std::sync::{Arc, atomic::AtomicU64};
+use std::{
+    fs,
+    sync::{Arc, atomic::AtomicU64},
+};
 
 #[derive(Clone)]
 pub struct ApiState {
@@ -49,6 +54,13 @@ pub struct ApiState {
     pub replay_seeds: Vec<u64>,
     pub replay_responses: Vec<String>,
     pub replay_timestamps: Vec<i64>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct AdminClaims {
+    sub: String,
+    role: String,
+    exp: usize,
 }
 
 // Authorization middleware ( The enterprise firewall )
@@ -129,6 +141,7 @@ async fn lift_qurantine_and_resurrect(
         live_responses: Vec::new(),
         live_seeds: Vec::new(),
         live_timestamps: Vec::new(),
+        telemetry: state.telemetry,
 
         replay_responses: replay_responses,
         replay_seeds: replay_seeds,
@@ -136,6 +149,44 @@ async fn lift_qurantine_and_resurrect(
     };
 
     Ok(StatusCode::OK)
+}
+
+async fn upload_agent_wasm(
+    headers: HeaderMap,
+    State(state): State<ApiState>,
+    mut multipart: Multipart,
+) -> Result<StatusCode, StatusCode> {
+    // Stream the file to disk
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+    {
+        let file_name = field
+            .file_name()
+            .unwrap_or("unknown_agent.wasm")
+            .to_string();
+
+        if !file_name.ends_with(".wasm") {
+            return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        }
+
+        let data = field
+            .bytes()
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let file_path = format!("./plugins/{}", file_name);
+        fs::write(&file_path, data).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        println!(
+            "[API] Successfully received and staged agent: {}",
+            file_name
+        );
+        return Ok(StatusCode::CREATED);
+    }
+
+    Err(StatusCode::BAD_REQUEST)
 }
 
 // Route Builder
