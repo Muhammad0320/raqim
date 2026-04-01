@@ -88,7 +88,11 @@ impl SwarmState {
 
         // 5. TRUE DELTA EXPORT: We tell loro to export ONLY the bytes that changed since the `previous_frontier`.
         // Ultimately creating a tiny [u8] payload
-        self.doc.export(&previous_frontier)
+        self.doc
+            .export(loro::ExportMode::Updates {
+                from: &previous_frontier,
+            })
+            .expect("Failed to export CRDT delta")
     }
 
     /// Merges another agent's thought (action) into this agent's brain.

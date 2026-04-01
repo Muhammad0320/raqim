@@ -1,16 +1,16 @@
 use axum::{
+    async_trait,
     Json, Router,
-    extract::{Multipart, State},
-    http::{HeaderMap, Request, StatusCode},
+    extract::{FromRef, FromRequestParts, Multipart, State},
+    http::{HeaderMap, Request, StatusCode, request::Parts},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
-use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast::Sender, mpsc};
-use wasmtime_wasi::WasiCtx;
+use wasmtime_wasi::{WasiCtx};
 
 use crate::{
     SystemEvent,
@@ -54,13 +54,52 @@ pub struct ApiState {
     pub replay_seeds: Vec<u64>,
     pub replay_responses: Vec<String>,
     pub replay_timestamps: Vec<i64>,
+
+    pub decoding_key: Arc<DecodingKey>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct AdminClaims {
-    sub: String,
-    role: String,
-    exp: usize,
+#[derive(Serialize, Deserialize, Debug)]
+struct EnterpriseClaim {
+    pub sub: String, // Tenant id
+    pub features: Vec<String>,
+    pub exp: usize,
+}
+
+// THE AXUS EXTRACTOR: This automatically protects any route it is attached to.
+pub struct ValidatedEnterprise;
+
+#[async_trait]
+impl<S> FromRequestParts<S> for ValidatedEnterprise
+where
+    ApiState: axum::extract::FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+
+        let api_state = ApiState::from_ref(state); 
+
+        let auth_header = parts.headers.get("Authorization").and_then(|h| h.to_str().ok()).filter(|s| s.starts_with("Bearer ")).map(|s| &s[7..] ).ok_or(StatusCode::UNAUTHORIZED)?;
+
+        // TRUE CRYPTOGRAPHIC VERIFICATION
+        let validation = Validation::new(Algorithm::RS256);
+        match decode::<EnterpriseClaim>(auth_header, &api_state.decoding_key, &validation) {
+
+            Ok(token_data) => {
+                // Feature gating! If they didn't pay for Aegis block the admin API
+                if !token_data.claims.features.comtains(&"aegis".to_string()) {
+                    return Err(StatusCode::FORBIDDEN);
+                }
+                Ok(ValidatedEnterprise)
+            }
+
+            Err(e) => {
+                eprintln!("[SECURITY] Crytographic JWT validation failed: {}", e);
+                Err(StatusCode::UNAUTHORIZED)
+            }
+        }
+    }
 }
 
 // Authorization middleware ( The enterprise firewall )
@@ -192,14 +231,13 @@ async fn upload_agent_wasm(
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> Router {
     Router::new()
-        .route("/v1/admin/quarantine", get(get_quarantine))
+        .route("/v1/admin/quarantine", get( |_auth: ValidatedEnterprise, State(s): State<ApiState>| async move {
+            get_quarantine 
+        } ))
         .route(
             "/v1/admin/quarantine/lift",
             post(lift_qurantine_and_resurrect),
         )
-        .route_layer(middleware::from_fn_with_state(
-            state.clone(),
-            auth_middleware,
-        ))
+        .route("/v1/admin/upload_agent", post(upload_agent_wasm))
         .with_state(state)
 }
