@@ -42,6 +42,9 @@ pub struct SandboxContent {
     pub replay_seeds: Vec<u64>,
     pub replay_responses: Vec<String>,
     pub replay_timestamps: Vec<i64>,
+
+    // Temporary Cache
+    pub a2a_response_cache: Vec<u8>,
 }
 
 pub struct CheckPointTracker {
@@ -257,6 +260,7 @@ impl WasmEngine {
             },
         )?;
 
+        // PASS 1: The Request
         linker.func_wrap(
             "synapse_env",
             "host_ask_agent",
@@ -264,10 +268,7 @@ impl WasmEngine {
                   cap_ptr: i32,
                   cap_len: i32,
                   payload_ptr: i32,
-                  payload_len: i32,
-                  out_ptr: i32,
-                  out_len: i32,
-                  max_len: i32|
+                  payload_len: i32|
                   -> i32 {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
                 let mem_slice = mem.data(&caller);
@@ -304,20 +305,29 @@ impl WasmEngine {
                 })
                 .unwrap_or_else(|e| e.to_string().into_bytes());
 
-                if max_len == 0 {
-                    return response_bytes.len() as i32;
+                // HARD CAP: 2 MB to prevent OOM attacks
+                if response_bytes.len() > 2 * 1024 * 1024 {
+                    return -1; // Error code for payload too large!
                 }
 
-                // Zero-copy injectiton of the answer back into WASM memory
-                let bytes_to_write = std::cmp::min(response_bytes.len(), max_len as usize);
-                mem.write(
-                    &mut caller,
-                    out_ptr as usize,
-                    &response_bytes[..bytes_to_write],
-                )
-                .unwrap();
+                content.a2a_response_cache = response_bytes;
+                response_bytes.len() as i32
+            },
+        )?;
 
-                bytes_to_write as i32
+        // Pass 2: The Receiver
+        linker.func_wrap(
+            "synapse_env",
+            "host_pull_a2a_response",
+            move |mut caller: Caller<'_, SandboxContent>, out_ptr: i32| {
+                let cached_res = caller.data_mut().a2a_response_cache.clone();
+                let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
+
+                // Physically copy the stashed bytes into the guest's perfectly sized pointer
+                mem.write(&mut caller, out_ptr as usize, &cached_res)
+                    .expect("Failed to write to Guest RAM");
+
+                caller.data_mut().a2a_response_cache.clear(); // Free host RAM
             },
         )?;
 
