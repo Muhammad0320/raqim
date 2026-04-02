@@ -336,7 +336,7 @@ impl MemoryRouter {
         }
 
         // 3. Prepare the Sandbox content for a reboot
-        let wasm_bytes = std::fs::read(format!("./plugins/{}.wasm", agent_hex))
+        let wasm_bytes = std::fs::read(format!("./plugins_arhive/{}.wasm.running", agent_hex))
             .map_err(|_| anyhow::anyhow!("WASM binary not found on disk for resurrection"))?;
 
         let wasi_ctx = WasiCtxBuilder::new().build();
@@ -368,9 +368,17 @@ impl MemoryRouter {
         // 4. Spawn the brand new engine thread
         let engine = self.wasm_engine.clone();
 
+        // Now use the unified execute_agent function
         tokio::spawn(async move {
-
-            // Reboot the WASM!
+            if let Err(e) = engine.execute_agent(
+                &wasm_bytes,
+                content,
+                &mut tracker,
+                current_tx,
+                Some(memory_blob),
+            ) {
+                eprintln!("[RESURRECTION FAILED] Agent crached: {} ", e);
+            }
         });
 
         println!("[SYSTEM] Agent {} successfully resurrected. ", agent_hex);

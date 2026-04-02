@@ -247,6 +247,7 @@ async fn main() {
                             content,
                             agent_tracker,
                             current_tx,
+                            vec![0u8],
                         ) {
                             eprintln!("Plugin {:?} trapped/failed: {} ", &path, e);
                         }

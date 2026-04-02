@@ -52,6 +52,8 @@ impl LanceEngine {
             Field::new("timestamp", DataType::Int64, false),
             Field::new("status", DataType::Utf8, false),
             Field::new("text", DataType::Utf8, false),
+            Field::new("entropy_seeds", DataType::Utf8, false),
+            Field::new("network_responses", DataType::Utf8, false),
             // We store the raw binary delta
             Field::new("payload", DataType::Binary, false),
             Field::new(

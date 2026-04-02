@@ -99,6 +99,7 @@ impl WasmEngine {
         content: SandboxContent,
         tracker: &mut CheckPointTracker,
         current_tx_id: u64,
+        historical_snapshot: Option<Vec<u8>>,
     ) -> Result<(), anyhow::Error> {
         let mut linker = Linker::new(&self.engine);
 
@@ -376,6 +377,20 @@ impl WasmEngine {
         let module = Module::new(&self.engine, wasm_binary)?;
         let instance = linker.instantiate(&mut store, &module)?;
 
+        // === REALITY INJECTION ===
+        if let Some(snapshot) = historical_snapshot {
+            let memory = instance.get_memory(&mut store, "memory").unwrap();
+
+            // Violently overwrite the blank memory with the historical snapshot
+            memory
+                .write(&mut store, 0, &snapshot)
+                .map_err(|e| anyhow::anyhow!("Failed to inject historical timeline: {}", e))?;
+            println!(
+                "[TIME MACHINE] Historical Memory Snapshot Injected ({} bytes). ",
+                snapshot.len()
+            );
+        }
+
         // THE HYBRID CHECKPOINT
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -424,7 +439,7 @@ impl WasmEngine {
             });
         }
 
-        // Retreive the  'main' function of AI agent and execute it
+        // Retreive the 'main' function of AI agent and execute it
         let agent_main = instance.get_typed_func::<(), ()>(&mut store, "agent_main")?;
         match agent_main.call(&mut store, ()) {
             std::result::Result::Ok(_) => {
