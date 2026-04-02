@@ -33,27 +33,7 @@ use std::{
 #[derive(Clone)]
 pub struct ApiState {
     pub config: RaqimConfig,
-    pub aegis: Arc<AegisGateKeeper>,
-    pub axon: Arc<AxonGateKeeper>,
-    pub brain: Arc<SwarmState>,
-    pub router: Arc<MemoryRouter>,
-    pub wasm_engine: Arc<WasmEngine>,
-    pub telemetry: Arc<TelemetryEngine>,
-    pub wal_engine: Arc<WalEngine>,
-    pub lance: Arc<LanceEngine>,
-    pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
-    pub global_net: Arc<GlobalNetworkBridge>,
-    pub global_tx_counter: Arc<AtomicU64>,
-    pub event_tx: Sender<SystemEvent>,
-    pub wasi: WasiCtx,
-
-    pub live_seeds: Vec<u64>,
-    pub live_responses: Vec<String>,
-    pub live_timestamps: Vec<i64>,
-
-    pub replay_seeds: Vec<u64>,
-    pub replay_responses: Vec<String>,
-    pub replay_timestamps: Vec<i64>,
+    
 
     pub decoding_key: Arc<DecodingKey>,
 }
