@@ -21,19 +21,20 @@ impl SwarmState {
         // --- THE CRDT EVENT LISTENER ---
         // We attach a deep listener to the Loro Doc. Whenever the math resolves a conflict, this closure fires syncronously
         let tx_clone = event_tx.clone();
-        let subscriber = doc.subscribe(Box::new(move |event: &loro::event::DiffEvent| {
+        let doc_clone = doc.clone();
+        let subscriber = doc.subscribe_root(Arc::new(move |event: &loro::event::DiffEvent| {
             // event.events contains the precise diffs (what was added, deleted, updated)
             for diff in &event.events {
                 let target_path = diff
                     .path
                     .iter()
-                    .map(|p| p.to_string())
+                    .map(|p| format!("{:?}", p))
                     .collect::<Vec<String>>()
                     .join("/");
 
                 // Extract the actual Loro Lamport Clock (TxID) for this exact merge event!
-                let front = event
-                    .current_frontiers
+                let front = doc_clone
+                    .oplog_frontiers()
                     .first()
                     .map(|id| id.counter as u64)
                     .unwrap_or(0);

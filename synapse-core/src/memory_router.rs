@@ -320,8 +320,9 @@ impl MemoryRouter {
         );
 
         // 1. Fetch the absolute latest timeline (Snapshot + delta)
-        let (memory_blob, historical_oplog) =
-            self.rebuild_agent_timeline(&agent_hex, u64::MAX, wal_engine);
+        let (memory_blob, historical_oplog) = self
+            .rebuild_agent_timeline(&agent_hex, u64::MAX, wal_engine)
+            .await?;
 
         // 2. Extract deterministic flight recorder from oplogs
         let mut recovered_seeds = Vec::new();
@@ -361,6 +362,7 @@ impl MemoryRouter {
             replay_seeds: recovered_seeds,
             replay_timestamps: recovered_timestamps,
             a2a_response_cache: Vec::new(),
+            http_response_cache: Vec::new(),
         };
 
         // 4. Spawn the brand new engine thread

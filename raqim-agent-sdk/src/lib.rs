@@ -15,7 +15,8 @@ extern "C" {
         payload_ptr: *const u8, payload_len: usize,
     ) -> i32;
 
-    fn host_pull_a2a_response(out_prt: *mut u8)
+    fn host_pull_a2a_response(out_ptr: *mut u8)
+    fn host_pull_http_response(out_ptr: *mut u8)
 }
 
 
@@ -59,11 +60,11 @@ impl Raqim {
 
         // First pass
         let required_size = unsafe {
-            host_fetch_url(url.as_ptr(), url.len(), std::ptr::null_mut, 0)
+            host_fetch_url(url.as_ptr(), url.len())
         }
 
         if required_size < 0 {
-            return Err("Network request failed".to_string());
+            return Err("Network request failed or payload exceeds 2MB limit ".to_string());
         }
 
         if required_size == 0 {
@@ -71,16 +72,12 @@ impl Raqim {
         }
 
         // Second pass
-        let mut res_buffer = vec![0u8; required_size as usize];
-        let bytes_written = unsafe {
-            host_fetch_url(url.as_ptr(), url.len(), res_buffer.as_mut_ptr(), res_buffer.len())
-        }
+        let mut exact_buffer = vec![0u8; required_size as usize];
+        unsafe {
+            host_pull_http_response(exact_buffer.as_mut_ptr())
+        };
 
-        if bytes_written != required_size {
-            return Err("Memory mismatch during 2-pass allocation".to_string());
-        }
-
-        String::from_utf8(res_buffer).map_err(|e| e.to_string())
+        String::from_utf8(exact_buffer).map_err(|e| e.to_string())
     }
 
     pub fn emit_thought(state: &AgentState) {
