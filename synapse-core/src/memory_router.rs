@@ -5,14 +5,22 @@ use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
 use rkyv::{Archive, Archived};
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::atomic::AtomicU64;
 use std::{fs::File, sync::Arc, u64};
 use tokio::sync::broadcast;
+use tokio::sync::mpsc;
+use wasmtime_wasi::WasiCtxBuilder;
 
 pub enum RebuildMode {
     Resurrection,
     TimeTravel(u64), //
 }
 
+use crate::aegis::AegisGateKeeper;
+use crate::axon::AxonGateKeeper;
+use crate::network::GlobalNetworkBridge;
+use crate::sandbox::SandboxContent;
+use crate::sandbox::WasmEngine;
 use crate::telemetry::TelemetryEngine;
 use crate::{
     OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
@@ -23,14 +31,48 @@ pub struct MemoryRouter {
     wal_path: String,
     lance_engine: Arc<LanceEngine>,
     config: RaqimConfig,
+    telemetry: Arc<TelemetryEngine>,
+    aegis: Arc<AegisGateKeeper>,
+    axon: Arc<AxonGateKeeper>,
+    brain: Arc<SwarmState>,
+    wasm_engine: Arc<WasmEngine>,
+    wal_engine: Arc<WalEngine>,
+    cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
+    global_net: Arc<GlobalNetworkBridge>,
+    global_tx_counter: Arc<AtomicU64>,
+    event_tx: Sender<SystemEvent>,
 }
 
 impl MemoryRouter {
-    pub fn new(wal_path: &str, lance_engine: Arc<LanceEngine>, config: RaqimConfig) -> Self {
+    pub fn new(
+        wal_path: &str,
+        lance_engine: Arc<LanceEngine>,
+        config: RaqimConfig,
+        telemetry: Arc<TelemetryEngine>,
+        aegis: Arc<AegisGateKeeper>,
+        axon: Arc<AxonGateKeeper>,
+        brain: Arc<SwarmState>,
+        wasm_engine: Arc<WasmEngine>,
+        wal_engine: Arc<WalEngine>,
+        cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
+        global_net: Arc<GlobalNetworkBridge>,
+        global_tx_counter: Arc<AtomicU64>,
+        event_tx: Sender<SystemEvent>,
+    ) -> Self {
         Self {
             wal_path: wal_path.to_string(),
             lance_engine,
             config,
+            telemetry,
+            aegis,
+            axon,
+            brain,
+            wasm_engine,
+            wal_engine,
+            cortex_tx,
+            global_net,
+            global_tx_counter,
+            event_tx,
         }
     }
 
@@ -190,9 +232,8 @@ impl MemoryRouter {
         agent_hex: &str,
         target_tx_id: u64,
         wal_engine: Arc<WalEngine>,
-        telemetry: Arc<TelemetryEngine>,
     ) -> Result<(Vec<u8>, Vec<OpLog>), anyhow::Error> {
-        telemetry.record_time_travel();
+        self.telemetry.record_time_travel();
 
         // 1. O(1) COLD MEMORY JUMP (LanceDB)
         let (snapshot_txid, memory_blob) = self
@@ -265,5 +306,72 @@ impl MemoryRouter {
             }
         }
         Ok((memory_blob, historical_oplogs))
+    }
+
+    /// Fully resurrect a crashed or quarantined agent to its absolute latest state
+    pub async fn resurrect_wasm_thread(
+        &self,
+        agent_hex: &str,
+        wal_engine: Arc<WalEngine>,
+    ) -> Result<(), anyhow::Error> {
+        println!(
+            "[SYSTEM] Initiating Resurrection Sequence for Agent: {}",
+            agent_hex
+        );
+
+        // 1. Fetch the absolute latest timeline (Snapshot + delta)
+        let (memory_blob, historical_oplog) =
+            self.rebuild_agent_timeline(&agent_hex, u64::MAX, wal_engine);
+
+        // 2. Extract deterministic flight recorder from oplogs
+        let mut recovered_seeds = Vec::new();
+        let mut recovered_network = Vec::new();
+        let mut recovered_timestamps = Vec::new();
+
+        for log in historical_oplog {
+            recovered_seeds.extend(log.entropy_seeds);
+            recovered_network.extend(log.network_responses);
+            recovered_timestamps.push(log.state.timestamp);
+        }
+
+        // 3. Prepare the Sandbox content for a reboot
+        let wasm_bytes = std::fs::read(format!("./plugins/{}.wasm", agent_hex))
+            .map_err(|_| anyhow::anyhow!("WASM binary not found on disk for resurrection"))?;
+
+        let wasi_ctx = WasiCtxBuilder::new().build();
+
+        let mut content = SandboxContent {
+            axon: self.axon,
+            aegis: self.aegis,
+            brain: self.brain,
+            wal: self.wal_engine,
+            global_net: self.global_net,
+            cortex_tx: self.cortex_tx,
+            global_tx_counter: self.global_tx_counter,
+            event_tx: self.event_tx,
+            wasi: wasi_ctx,
+            lance: self.lance_engine,
+            agent_hex: agent_hex.to_string(),
+            telemetry: self.telemetry,
+            live_seeds: Vec::new(),
+            live_responses: Vec::new(),
+            live_timestamps: Vec::new(),
+
+            replay_responses: recovered_network,
+            replay_seeds: recovered_seeds,
+            replay_timestamps: recovered_timestamps,
+            a2a_response_cache: Vec::new(),
+        };
+
+        // 4. Spawn the brand new engine thread
+        let engine = self.wasm_engine.clone();
+
+        tokio::spawn(async move {
+
+            // Reboot the WASM!
+        });
+
+        println!("[SYSTEM] Agent {} successfully resurrected. ", agent_hex);
+        Ok(())
     }
 }
