@@ -45,6 +45,7 @@ pub struct SandboxContent {
 
     // Temporary Cache
     pub a2a_response_cache: Vec<u8>,
+    pub http_response_cache: Vec<u8>,
 }
 
 pub struct CheckPointTracker {
@@ -206,17 +207,12 @@ impl WasmEngine {
             },
         )?;
 
-        // Network Interceptor (Reality Fork)
-        // The WASM agent passes a pointer to the URL it wants tot fetch
+        // Network Interceptor (Reality Fork) -- PASS 1.
+        // The WASM agent passes a pointer to the URL it wants to fetch
         linker.func_wrap(
             "synapse_env",
             "host_fetch_url",
-            move |mut caller: Caller<'_, SandboxContent>,
-                  url_ptr: i32,
-                  url_len: i32,
-                  out_ptr: i32,
-                  out_len: i32|
-                  -> i32 {
+            move |mut caller: Caller<'_, SandboxContent>, url_ptr: i32, url_len: i32| -> i32 {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
 
                 // Read the URL requested by the agent.
@@ -243,20 +239,29 @@ impl WasmEngine {
                     res
                 };
 
-                // 3. ZERO-COPY Injection into WASM memory.
-                let response_bytes = response_string.as_bytes();
-                let bytes_to_write = std::cmp::min(response_bytes.len(), out_len as usize);
+                let response_bytes = response_string.into_bytes();
 
-                // We physically overrites the agent's pre-allocated buffer with thr HTTP response.
-                mem.write(
-                    &mut caller,
-                    out_ptr as usize,
-                    &response_bytes[..bytes_to_write],
-                )
-                .expect("Failed to write the network res to WASM memory");
+                if response_bytes.len() > 2 * 1024 * 1024 {
+                    return -1;
+                }
+
+                let len = response_bytes.len() as i32;
+                content.http_response_cache = response_bytes;
 
                 // Return the actutal number of bytes written so the agent_knows how to much to read
-                bytes_to_write as i32
+                len
+            },
+        )?;
+
+        // PASS 2: Pull the bytes
+        linker.func_wrap(
+            "synapse_env",
+            "host_pull_http_response",
+            move |mut caller: Caller<'_, SandboxContent>, out_ptr: i32| {
+                let cached_response = caller.data_mut().http_response_cache.clone();
+                let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
+                mem.write(&mut caller, out_ptr as usize, &cached_response);
+                caller.data_mut().http_response_cache.clear();
             },
         )?;
 
