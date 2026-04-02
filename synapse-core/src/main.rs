@@ -92,10 +92,15 @@ async fn main() {
     });
 
     // BOOT THE AXUM CONTROL PLANE (port + 1 to keep it off the raw TCP port)
+    let pem_content =
+        std::fs::read(&config.public_key_path).expect("Missing Enterprise Public Key");
+    let decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content).unwrap());
+
     let api_state = ApiState {
         config: config.clone(),
-        aegis: aegis.clone(),
+        decoding_key,
     };
+
     let axum_app = build_admin_router(api_state);
     let api_port = config.port + 1;
     tokio::spawn(async move {
@@ -141,6 +146,7 @@ async fn main() {
     let w_tx_couter = tx_counter.clone();
     let w_event_tx = event_tx.clone();
     let w_aegis = aegis.clone();
+    let w_telemetry = telemetry.clone();
 
     // Spawns a dedicated background thread to monitor the plugins folder
     tokio::spawn(async move {
@@ -199,6 +205,7 @@ async fn main() {
                         let tx_clone = w_event_tx.clone();
                         let lance_clone = w_lance.clone();
                         let ae_clone = w_aegis.clone();
+                        let tele_clone = w_telemetry.clone();
 
                         // When an agent connects or boots, we retreive or initialize its specific tracker
                         let content = SandboxContent {
@@ -219,6 +226,9 @@ async fn main() {
                             replay_responses: Vec::new(),
                             replay_seeds: Vec::new(),
                             replay_timestamps: Vec::new(),
+                            telemetry: tele_clone,
+                            a2a_response_cache: Vec::new(),
+                            http_response_cache: Vec::new(),
                         };
 
                         let mut tracker_lock = global_tracker.lock().unwrap();

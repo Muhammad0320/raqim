@@ -18,6 +18,9 @@ pub struct CliArgs {
     #[arg(short, long)]
     pub aegis_path: Option<String>,
 
+    #[arg(short, long)]
+    pub public_key_path: Option<String>,
+
     #[arg(long)]
     pub tenant_id: Option<String>,
 
@@ -43,6 +46,7 @@ pub struct RaqimConfig {
     pub table_name: String,
     pub tenant_id: String,
     pub license_key: String,
+    pub public_key_path: String,
     pub dims: i32,
     pub limit: usize,
     pub port: u16,
@@ -58,6 +62,7 @@ impl Default for RaqimConfig {
             table_name: "agent_history".to_string(),
             tenant_id: "open_core_local".to_string(),
             license_key: "dev_move".to_string(),
+            public_key_path: "public_key.pem".to_string(),
             dims: 384,
             limit: 5,
             port: 8080,
@@ -94,21 +99,26 @@ impl RaqimConfig {
         if let Some(w) = args.wal_path {
             config.wal_path = w;
         }
+
+        if let Some(p_key) = args.public_key_path {
+            config.public_key_path = p_key;
+        }
+
         if let Some(l) = args.lance_path {
             config.lance_path = l;
         }
         if let Some(d) = args.dims {
             config.dims = d;
         }
-        if Some(t_id) = args.tenant_id {
+        if let Some(t_id) = args.tenant_id {
             config.tenant_id = t_id;
         }
 
-        if Some(a) = args.aegis_path {
+        if let Some(a) = args.aegis_path {
             config.aegis_path = a;
         }
 
-        if Some(key) = args.license_key {
+        if let Some(key) = args.license_key {
             config.license_key = key;
         }
 
