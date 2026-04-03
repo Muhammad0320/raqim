@@ -1,5 +1,6 @@
 use arrow_array::Array;
 use futures::StreamExt;
+use lancedb::connect;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
@@ -11,7 +12,6 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 use wasmtime_wasi::WasiCtxBuilder;
-use lancedb::connect;
 
 pub enum RebuildMode {
     Resurrection,
@@ -271,7 +271,9 @@ impl MemoryRouter {
             let table = self
                 .lance_engine
                 .db
-                .open_table(&self.lance_engine.history_table).execute().await?;
+                .open_table(&self.lance_engine.history_table)
+                .execute()
+                .await?;
 
             // Query all the snapshots btw snapshot and target
             let mut stream = table
@@ -337,8 +339,8 @@ impl MemoryRouter {
                         "TOOL_EXEC" => AgentStatus::ToolExecution,
                     };
 
-                    let recovered_seed: Vec<u64> = serde_json::from_string(seed_col.value(i));
-                    let recovered_res: Vec<String> = serde_json::from_string(net_col.value(i));
+                    let recovered_seed: Vec<u64> = serde_json::from_str(seed_col.value(i))?;
+                    let recovered_res: Vec<String> = serde_json::from_str(net_col.value(i))?;
 
                     let reconstruct_log = OpLog {
                         agent_id: [0; 16],
@@ -456,9 +458,9 @@ impl MemoryRouter {
             brain: self.brain.clone(),
             wal: self.wal_engine.clone(),
             global_net: self.global_net.clone(),
-            cortex_tx: self.cortex_tx.closed(),
+            cortex_tx: self.cortex_tx.clone(),
             global_tx_counter: self.global_tx_counter.clone(),
-            event_tx: self.event_tx.closed(),
+            event_tx: self.event_tx.clone(),
             wasi: wasi_ctx,
             lance: self.lance_engine.clone(),
             agent_hex: agent_hex.to_string(),
@@ -477,10 +479,16 @@ impl MemoryRouter {
         // 4. Spawn the brand new engine thread
         let engine = self.wasm_engine.clone();
 
-            let mut tracker = CheckPointTracker { last_snapshot_tx: 0, last_snapshot_time: 0 }
+        let mut tracker = CheckPointTracker {
+            last_snapshot_tx: 0,
+            last_snapshot_time: 0,
+        };
 
-                        // Get the exact current Transaction ID
-                        let current_tx = self.global_tx_counter.load(std::sync::atomic::Ordering::SeqCst);
+        // Get the exact current Transaction ID
+        let current_tx = self
+            .global_tx_counter
+            .clone()
+            .load(std::sync::atomic::Ordering::SeqCst);
 
         // Now use the unified execute_agent function
         tokio::spawn(async move {

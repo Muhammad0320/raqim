@@ -12,7 +12,7 @@ use lancedb::connect;
 use lancedb::connection::Connection;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct LanceEngine {
@@ -20,7 +20,7 @@ pub struct LanceEngine {
     pub history_table: String,
     pub snapshot_table: String,
     pub dims: i32,
-    embedder: TextEmbedding,
+    pub embedder: Mutex<TextEmbedding>,
 }
 
 impl LanceEngine {
@@ -32,8 +32,10 @@ impl LanceEngine {
             .expect("Failed to connect to lanceDB");
 
         // Initialize the local AI embedding model
-        let embedder = TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))
-            .expect("Failed to initialize FastEmbed ");
+        let embedder = Mutex::new(
+            TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))
+                .expect("Failed to initialize FastEmbed "),
+        );
 
         Self {
             db,
@@ -241,12 +243,12 @@ impl LanceEngine {
             .collect();
         let seeds: Vec<String> = logs
             .iter()
-            .map(|l| serde_json::to_string(l.entropy_seeds).unwrap_or_else(|_| "[]".to_string()))
+            .map(|l| serde_json::to_string(&l.entropy_seeds).unwrap_or_else(|_| "[]".to_string()))
             .collect();
         let http_responses: Vec<String> = logs
             .iter()
             .map(|l| {
-                serde_json::to_string(l.network_responses).unwrap_or_else(|_| "[]".to_string())
+                serde_json::to_string(&l.network_responses).unwrap_or_else(|_| "[]".to_string())
             })
             .collect();
         let timestmaps: Vec<i64> = logs.iter().map(|l| l.state.timestamp as i64).collect();
@@ -315,13 +317,18 @@ impl LanceEngine {
 
     // REAL RAG: Seaches semantic history using methematical vector proximity
     pub async fn search_memory(
-        &mut self,
+        self,
         query: &str,
         limit: usize,
     ) -> Result<Vec<String>, anyhow::Error> {
         // 1. Convert English query to mathematical vector
-        let embedding = self.embedder.embed(vec![query], None)?;
-        let query_vector = embedding[0].clone();
+
+        // Lock the embedder for the exact ms it takes to embed
+        let query_vector = {
+            let mut model = self.embedder.lock.unwrap();
+            let embedding = model.embed(vec![query], None)?;
+            embedding[0].clone()
+        };
 
         // 2. Open the table
         let table = self.db.open_table(&self.history_table).execute().await?;
