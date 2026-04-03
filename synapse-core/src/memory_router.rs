@@ -8,6 +8,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::AtomicU64;
 use std::{fs::File, sync::Arc, u64};
 use tokio::sync::broadcast;
+use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 use wasmtime_wasi::WasiCtxBuilder;
 
@@ -77,7 +78,7 @@ impl MemoryRouter {
     }
 
     /// PRIVATE DRY HELPER: Scans the WAL and executes a closure on the Zero-Copy Archived data
-    fn scal_wal_zero_copy<F>(&self, mut callback: F)
+    fn scan_wal_zero_copy<F>(&self, mut callback: F)
     where
         F: FnMut(&Archived<OpLog>),
     {
@@ -113,7 +114,7 @@ impl MemoryRouter {
         let mut result = None;
 
         // 1. Hot Memory ( Zero-copy WAL scan )
-        self.scal_wal_zero_copy(|archievd| {
+        self.scan_wal_zero_copy(|archievd| {
             // We read directly from the archeived bytes!
             if archievd.state.transaction_id == target_tx_id {
                 result = Some(format!(
@@ -177,7 +178,7 @@ impl MemoryRouter {
         let mut final_context = Vec::new();
 
         // 1. The WAL is the absolute truth of present. We take ALL recent active thoughts.
-        self.scal_wal_zero_copy(|archived| {
+        self.scan_wal_zero_copy(|archived| {
             final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
         });
 
@@ -209,7 +210,7 @@ impl MemoryRouter {
         // We stream the OpLogs from the WAL up to the Target tx_id
         let mut applied_count = 0;
 
-        self.scal_wal_zero_copy(|log| {
+        self.scan_wal_zero_copy(|log| {
             if log.state.transaction_id <= target_tx_id {
                 // Re-assimilate the histocal thought into the new brain
                 if let Err(e) = rebuilt_brain.assimilate_foreign_thought(&log.delta.as_slice()) {
