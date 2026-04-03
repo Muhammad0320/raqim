@@ -239,6 +239,14 @@ impl LanceEngine {
             .iter()
             .map(|l| format!("{:?}", l.state.status))
             .collect();
+        let seeds: Vec<String> = logs
+            .iter()
+            .map(|l| l.entropy_seeds.iter().map(|s| s.to_string()))
+            .collect();
+        let http_responses: Vec<String> = logs
+            .iter()
+            .map(|l| l.network_responses.iter().map(|s| s.clone()))
+            .collect();
         let timestmaps: Vec<i64> = logs.iter().map(|l| l.state.timestamp as i64).collect();
         let payloads: Vec<&[u8]> = logs.iter().map(|l| l.delta.as_slice()).collect();
         let texts: Vec<String> = logs.iter().map(|l| l.state.text.clone()).collect();
@@ -250,6 +258,8 @@ impl LanceEngine {
         let timestamp_array = Arc::new(Int64Array::from(timestmaps));
         let status_array = Arc::new(StringArray::from(statuses));
         let text_array = Arc::new(StringArray::from(texts));
+        let seed_array = Arc::new(StringArray::from(seeds));
+        let http_res_array = Arc::new(StringArray::from(http_responses));
 
         let vector_array = Arc::new(
             FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
@@ -269,6 +279,8 @@ impl LanceEngine {
                 timestamp_array as Arc<dyn arrow_array::Array>,
                 status_array as Arc<dyn arrow_array::Array>,
                 text_array as Arc<dyn arrow_array::Array>,
+                seed_array as Arc<dyn arrow_array::Array>,
+                http_res_array as Arc<dyn arrow_array::Array>,
                 payload_array as Arc<dyn arrow_array::Array>,
                 vector_array as Arc<dyn arrow_array::Array>,
             ],
