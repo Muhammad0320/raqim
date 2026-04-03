@@ -1,7 +1,6 @@
 use arrow_array::Array;
 use futures::StreamExt;
 use futures::lock::Mutex;
-use lancedb::connect;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
@@ -9,8 +8,6 @@ use rkyv::{Archive, Archived};
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::AtomicU64;
-use std::time::SystemTime;
-use std::time::UNIX_EPOCH;
 use std::{fs::File, sync::Arc, u64};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
@@ -49,7 +46,6 @@ pub struct MemoryRouter {
     global_net: Arc<GlobalNetworkBridge>,
     global_tx_counter: Arc<AtomicU64>,
     event_tx: Sender<SystemEvent>,
-    pub global_trackers: Arc<Mutex<HashMap<String, CheckPointTracker>>>,
 }
 
 impl MemoryRouter {

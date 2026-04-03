@@ -325,7 +325,7 @@ impl LanceEngine {
 
         // Lock the embedder for the exact ms it takes to embed
         let query_vector = {
-            let mut model = self.embedder.lock.unwrap();
+            let mut model = self.embedder.lock().unwrap();
             let embedding = model.embed(vec![query], None)?;
             embedding[0].clone()
         };
