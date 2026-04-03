@@ -17,6 +17,7 @@ pub enum RebuildMode {
     TimeTravel(u64), //
 }
 
+use crate::AgentStatus;
 use crate::aegis::AegisGateKeeper;
 use crate::axon::AxonGateKeeper;
 use crate::network::GlobalNetworkBridge;
@@ -243,6 +244,12 @@ impl MemoryRouter {
             .await
             .unwrap_or((0, Vec::new()));
 
+        // Determine if we need deep discovery (LanceDB) or Hot Recoverey (WAL)
+        let oldest_wal_tx = {
+            let idx = wal_engine.index.read().unwrap();
+            idx.keys().next().cloned().unwrap_or(U64::MAX) // Get the current smallest TxID currently in the WAL
+        };
+
         println!(
             "[TIME MACHINE] Loaded Base Snapshot at TxID: {} ",
             snapshot_txid
@@ -254,58 +261,155 @@ impl MemoryRouter {
         // We calculate the very next TxID we need to read
         let next_txid = (snapshot_txid as u64) + 1;
 
-        if next_txid <= target_tx_id {
-            // Ask the mutex protected BTreeMap for the exact byte offset on the SSD
-            let start_byte = {
-                let idx = wal_engine.index.read().unwrap();
-                idx.get(&next_txid).cloned().unwrap_or(0)
-            };
+        if target_tx_id < oldest_wal_tx {
+            // DEEP TIME TRAVEL: The WAL has been compacted. We must read from LanceDB.
+            println!(
+                "[TIME MACHINE] Target is deep in history. Engaging LanceDB Deep Discovery... "
+            );
+            let table = self
+                .lance_engine
+                .db
+                .open_table(&self.lance_engine.history_table);
 
-            // 3. Physical disk seek
-            if let Ok(mut file) = std::fs::File::open(&self.config.wal_path) {
-                // The Kernel jumps the read-head directly to the exact byte. Zero scanning!
-                file.seek(SeekFrom::Start(start_byte))
-                    .expect("Failed to seek WAL file");
+            // Query all the snapshots btw snapshot and target
+            let mut stream = table
+                .query()
+                .only_if(format!(
+                    "agent_id = '{}' AND tx_id >= {} AND tx_id <= {}",
+                    agent_hex, next_txid, target_tx_id
+                ))
+                .execute()
+                .await?;
 
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer).unwrap(); // Read the remainder of the file
+            while let Some(batch_result) = stream.next().await {
+                let batch = batch_result?;
 
-                let mut offset = 0;
-                while offset < buffer.len() {
-                    if offset + 4 > buffer.len() {
-                        break;
-                    }
+                let tx_id_col = batch
+                    .column_by_name("transaction_id")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<arrow_array::Int64Array>()
+                    .expect(" FATAL: trasaction_id column isn't an Int64Array");
+                let text_col = batch
+                    .column_by_name("text")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<arrow_array::StringArray>()
+                    .expect(" FATAL: text column isn't a StringArray ");
+                let timestamp_col = batch
+                    .column_by_name("timestamp")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<arrow_array::Int64Array>()
+                    .expect(" FATAL: timestamp column isn't an IntArray");
+                let status_col = batch
+                    .column_by_name("status")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<arrow_array::StringArray>()
+                    .expect(" FATAL: status column is not a StringArrray");
+                let seed_col = batch
+                    .column_by_name("entropy_seeds")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<arrow_array::StringArray>()
+                    .expect(" FATAL: seeds column isn't a StringArray");
+                let net_col = batch
+                    .column_by_name("network_responses")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<arrow_array::StringArray>()
+                    .expect(" FATAL: network_reponse isn't a StringArray");
+                let delta_col = batch
+                    .column_by_name("payload")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<arrow_array::BinaryArray>()
+                    .expect(" FATAL: payload isn't a BinaryArray");
 
-                    let mut len_bytes = [0u8; 4];
-                    len_bytes.copy_from_slice(&buffer[offset..offset + 4]);
-                    let entry_len = u32::from_le_bytes(len_bytes) as usize;
-                    offset += 4;
-
-                    let entry_slice = &buffer[offset..offset + entry_len];
-                    let archived_log = unsafe {
-                        rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice)
+                for i in 0..timestamp_col.len() {
+                    let status = match status_col.value(i) {
+                        "IDLE" => AgentStatus::Idle,
+                        "REASONING" => AgentStatus::Reasoning,
+                        "HALTED" => AgentStatus::Halted,
+                        "TOOL_EXEC" => AgentStatus::ToolExecution,
                     };
 
-                    let current_tx = archived_log.state.transaction_id;
+                    let reconstruct_log = OpLog {
+                        agent_id: [0; 16],
+                        delta: delta_col.value(i).to_vec(),
+                        previous_hash: [0; 32],
+                        current_hash: [0; 32],
+                        state: crate::AgentState {
+                            agent_id: Some([0; 16]),
+                            transaction_id: tx_id_col.value(i) as u64,
+                            timestamp: timestamp_col.value(i),
+                            status,
+                            text: text_col.value(i),
+                        },
+                        entropy_seeds: seed_col.value(i),
+                        network_responses: net_col.value(i),
+                    };
+                    historical_oplogs.push(reconstruct_log);
+                }
+            }
+        } else {
+            // HOT RECORVERY: The data is still in the WAL.
 
-                    if current_tx > target_tx_id {
-                        break;
-                    } // We reached the future. Stop reading.
+            if next_txid <= target_tx_id {
+                // Ask the mutex protected BTreeMap for the exact byte offset on the SSD
+                let start_byte = {
+                    let idx = wal_engine.index.read().unwrap();
+                    idx.get(&next_txid).cloned().unwrap_or(0)
+                };
 
-                    // Only collect logs belonging to this specific agent!
-                    if hex::encode(archived_log.agent_id.as_slice()) == agent_hex {
-                        // Deserialize here only because we're handling this to the WASM to execute.
-                        if let Ok(log) =
-                            rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
-                        {
-                            historical_oplogs.push(log);
+                // 3. Physical disk seek
+                if let Ok(mut file) = std::fs::File::open(&self.config.wal_path) {
+                    // The Kernel jumps the read-head directly to the exact byte. Zero scanning!
+                    file.seek(SeekFrom::Start(start_byte))
+                        .expect("Failed to seek WAL file");
+
+                    let mut buffer = Vec::new();
+                    file.read_to_end(&mut buffer).unwrap(); // Read the remainder of the file
+
+                    let mut offset = 0;
+                    while offset < buffer.len() {
+                        if offset + 4 > buffer.len() {
+                            break;
                         }
-                    }
 
-                    offset += entry_len;
+                        let mut len_bytes = [0u8; 4];
+                        len_bytes.copy_from_slice(&buffer[offset..offset + 4]);
+                        let entry_len = u32::from_le_bytes(len_bytes) as usize;
+                        offset += 4;
+
+                        let entry_slice = &buffer[offset..offset + entry_len];
+                        let archived_log = unsafe {
+                            rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice)
+                        };
+
+                        let current_tx = archived_log.state.transaction_id;
+
+                        if current_tx > target_tx_id {
+                            break;
+                        } // We reached the future. Stop reading.
+
+                        // Only collect logs belonging to this specific agent!
+                        if hex::encode(archived_log.agent_id.as_slice()) == agent_hex {
+                            // Deserialize here only because we're handling this to the WASM to execute.
+                            if let Ok(log) =
+                                rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
+                            {
+                                historical_oplogs.push(log);
+                            }
+                        }
+
+                        offset += entry_len;
+                    }
                 }
             }
         }
+
         Ok((memory_blob, historical_oplogs))
     }
 
