@@ -469,7 +469,7 @@ impl MemoryRouter {
         );
 
         // 1. Fetch the absolute latest timeline (Snapshot + delta)
-        let (snapshot_tx_id, memory_blob, historical_oplog) = self
+        let (memory_blob, historical_oplog, resolved_tx) = self
             .rebuild_agent_timeline(&agent_hex, u64::MAX, wal_engine)
             .await?;
 
@@ -490,7 +490,7 @@ impl MemoryRouter {
 
         let wasi_ctx = WasiCtxBuilder::new().build();
 
-        let mut content = SandboxContent {
+        let content = SandboxContent {
             axon: self.axon.clone(),
             aegis: self.aegis.clone(),
             brain: self.brain.clone(),
@@ -509,21 +509,17 @@ impl MemoryRouter {
 
             replay_responses: recovered_network,
             replay_seeds: recovered_seeds,
-            replay_timestamps: recovered_timestamps,
+            replay_timestamps: recovered_timestamps.clone(),
             a2a_response_cache: Vec::new(),
             http_response_cache: Vec::new(),
         };
 
         // 4. Spawn the brand new engine thread
         let engine = self.wasm_engine.clone();
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
 
         let mut tracker = CheckPointTracker {
-            last_snapshot_tx: snap,
-            last_snapshot_time: current_time,
+            last_snapshot_tx: resolved_tx,
+            last_snapshot_time: recovered_timestamps.last().cloned().unwrap_or(0) as u64,
         };
 
         // Get the exact current Transaction ID
