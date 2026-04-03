@@ -241,11 +241,13 @@ impl LanceEngine {
             .collect();
         let seeds: Vec<String> = logs
             .iter()
-            .map(|l| l.entropy_seeds.iter().map(|s| s.to_string()))
+            .map(|l| serde_json::to_string(l.entropy_seeds).unwrap_or_else(|_| "[]".to_string()))
             .collect();
         let http_responses: Vec<String> = logs
             .iter()
-            .map(|l| l.network_responses.iter().map(|s| s.clone()))
+            .map(|l| {
+                serde_json::to_string(l.network_responses).unwrap_or_else(|_| "[]".to_string())
+            })
             .collect();
         let timestmaps: Vec<i64> = logs.iter().map(|l| l.state.timestamp as i64).collect();
         let payloads: Vec<&[u8]> = logs.iter().map(|l| l.delta.as_slice()).collect();

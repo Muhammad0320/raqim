@@ -11,6 +11,7 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 use wasmtime_wasi::WasiCtxBuilder;
+use lancedb::connect;
 
 pub enum RebuildMode {
     Resurrection,
@@ -21,6 +22,7 @@ use crate::AgentStatus;
 use crate::aegis::AegisGateKeeper;
 use crate::axon::AxonGateKeeper;
 use crate::network::GlobalNetworkBridge;
+use crate::sandbox::CheckPointTracker;
 use crate::sandbox::SandboxContent;
 use crate::sandbox::WasmEngine;
 use crate::telemetry::TelemetryEngine;
@@ -247,7 +249,7 @@ impl MemoryRouter {
         // Determine if we need deep discovery (LanceDB) or Hot Recoverey (WAL)
         let oldest_wal_tx = {
             let idx = wal_engine.index.read().unwrap();
-            idx.keys().next().cloned().unwrap_or(U64::MAX) // Get the current smallest TxID currently in the WAL
+            idx.keys().next().cloned().unwrap_or(u64::MAX) // Get the current smallest TxID currently in the WAL
         };
 
         println!(
@@ -269,7 +271,7 @@ impl MemoryRouter {
             let table = self
                 .lance_engine
                 .db
-                .open_table(&self.lance_engine.history_table);
+                .open_table(&self.lance_engine.history_table).execute().await?;
 
             // Query all the snapshots btw snapshot and target
             let mut stream = table
@@ -335,6 +337,9 @@ impl MemoryRouter {
                         "TOOL_EXEC" => AgentStatus::ToolExecution,
                     };
 
+                    let recovered_seed: Vec<u64> = serde_json::from_string(seed_col.value(i));
+                    let recovered_res: Vec<String> = serde_json::from_string(net_col.value(i));
+
                     let reconstruct_log = OpLog {
                         agent_id: [0; 16],
                         delta: delta_col.value(i).to_vec(),
@@ -345,17 +350,16 @@ impl MemoryRouter {
                             transaction_id: tx_id_col.value(i) as u64,
                             timestamp: timestamp_col.value(i),
                             status,
-                            text: text_col.value(i),
+                            text: text_col.value(i).to_string(),
                         },
-                        entropy_seeds: seed_col.value(i),
-                        network_responses: net_col.value(i),
+                        entropy_seeds: recovered_seed,
+                        network_responses: recovered_res,
                     };
                     historical_oplogs.push(reconstruct_log);
                 }
             }
         } else {
             // HOT RECORVERY: The data is still in the WAL.
-
             if next_txid <= target_tx_id {
                 // Ask the mutex protected BTreeMap for the exact byte offset on the SSD
                 let start_byte = {
@@ -472,6 +476,11 @@ impl MemoryRouter {
 
         // 4. Spawn the brand new engine thread
         let engine = self.wasm_engine.clone();
+
+            let mut tracker = CheckPointTracker { last_snapshot_tx: 0, last_snapshot_time: 0 }
+
+                        // Get the exact current Transaction ID
+                        let current_tx = self.global_tx_counter.load(std::sync::atomic::Ordering::SeqCst);
 
         // Now use the unified execute_agent function
         tokio::spawn(async move {
