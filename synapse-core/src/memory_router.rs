@@ -1,12 +1,16 @@
 use arrow_array::Array;
 use futures::StreamExt;
+use futures::lock::Mutex;
 use lancedb::connect;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
 use rkyv::{Archive, Archived};
+use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::AtomicU64;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use std::{fs::File, sync::Arc, u64};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
@@ -45,6 +49,7 @@ pub struct MemoryRouter {
     global_net: Arc<GlobalNetworkBridge>,
     global_tx_counter: Arc<AtomicU64>,
     event_tx: Sender<SystemEvent>,
+    pub global_trackers: Arc<Mutex<HashMap<String, CheckPointTracker>>>,
 }
 
 impl MemoryRouter {
@@ -236,8 +241,32 @@ impl MemoryRouter {
         agent_hex: &str,
         target_tx_id: u64,
         wal_engine: Arc<WalEngine>,
-    ) -> Result<(Vec<u8>, Vec<OpLog>), anyhow::Error> {
+    ) -> Result<(Vec<u8>, Vec<OpLog>, u64), anyhow::Error> {
         self.telemetry.record_time_travel();
+
+        // RESOLVE THE TARGET INFINITY HACK
+        // Find the highest known tx_id for this agent.
+        let actual_target_transaction = if target_tx_id == u64::MAX {
+            // Checking the WAL Index first
+            let wal_max = {
+                let idex = wal_engine.index.read().unwrap();
+                idex.keys().copied().filter(|&k| k > 0).max()
+            };
+
+            if let Some(max_tx) = wal_max {
+                max_tx
+            } else {
+                // If WAL is empty/ compacted, ask lanceDB for the absolute highest recorded tx_id
+                let (max_lance_tx, _) = self
+                    .lance_engine
+                    .fetch_closest_snapshot(agent_hex, i64::MAX)
+                    .await
+                    .unwrap_or((0, Vec::new()));
+                max_lance_tx as u64
+            }
+        } else {
+            target_tx_id
+        };
 
         // 1. O(1) COLD MEMORY JUMP (LanceDB)
         let (snapshot_txid, memory_blob) = self
@@ -263,7 +292,7 @@ impl MemoryRouter {
         // We calculate the very next TxID we need to read
         let next_txid = (snapshot_txid as u64) + 1;
 
-        if target_tx_id < oldest_wal_tx {
+        if actual_target_transaction < oldest_wal_tx {
             // DEEP TIME TRAVEL: The WAL has been compacted. We must read from LanceDB.
             println!(
                 "[TIME MACHINE] Target is deep in history. Engaging LanceDB Deep Discovery... "
@@ -337,6 +366,15 @@ impl MemoryRouter {
                         "REASONING" => AgentStatus::Reasoning,
                         "HALTED" => AgentStatus::Halted,
                         "TOOL_EXEC" => AgentStatus::ToolExecution,
+                        _ => {
+                            // Log the currection and default to a safe state
+                            eprintln!(
+                                "[WARNING] Unknown statuts '{}' in LanceDB for TxID {}. Defaulting to Halted.",
+                                status_col.value(i),
+                                tx_id
+                            );
+                            AgentStatus::Halted
+                        }
                     };
 
                     let recovered_seed: Vec<u64> = serde_json::from_str(seed_col.value(i))?;
@@ -416,7 +454,7 @@ impl MemoryRouter {
             }
         }
 
-        Ok((memory_blob, historical_oplogs))
+        Ok((memory_blob, historical_oplogs, actual_target_transaction))
     }
 
     /// Fully resurrect a crashed or quarantined agent to its absolute latest state
@@ -431,7 +469,7 @@ impl MemoryRouter {
         );
 
         // 1. Fetch the absolute latest timeline (Snapshot + delta)
-        let (memory_blob, historical_oplog) = self
+        let (snapshot_tx_id, memory_blob, historical_oplog) = self
             .rebuild_agent_timeline(&agent_hex, u64::MAX, wal_engine)
             .await?;
 
@@ -464,7 +502,7 @@ impl MemoryRouter {
             wasi: wasi_ctx,
             lance: self.lance_engine.clone(),
             agent_hex: agent_hex.to_string(),
-            telemetry: self.telemetry,
+            telemetry: self.telemetry.clone(),
             live_seeds: Vec::new(),
             live_responses: Vec::new(),
             live_timestamps: Vec::new(),
@@ -478,10 +516,14 @@ impl MemoryRouter {
 
         // 4. Spawn the brand new engine thread
         let engine = self.wasm_engine.clone();
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
 
         let mut tracker = CheckPointTracker {
-            last_snapshot_tx: 0,
-            last_snapshot_time: 0,
+            last_snapshot_tx: snap,
+            last_snapshot_time: current_time,
         };
 
         // Get the exact current Transaction ID
