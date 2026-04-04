@@ -317,7 +317,7 @@ impl LanceEngine {
 
     // REAL RAG: Seaches semantic history using methematical vector proximity
     pub async fn search_memory(
-        self,
+        &self,
         query: &str,
         limit: usize,
     ) -> Result<Vec<String>, anyhow::Error> {

@@ -1,7 +1,6 @@
-use futures::channel::oneshot::Receiver;
-
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::mpsc::Receiver;
 use std::time::{SystemTime, UNIX_EPOCH};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
@@ -438,11 +437,10 @@ impl WasmEngine {
         )?;
 
         // The Async Yield (Zero CPU while waiting)
-        linker.func_new_async(
+        linker.func_wrap_async(
             "synapse_env",
             "host_await_a2a_question",
-            _,
-            |mut caller: Caller<'_, SandboxContent>, out_ptr: i32, max_len: i32| {
+            move |mut caller: Caller<'_, SandboxContent>, out_ptr: i32, max_len: i32| {
                 Box::new(async move {
                     // Pull the receiver out. If it didn't exist, they didn't register a capability.
                     let mut rx = caller
@@ -477,7 +475,7 @@ impl WasmEngine {
         linker.func_wrap(
             "synapse_env",
             "host_reply_a2a",
-            move |mut caller: Caller<'_, SandboxContent, ptr: i32, len: i32>| {
+            move |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
                 let answer_bytes = mem.data(&caller)[ptr as usize..(ptr + len) as usize].to_vec();
 
