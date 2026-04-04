@@ -229,6 +229,9 @@ async fn main() {
                             telemetry: tele_clone,
                             a2a_response_cache: Vec::new(),
                             http_response_cache: Vec::new(),
+
+                            a2a_receiver: None,
+                            a2a_reply_channel: None,
                         };
 
                         let mut tracker_lock = global_tracker.lock().unwrap();
@@ -247,7 +250,7 @@ async fn main() {
                             content,
                             agent_tracker,
                             current_tx,
-                            Some(vec![0u8]),
+                            None,
                         ) {
                             eprintln!("Plugin {:?} trapped/failed: {} ", &path, e);
                         }

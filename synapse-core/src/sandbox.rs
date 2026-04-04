@@ -440,7 +440,7 @@ impl WasmEngine {
         linker.func_wrap_async(
             "synapse_env",
             "host_await_a2a_question",
-            move |mut caller: Caller<'_, SandboxContent>, out_ptr: i32, max_len: i32| {
+            |mut caller: Caller<'_, SandboxContent>, (out_ptr, max_len): (i32, i32)| {
                 Box::new(async move {
                     // Pull the receiver out. If it didn't exist, they didn't register a capability.
                     let mut rx = caller

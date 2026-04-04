@@ -20,7 +20,7 @@ extern "C" {
 
         // The A2A Listener Suite
         fn host_register_capability(cap_ptr: *const u8, cap_len: usize); 
-        fn host_await_a2a_question(out_ptr: *const u8, max_len: i32) -> 132;
+        fn host_await_a2a_question((out_ptr: *const u8, max_len: i32)) -> 132;
         fn host_reply_a2a(ptr: *const u8, len: usize);
     
 }
@@ -110,7 +110,7 @@ impl Raqim {
         loop {
 
             // This function yields to the os. It consumes ZERO CPU while waiting.
-            let bytes_read = unsafe { host_await_a2a_question(question_buffer.as_mut_ptr(), question_buffer.len() as i32 ) };
+            let bytes_read = unsafe { host_await_a2a_question((question_buffer.as_mut_ptr(), question_buffer.len() as i32 )) };
 
             if bytes_read > 0 {
 
