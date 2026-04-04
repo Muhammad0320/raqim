@@ -17,21 +17,27 @@ extern "C" {
 
     fn host_pull_a2a_response(out_ptr: *mut u8)
     fn host_pull_http_response(out_ptr: *mut u8)
-}
 
+        // The A2A Listener Suite
+        fn host_register_capability(cap_ptr: *const u8, cap_len: usize); 
+        fn host_await_a2a_question(out_ptr: *const u8, max_len: i32) -> 132;
+        fn host_reply_a2a(ptr: *const u8, len: usize);
+    
+}
 
 //  The Safe Rust Wrapper for Enterprise Developers
 pub struct Raqim;
 
 impl Raqim {
 
+    /// Get deterministic time (safe for replay)
     pub fn time() -> i64 {
         unsafe {host_get_time()}
     }
 
+    /// Sends an A2A RPC to another agent ( Zero-Trust, Ephemeral )
     pub fn ask_swarm(capability: &str, question: &[u8]) -> Result<Vec<u8>, String> {
 
-        // TODO: Hard cap to 1mb.
         // PASS 1: Ask the required buffer size 
         let required_size = unsafe {
             host_ask_agent(capability.as_ptr(), capability.len(), question.as_ptr(), question.len())
@@ -55,8 +61,10 @@ impl Raqim {
         Ok(exact_buffer)
     }
 
+    /// Get deterministic randomness (Safe for replay)
     pub fn entropy() -> u64 {unsafe {host_request_entropy()}}
 
+    /// Get the network response to a url
     pub fn fetch_url(url: &str) -> Result<String, String> {
 
         // First pass
@@ -81,6 +89,7 @@ impl Raqim {
         String::from_utf8(exact_buffer).map_err(|e| e.to_string())
     }
 
+    /// Commits a fact to the permanent Loro CRDT
     pub fn emit_thought(state: &AgentState) {
         let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(state);
         unsafe {
@@ -88,7 +97,34 @@ impl Raqim {
         }
     }
 
-    pub fn register_capability(path: &str) {
+    /// Exposes a capability to the global swarm. 
+    /// This enters an infinite Zero-cpu listening loop
+    pub fn server_capability<F>(capability: &str, mut handler: F)
+    where f: FnMut(&[u8]) -> Vec<u8> {
+
+        unsafe { host_register_capability(capability.as_ptr(), capability.len() ); }
+
+        let mut question_buffer = vec![0u8; 2 * 1024 * 1024]; 
+
+        // The eternal server loop 
+        loop {
+
+            // This function yields to the os. It consumes ZERO CPU while waiting.
+            let bytes_read = unsafe { host_await_a2a_question(question_buffer.as_mut_ptr(), question_buffer.len() as i32 ) };
+
+            if bytes_read > 0 {
+
+                let question = &question_buffer[..bytes_read as usize];
+                
+                // Developer's AI logic executes here!
+                let answer = handler(question);
+
+                // Fire the answer back through the OS
+                unsafe {host_reply_a2a(answer.as_ptr(), answer.len() ); }
+            }
+
+        };
+
 
         let bytes = path.as_bytes();
 
@@ -97,7 +133,6 @@ impl Raqim {
         }
 
     }
-
 
 
 }
