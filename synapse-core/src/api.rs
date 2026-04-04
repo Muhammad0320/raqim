@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Arc};
+
 use axum::{
     async_trait,
     Json, Router,
@@ -24,6 +26,20 @@ struct EnterpriseClaim {
     pub sub: String, // Tenant id
     pub features: Vec<String>,
     pub exp: usize,
+}
+
+#[derive(Deserialize, Clone)] 
+pub struct  ForkConfig {
+    pub override_seed: Option<u64>,
+    pub inject_network: Option<String>, 
+    pub env_overrides: HashMap<String, String>,
+    pub config_overrides: HashMap<String, String>
+}
+
+struct TimeTravelRequest {
+    agent_id: String, 
+    target_tx_id: u64, 
+    fork_config: ForkConfig
 }
 
 // THE AXUS EXTRACTOR: This automatically protects any route it is attached to.

@@ -25,7 +25,7 @@ pub struct Raqim;
 
 impl Raqim {
 
-    pub fn get_time() -> i64 {
+    pub fn time() -> i64 {
         unsafe {host_get_time()}
     }
 
@@ -55,6 +55,7 @@ impl Raqim {
         Ok(exact_buffer)
     }
 
+    pub fn entropy() -> u64 {unsafe {host_request_entropy()}}
 
     pub fn fetch_url(url: &str) -> Result<String, String> {
 

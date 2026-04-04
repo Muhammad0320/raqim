@@ -1,9 +1,11 @@
+use futures::channel::oneshot::Receiver;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{SystemTime, UNIX_EPOCH};
-use wasmtime_wasi::WasiCtx;
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
 use crate::aegis::AegisGateKeeper;
+use crate::api::ForkConfig;
 use crate::lancedb_store::LanceEngine;
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
@@ -14,7 +16,7 @@ use anyhow::Ok;
 use anyhow::anyhow;
 use rkyv::Archive;
 use tokio::sync::broadcast::Sender;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use wasmtime::*;
 
 ///  The internal state we pass into sandbox,
@@ -46,6 +48,8 @@ pub struct SandboxContent {
     // Temporary Cache
     pub a2a_response_cache: Vec<u8>,
     pub http_response_cache: Vec<u8>,
+
+    pub a2a_receiver: Option<Receiver<(Vec<u8>, Sender<Vec<u8>>)>>,
 }
 
 pub struct CheckPointTracker {
@@ -65,6 +69,8 @@ impl WasmEngine {
         config.consume_fuel(true);
         // 2. Restrict maximum memory allocation to prevnt OOM attacks - Absoslute hardware ceiling
         config.memory_reservation(50 * 1024 * 1024);
+        // Mandatory for Zero-Cpu Waiting
+        config.async_support(true);
 
         Self {
             engine: Engine::new(&config).expect("Failed to initialize wastime engine"),
@@ -90,6 +96,37 @@ impl WasmEngine {
         memory
             .write(store, 0, historical_snapshot)
             .map_err(|e| anyhow!(" Failed to inject historical timeline: {}", e))
+    }
+
+    // Reality Forking
+    pub fn build_wasi_context(
+        historical_seed: Option<u64>,
+        fork_config: Option<ForkConfig>,
+    ) -> (WasiCtx, u64) {
+        let mut builder = WasiCtxBuilder::new();
+
+        // Resolve seed
+        let actual_seed = match &fork_config {
+            Some(f) if f.override_seed.is_some() => f.override_seed.unwrap(),
+            _ => historical_seed.unwrap_or_else(|| rand::random::<u64>()),
+        };
+
+        // 2. Inject Deep Reality overrides (Environment Variables)
+        if let Some(fork) = &fork_config {
+            for (key, value) in &fork.env_overrides {
+                builder.env(key, value);
+            }
+            for (key, value) in &fork.config_overrides {
+                builder.env(format!("RQM_CFG_{}", key), value);
+            }
+
+            println!(
+                "[TIME MACHINE] Injected {} deep environment variables",
+                fork.env_overrides.len()
+            )
+        }
+
+        (builder.build(), 0)
     }
 
     /// Executes a compiled WASM agent securely.
@@ -364,7 +401,38 @@ impl WasmEngine {
         linker.func_wrap(
             "synapse_env",
             "host_register_capability",
-            move |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {},
+            move |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {
+                let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
+                let cap_bytes = &mem.data(caller)[ptr as usize..(ptr + len) as usize];
+                let capability = std::str::from_utf8(cap_bytes).unwrap().to_string();
+
+                let net = caller.data_mut().global_net.clone();
+
+                // Create a channel for zenoh to send questions to this specific WASM sandbox
+                let (tx, rx) =
+                    tokio::sync::mpsc::channel::<(Vec<u8>, oneshot::Sender<Vec<u8>>)>(100);
+                caller.data_mut().a2a_receiver = Some(rx);
+
+                // Start listening on zenoh globally
+                tokio::spawn(async move {
+                    net.register_agent_capability(&capability, move |question_bytes| {
+                        let (reply_tx, reply_rx) = oneshot::channel();
+
+                        // Send the question to the suspended WASM thread.
+                        if tx
+                            .blocking_send((question_bytes.to_vec(), reply_tx))
+                            .is_ok()
+                        {
+                            // Wait for the WASM to process it and reply
+                            return reply_rx
+                                .blocking_recv()
+                                .unwrap_or_else(|_| b"A2A_GUEST_CRASH".to_vec());
+                        }
+                        b"A2A_QUEUE_FULL".to_vec()
+                    })
+                    .await;
+                });
+            },
         )?;
 
         // Initialize the Sandbox Context
