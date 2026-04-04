@@ -187,7 +187,11 @@ impl MemoryRouter {
         });
 
         // 2. Supplement with Deep Semantic search
-        let mut deep_memories = self.lance_engine.search_memory(query, limit).await?;
+        let mut deep_memories = self
+            .lance_engine
+            .clone()
+            .search_memory(query, limit)
+            .await?;
         final_context.append(&mut deep_memories);
 
         Ok(final_context)

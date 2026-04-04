@@ -1,4 +1,5 @@
 use futures::channel::oneshot::Receiver;
+
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -49,7 +50,8 @@ pub struct SandboxContent {
     pub a2a_response_cache: Vec<u8>,
     pub http_response_cache: Vec<u8>,
 
-    pub a2a_receiver: Option<Receiver<(Vec<u8>, Sender<Vec<u8>>)>>,
+    pub a2a_receiver: Option<Receiver<(Vec<u8>, oneshot::Sender<Vec<u8>>)>>,
+    pub a2a_reply_channel: Option<oneshot::Sender<Vec<u8>>>,
 }
 
 pub struct CheckPointTracker {
@@ -126,7 +128,7 @@ impl WasmEngine {
             )
         }
 
-        (builder.build(), 0)
+        (builder.build(), actual_seed)
     }
 
     /// Executes a compiled WASM agent securely.
@@ -403,7 +405,7 @@ impl WasmEngine {
             "host_register_capability",
             move |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
-                let cap_bytes = &mem.data(caller)[ptr as usize..(ptr + len) as usize];
+                let cap_bytes = &mem.data(&caller)[ptr as usize..(ptr + len) as usize];
                 let capability = std::str::from_utf8(cap_bytes).unwrap().to_string();
 
                 let net = caller.data_mut().global_net.clone();
@@ -432,6 +434,42 @@ impl WasmEngine {
                     })
                     .await;
                 });
+            },
+        )?;
+
+        // The Async Yield (Zero CPU while waiting)
+        linker.func_new_async(
+            "synapse_env",
+            "host_await_a2a_question",
+            Vec,
+            |mut caller: Caller<'_, SandboxContent>, out_ptr: i32, max_len: i32| {
+                Box::new(async move {
+                    // Pull the receiver out. If it didn't exist, they didn't register a capability.
+                    let mut rx = caller
+                        .data_mut()
+                        .a2a_receiver
+                        .take()
+                        .expect("Must register capability first.");
+
+                    // THIS SUSPENDS THE WASM THREAD. 0 CPU USAGE.
+                    if let Some((question_bytes, reply_tx)) = rx.recv().await {
+                        // We woke up. A question just arrrived from London.
+                        caller.data_mut().a2a_reply_channel = Some(reply_tx);
+                        caller.data_mut().a2a_receiver = Some(rx); // put the receiver back
+
+                        let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
+                        let bytes_to_write = std::cmp::min(question_bytes.len(), max_len as usize);
+                        mem.write(
+                            &mut caller,
+                            out_ptr as usize,
+                            &question_bytes[..bytes_to_write],
+                        )
+                        .unwrap();
+
+                        return bytes_to_write as i32;
+                    }
+                    -1 // channel closed
+                })
             },
         )?;
 
