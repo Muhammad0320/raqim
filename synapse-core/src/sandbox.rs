@@ -441,7 +441,7 @@ impl WasmEngine {
         linker.func_new_async(
             "synapse_env",
             "host_await_a2a_question",
-            Vec,
+            _,
             |mut caller: Caller<'_, SandboxContent>, out_ptr: i32, max_len: i32| {
                 Box::new(async move {
                     // Pull the receiver out. If it didn't exist, they didn't register a capability.
@@ -470,6 +470,21 @@ impl WasmEngine {
                     }
                     -1 // channel closed
                 })
+            },
+        )?;
+
+        // Sending the Reply back.
+        linker.func_wrap(
+            "synapse_env",
+            "host_reply_a2a",
+            move |mut caller: Caller<'_, SandboxContent, ptr: i32, len: i32>| {
+                let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
+                let answer_bytes = mem.data(&caller)[ptr as usize..(ptr + len) as usize].to_vec();
+
+                // Take the oneshot channel we saved during the await phase.
+                if let Some(reply_tx) = caller.data_mut().a2a_reply_channel.take() {
+                    let _ = reply_tx.send(answer_bytes);
+                }
             },
         )?;
 
