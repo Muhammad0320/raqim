@@ -17,16 +17,7 @@ use tokio::sync::{broadcast::Sender, mpsc, oneshot};
 use wasmtime_wasi::WasiCtx;
 
 use crate::{
-    SystemEvent,
-    aegis::AegisGateKeeper,
-    axon::AxonGateKeeper,
-    lancedb_store::LanceEngine,
-    memory_router::MemoryRouter,
-    network::GlobalNetworkBridge,
-    nucleus::WalEngine,
-    sandbox::{SandboxContent, WasmEngine},
-    state::SwarmState,
-    telemetry::TelemetryEngine,
+    SystemEvent, aegis::AegisGateKeeper, axon::AxonGateKeeper, config::RaqimConfig, lancedb_store::LanceEngine, memory_router::MemoryRouter, network::GlobalNetworkBridge, nucleus::WalEngine, sandbox::{SandboxContent, WasmEngine}, state::SwarmState, telemetry::TelemetryEngine
 };
 
 #[derive(Clone)]
@@ -36,11 +27,11 @@ pub struct ApiState {
     pub aegis: Arc<AegisGateKeeper>,
     pub brain: Arc<SwarmState>,
     pub wal: Arc<WalEngine>,
+    pub wasm: Arc<WasmEngine>,
     pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub global_net: Arc<GlobalNetworkBridge>,
     pub global_tx_counter: Arc<AtomicU64>,
     pub event_tx: Sender<SystemEvent>,
-    pub wasi: WasiCtx,
     pub lance: Arc<LanceEngine>,
     pub mem_router: Arc<MemoryRouter>,
 
@@ -208,7 +199,50 @@ async fn time_travel(
         axon: state.axon.clone(),
         aegis: state.aegis.clone(),
         brain: state.brain.clone(),
+        wal: state.wal.clone(),
+        cortex_tx: state.cortex_tx.clone(),
+        global_net: state.global_net.clone(),
+        global_tx_counter: state.global_tx_counter.clone(),
+        event_tx: state.event_tx.clone(),
+        wasi: wasi_ctx,
+        lance: state.lance.clone(),
+        agent_hex: payload.agent_id, 
+        telemetry: state.telemetry.clone(),
+
+        // Live queue start empty
+        live_responses: Vec::new(),
+        live_seeds: Vec::new(),
+        live_timestamps: Vec::new(),
+
+        // Relay queues loaded with history + admin overrides
+        replay_seeds: recovered_seed, 
+        replay_responses: recovered_network, 
+        replay_timestamps: recovered_timestamp,
+
+        a2a_receiver: None, 
+        a2a_reply_channel: None, 
+        a2a_response_cache: Vec::new()
+
     };
+
+    // 7. Boot the Forked reality into the OS thread.
+    let engine = state.wasm.clone();
+    let agent_id_clone = payload.agent_id.clone();
+
+    tokio::spawn(async move {
+        
+        // Read the WASM binary from the disk
+        let archive_batch = format!("./plugins_archive/{}.wasm.running", &agent_id_clone);
+        let wasm_bytes = std::fs::read(&archive_batch).unwrap_or_default();
+
+        let mut tracker = crate::sandbox::CheckPointTracker { last_snapshot_time: 0. last_snapshot_tx: 0 };
+
+        // Execute the agent, injecting the snapshot first
+        if let Err(e) = engine.execute_agent(&wasm_bytes, content, &mut tracker, payload.target_tx_id, Some(memory_blob)) {
+            eprintln!("[TIME MACHINE] Forked Agent {} crashed: {} ", agent_id_clone, e)
+        }
+
+    });
 
     Ok(StatusCode::OK)
 }
@@ -326,6 +360,7 @@ pub fn build_admin_router(state: ApiState) -> Router {
             "/v1/admin/quarantine/lift",
             post(lift_qurantine_and_resurrect),
         )
+        route("/v1/admin/time_travel", post(time_travel))
         .route("/v1/admin/upload_agent", post(upload_agent_wasm))
         .with_state(state)
 }
