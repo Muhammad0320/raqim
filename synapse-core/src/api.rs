@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, atomic::AtomicU64},
+};
 
 use axum::{
     Json, Router, async_trait,
@@ -10,11 +13,56 @@ use axum::{
 };
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
+use tokio::sync::{broadcast::Sender, mpsc, oneshot};
+use wasmtime_wasi::WasiCtx;
+
+use crate::{
+    SystemEvent,
+    aegis::AegisGateKeeper,
+    axon::AxonGateKeeper,
+    lancedb_store::LanceEngine,
+    memory_router::MemoryRouter,
+    network::GlobalNetworkBridge,
+    nucleus::WalEngine,
+    sandbox::{SandboxContent, WasmEngine},
+    state::SwarmState,
+    telemetry::TelemetryEngine,
+};
 
 #[derive(Clone)]
 pub struct ApiState {
-    pub config: RaqimConfig,
+    pub config: Arc<RaqimConfig>,
+    pub axon: Arc<AxonGateKeeper>,
+    pub aegis: Arc<AegisGateKeeper>,
+    pub brain: Arc<SwarmState>,
+    pub wal: Arc<WalEngine>,
+    pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
+    pub global_net: Arc<GlobalNetworkBridge>,
+    pub global_tx_counter: Arc<AtomicU64>,
+    pub event_tx: Sender<SystemEvent>,
+    pub wasi: WasiCtx,
+    pub lance: Arc<LanceEngine>,
+    pub mem_router: Arc<MemoryRouter>,
 
+    pub agent_hex: String,
+    pub telemetry: Arc<TelemetryEngine>,
+
+    // LIVE MODE: We collect seeds and HTTP responses as they happen
+    pub live_seeds: Vec<u64>,
+    pub live_responses: Vec<String>,
+    pub live_timestamps: Vec<i64>,
+
+    // REPLAY MODE: We load the seeds and HTTP responses here before booting
+    pub replay_seeds: Vec<u64>,
+    pub replay_responses: Vec<String>,
+    pub replay_timestamps: Vec<i64>,
+
+    // Temporary Cache
+    pub a2a_response_cache: Vec<u8>,
+    pub http_response_cache: Vec<u8>,
+
+    pub a2a_receiver: Option<mpsc::Receiver<(Vec<u8>, oneshot::Sender<Vec<u8>>)>>,
+    pub a2a_reply_channel: Option<oneshot::Sender<Vec<u8>>>,
     pub decoding_key: Arc<DecodingKey>,
 }
 
@@ -66,7 +114,7 @@ where
         match decode::<EnterpriseClaim>(auth_header, &api_state.decoding_key, &validation) {
             Ok(token_data) => {
                 // Feature gating! If they didn't pay for Aegis block the admin API
-                if !token_data.claims.features.comtains(&"aegis".to_string()) {
+                if !token_data.claims.features.contains(&"aegis".to_string()) {
                     return Err(StatusCode::FORBIDDEN);
                 }
                 Ok(ValidatedEnterprise)
@@ -99,6 +147,70 @@ async fn auth_middleware(
         req.uri()
     );
     Err(StatusCode::UNAUTHORIZED)
+}
+
+// THE ACTIVE DEBUGGING ROUTE HANDLER
+async fn time_travel(
+    _auth: ValidatedEnterprise,
+    State(state): State<ApiState>,
+    Json(payload): Json<TimeTravelRequest>,
+) -> Result<StatusCode, StatusCode> {
+    println!(
+        "[TIME TRAVEL] Admin requested Reality Forkk for Agent {} at TxID {} ",
+        payload.agent_id, payload.target_tx_id
+    );
+
+    // 1. Lift aegis Quarantine so that the agent can actually boot
+    state.aegis.lift_quarantine(&payload.agent_id);
+
+    // 2. Fetch historical timeline (Snapshot + Oplog)
+    let timeline_res = state
+        .mem_router
+        .rebuild_agent_timeline(&payload.agent_id, payload.target_tx_id, state.wal)
+        .await;
+
+    let (memory_blob, historical_oplog, _) = match timeline_res {
+        Ok(res) => res,
+        Err(e) => {
+            eprintln!("[TIME MACHINE] Timeline reconstruction failed: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // 3. Extract the deterministic flight recorder
+    let mut recovered_seed = Vec::new();
+    let mut recovered_network = Vec::new();
+    let mut recovered_timestamp = Vec::new();
+
+    for log in historical_oplog {
+        {
+            recovered_network.extend(log.network_responses);
+            recovered_seed.extend(log.entropy_seeds);
+            recovered_timestamp.push(log.state.timestamp);
+        }
+    }
+
+    // 4. THE REALITY FORK: Append the Admin's Overrides
+    if let Some(fork) = &payload.fork_config {
+        if let Some(seed) = fork.override_seed {
+            recovered_seed.push(seed);
+        }
+        if let Some(net) = &fork.inject_network {
+            recovered_network.push(net.clone());
+        }
+    }
+
+    // 5. Build the Deep Environment WASI context
+    let wasi_ctx = WasmEngine::build_wasi_context(payload.fork_config.as_ref());
+
+    // 6. Construct the Sandbox Content
+    let content = SandboxContent {
+        axon: state.axon.clone(),
+        aegis: state.aegis.clone(),
+        brain: state.brain.clone(),
+    };
+
+    Ok(StatusCode::OK)
 }
 
 async fn get_quarantine(State(state): State<ApiState>) -> Result<Json<Vec<String>>, StatusCode> {
