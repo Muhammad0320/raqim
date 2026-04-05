@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::sync::mpsc::Receiver;
 use std::time::{SystemTime, UNIX_EPOCH};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
@@ -49,7 +48,7 @@ pub struct SandboxContent {
     pub a2a_response_cache: Vec<u8>,
     pub http_response_cache: Vec<u8>,
 
-    pub a2a_receiver: Option<Receiver<(Vec<u8>, oneshot::Sender<Vec<u8>>)>>,
+    pub a2a_receiver: Option<mpsc::Receiver<(Vec<u8>, oneshot::Sender<Vec<u8>>)>>,
     pub a2a_reply_channel: Option<oneshot::Sender<Vec<u8>>>,
 }
 

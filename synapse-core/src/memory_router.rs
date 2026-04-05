@@ -1,11 +1,9 @@
 use arrow_array::Array;
 use futures::StreamExt;
-use futures::lock::Mutex;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
 use rkyv::{Archive, Archived};
-use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::AtomicU64;
 use std::{fs::File, sync::Arc, u64};
@@ -187,11 +185,8 @@ impl MemoryRouter {
         });
 
         // 2. Supplement with Deep Semantic search
-        let mut deep_memories = self
-            .lance_engine
-            .clone()
-            .search_memory(query, limit)
-            .await?;
+        let mut deep_memories = self.lance_engine.search_memory(query, limit).await?;
+
         final_context.append(&mut deep_memories);
 
         Ok(final_context)
