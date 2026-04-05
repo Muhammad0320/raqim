@@ -135,12 +135,12 @@ impl ServerHandler for RaqimHandler {
                     let payload_len = (serialized_state.len() as u32).to_le_bytes();
 
                     // Fire to the running synapse daemon Over TCP
-                    if let Ok(mut stream) = TcpStream::connect("127.0.0.1:8080").await {
+                    if let Ok(mut stream) = TcpStream::connect("0.0.0.1:8080").await {
                         let _ = stream.write_all(&payload_len).await;
                         let _ = stream.write_all(&serialized_state).await;
                     }
 
-                    //  Twll the LLM it succeeded
+                    //  Tell the LLM it succeeded
                     Ok(json!({
                        "content": [{
                            "type": "text",

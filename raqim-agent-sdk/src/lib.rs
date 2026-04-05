@@ -124,15 +124,6 @@ impl Raqim {
             }
 
         };
-
-
-        let bytes = path.as_bytes();
-
-        unsafe {
-            host_register_capability(bytes.as_ptr(), bytes.len())
-        }
-
     }
-
 
 }

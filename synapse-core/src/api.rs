@@ -1,8 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
-    async_trait,
-    Json, Router,
+    Json, Router, async_trait,
     extract::{FromRef, FromRequestParts, Multipart, State},
     http::{HeaderMap, Request, StatusCode, request::Parts},
     middleware::{self, Next},
@@ -12,11 +11,9 @@ use axum::{
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Clone)]
 pub struct ApiState {
     pub config: RaqimConfig,
-    
 
     pub decoding_key: Arc<DecodingKey>,
 }
@@ -28,18 +25,18 @@ struct EnterpriseClaim {
     pub exp: usize,
 }
 
-#[derive(Deserialize, Clone)] 
-pub struct  ForkConfig {
+#[derive(Deserialize, Clone)]
+pub struct ForkConfig {
     pub override_seed: Option<u64>,
-    pub inject_network: Option<String>, 
+    pub inject_network: Option<String>,
     pub env_overrides: HashMap<String, String>,
-    pub config_overrides: HashMap<String, String>
+    pub config_overrides: HashMap<String, String>,
 }
 
 struct TimeTravelRequest {
-    agent_id: String, 
-    target_tx_id: u64, 
-    fork_config: ForkConfig
+    agent_id: String,
+    target_tx_id: u64,
+    fork_config: ForkConfig,
 }
 
 // THE AXUS EXTRACTOR: This automatically protects any route it is attached to.
@@ -54,15 +51,19 @@ where
     type Rejection = StatusCode;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let api_state = ApiState::from_ref(state);
 
-        let api_state = ApiState::from_ref(state); 
-
-        let auth_header = parts.headers.get("Authorization").and_then(|h| h.to_str().ok()).filter(|s| s.starts_with("Bearer ")).map(|s| &s[7..] ).ok_or(StatusCode::UNAUTHORIZED)?;
+        let auth_header = parts
+            .headers
+            .get("Authorization")
+            .and_then(|h| h.to_str().ok())
+            .filter(|s| s.starts_with("Bearer "))
+            .map(|s| &s[7..])
+            .ok_or(StatusCode::UNAUTHORIZED)?;
 
         // TRUE CRYPTOGRAPHIC VERIFICATION
         let validation = Validation::new(Algorithm::RS256);
         match decode::<EnterpriseClaim>(auth_header, &api_state.decoding_key, &validation) {
-
             Ok(token_data) => {
                 // Feature gating! If they didn't pay for Aegis block the admin API
                 if !token_data.claims.features.comtains(&"aegis".to_string()) {
@@ -208,9 +209,7 @@ async fn upload_agent_wasm(
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> Router {
     Router::new()
-        .route("/v1/admin/quarantine", get( |_auth: ValidatedEnterprise, State(s): State<ApiState>| async move {
-            get_quarantine 
-        } ))
+        .route("/v1/admin/quarantine", get(get_quarantine))
         .route(
             "/v1/admin/quarantine/lift",
             post(lift_qurantine_and_resurrect),

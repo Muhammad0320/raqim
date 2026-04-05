@@ -99,19 +99,13 @@ impl WasmEngine {
     }
 
     // Reality Forking
-    pub fn build_wasi_context(
-        historical_seed: Option<u64>,
-        fork_config: Option<ForkConfig>,
-    ) -> (WasiCtx, u64) {
+    pub fn build_wasi_context(fork_config: Option<ForkConfig>) -> WasiCtx {
         let mut builder = WasiCtxBuilder::new();
 
-        // Resolve seed
-        let actual_seed = match &fork_config {
-            Some(f) if f.override_seed.is_some() => f.override_seed.unwrap(),
-            _ => historical_seed.unwrap_or_else(|| rand::random::<u64>()),
-        };
+        // Inject Default OS Environment
+        builder.env("RQM_VERSION", "1.0.0");
 
-        // 2. Inject Deep Reality overrides (Environment Variables)
+        // Inject Deep Reality overrides (Environment Variables)
         if let Some(fork) = &fork_config {
             for (key, value) in &fork.env_overrides {
                 builder.env(key, value);
@@ -126,7 +120,7 @@ impl WasmEngine {
             )
         }
 
-        (builder.build(), actual_seed)
+        builder.build()
     }
 
     /// Executes a compiled WASM agent securely.
