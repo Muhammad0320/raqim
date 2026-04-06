@@ -234,7 +234,7 @@ impl MemoryRouter {
         agent_hex: &str,
         target_tx_id: u64,
         wal_engine: Arc<WalEngine>,
-    ) -> Result<(Vec<u8>, Vec<OpLog>, u64), anyhow::Error> {
+    ) -> Result<(Vec<u8>, Vec<OpLog>, u64, u64), anyhow::Error> {
         self.telemetry.record_time_travel();
 
         // RESOLVE THE TARGET INFINITY HACK
@@ -250,23 +250,23 @@ impl MemoryRouter {
                 max_tx
             } else {
                 // If WAL is empty/ compacted, ask lanceDB for the absolute highest recorded tx_id
-                let (max_lance_tx, _) = self
+                let (max_lance_tx, _, _) = self
                     .lance_engine
                     .fetch_closest_snapshot(agent_hex, i64::MAX)
                     .await
-                    .unwrap_or((0, Vec::new()));
-                max_lance_tx as u64
+                    .unwrap_or((0, 0, Vec::new()));
+                max_lance_tx
             }
         } else {
             target_tx_id
         };
 
         // 1. O(1) COLD MEMORY JUMP (LanceDB)
-        let (snapshot_txid, memory_blob) = self
+        let (snapshot_txid, snapshot_timestamp, memory_blob) = self
             .lance_engine
             .fetch_closest_snapshot(agent_hex, target_tx_id as i64)
             .await
-            .unwrap_or((0, Vec::new()));
+            .unwrap_or((0, 0, Vec::new()));
 
         // Determine if we need deep discovery (LanceDB) or Hot Recoverey (WAL)
         let oldest_wal_tx = {
@@ -447,7 +447,12 @@ impl MemoryRouter {
             }
         }
 
-        Ok((memory_blob, historical_oplogs, actual_target_transaction))
+        Ok((
+            memory_blob,
+            historical_oplogs,
+            actual_target_transaction,
+            snapshot_timestamp,
+        ))
     }
 
     /// Fully resurrect a crashed or quarantined agent to its absolute latest state
@@ -548,7 +553,7 @@ impl MemoryRouter {
         fork_config: Option<ForkConfig>,
         is_isolated_debug: bool,
     ) -> Result<(), anyhow::Error> {
-        let (memory_blob, historical_oplog, _) = self
+        let (memory_blob, historical_oplog, snapshot_tx, snapshot_timestamp) = self
             .rebuild_agent_timeline(agent_hex, target_tx_id, self.wal_engine.clone())
             .await?;
 
@@ -625,7 +630,7 @@ impl MemoryRouter {
             global_tx_counter: self.global_tx_counter.clone(),
             event_tx: self.event_tx.clone(),
             wasi: wasi_ctx,
-            lance: self.lance.clone(),
+            lance: self.lance_engine.clone(),
             agent_hex: agent_hex.clone().to_string(),
             telemetry: self.telemetry.clone(),
 
@@ -655,8 +660,8 @@ impl MemoryRouter {
             let wasm_bytes = std::fs::read(&archive_batch).unwrap_or_default();
 
             let mut tracker = crate::sandbox::CheckPointTracker {
-                last_snapshot_time: 0,
-                last_snapshot_tx: 0,
+                last_snapshot_time: snapshot_timestamp,
+                last_snapshot_tx: snapshot_tx,
             };
 
             // Execute the agent, injecting the snapshot first
