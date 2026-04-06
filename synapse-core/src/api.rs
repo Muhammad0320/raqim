@@ -178,92 +178,10 @@ async fn lift_qurantine_and_resurrect(
     // List the Aegis Block.
     state.aegis.lift_quarantine(&payload.agent_id);
 
-    // 2. Rebuild the Timeline
-    let (base_snapshot, historical_oplog) = state
-        .router
-        .rebuild_agent_timeline(
-            &payload.agent_id,
-            payload.target_tx_id,
-            state.wal_engine.clone(),
-            state.telemetry.clone(),
-        )
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    // 3. Extract the Deterministic Variables for WASM injection
-    let mut replay_seeds = Vec::new();
-    let mut replay_responses = Vec::new();
-    let mut replay_timestamps = Vec::new();
-
-    for log in historical_oplog {
-        replay_seeds.extend(log.entropy_seeds);
-        replay_responses.extend(log.network_responses);
-        replay_timestamps.extend(log.state.timestamp);
-    }
-
-    // 4. Construct the Sandbox Content for Resurrection
-    let content = SandboxContent {
-        axon: state.axon,
-        aegis: state.aegis,
-        brain: state.brain,
-
-        wal: state.wal_engine,
-        cortex_tx: state.cortex_tx,
-        global_net: state.global_net,
-        global_tx_counter: state.global_tx_counter,
-        event_tx: state.event_tx,
-        wasi: state.wasi,
-        lance: state.lance,
-        agent_hex: payload.agent_id,
-        live_responses: Vec::new(),
-        live_seeds: Vec::new(),
-        live_timestamps: Vec::new(),
-        telemetry: state.telemetry,
-
-        replay_responses: replay_responses,
-        replay_seeds: replay_seeds,
-        replay_timestamps: replay_timestamps,
-    };
-
-    Ok(StatusCode::OK)
-}
-
-async fn upload_agent_wasm(
-    headers: HeaderMap,
-    State(state): State<ApiState>,
-    mut multipart: Multipart,
-) -> Result<StatusCode, StatusCode> {
-    // Stream the file to disk
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|_| StatusCode::BAD_REQUEST)?
-    {
-        let file_name = field
-            .file_name()
-            .unwrap_or("unknown_agent.wasm")
-            .to_string();
-
-        if !file_name.ends_with(".wasm") {
-            return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
-        }
-
-        let data = field
-            .bytes()
-            .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-        let file_path = format!("./plugins/{}", file_name);
-        fs::write(&file_path, data).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-        println!(
-            "[API] Successfully received and staged agent: {}",
-            file_name
-        );
-        return Ok(StatusCode::CREATED);
-    }
-
-    Err(StatusCode::BAD_REQUEST)
+        match  state.mem_router.boot_historical_agent(&payload.agent_id, payload.target_tx_id, Some(payload.fork_config), false).await {
+    Ok(()) => StatusCode::OK,
+    Err(_) => StatusCode::INTERNAL_SERVER_ERROR 
+   }
 }
 
 // Route Builder
