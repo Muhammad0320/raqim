@@ -24,9 +24,7 @@ pub struct ApiState {
     pub config: Arc<RaqimConfig>,
 
     pub mem_router: Arc<MemoryRouter>,
-
-    pub agent_hex: String,
-
+    pub aegis: Arc<AegisGateKeeper>,
     pub decoding_key: Arc<DecodingKey>,
 }
 

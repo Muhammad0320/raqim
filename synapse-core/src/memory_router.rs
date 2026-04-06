@@ -32,13 +32,13 @@ use crate::{
 };
 
 pub struct MemoryRouter {
-    wal_path: String,
     lance_engine: Arc<LanceEngine>,
-    config: RaqimConfig,
+    config: Arc<RaqimConfig>,
     telemetry: Arc<TelemetryEngine>,
     aegis: Arc<AegisGateKeeper>,
     axon: Arc<AxonGateKeeper>,
     brain: Arc<SwarmState>,
+    lance: Arc<LanceEngine>,
     wasm_engine: Arc<WasmEngine>,
     wal_engine: Arc<WalEngine>,
     cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -49,13 +49,13 @@ pub struct MemoryRouter {
 
 impl MemoryRouter {
     pub fn new(
-        wal_path: &str,
         lance_engine: Arc<LanceEngine>,
-        config: RaqimConfig,
+        config: Arc<RaqimConfig>,
         telemetry: Arc<TelemetryEngine>,
         aegis: Arc<AegisGateKeeper>,
         axon: Arc<AxonGateKeeper>,
         brain: Arc<SwarmState>,
+        lance: Arc<LanceEngine>,
         wasm_engine: Arc<WasmEngine>,
         wal_engine: Arc<WalEngine>,
         cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
@@ -64,13 +64,13 @@ impl MemoryRouter {
         event_tx: Sender<SystemEvent>,
     ) -> Self {
         Self {
-            wal_path: wal_path.to_string(),
             lance_engine,
             config,
             telemetry,
             aegis,
             axon,
             brain,
+            lance,
             wasm_engine,
             wal_engine,
             cortex_tx,
@@ -85,7 +85,7 @@ impl MemoryRouter {
     where
         F: FnMut(&Archived<OpLog>),
     {
-        if let Ok(file) = File::open(&self.wal_path) {
+        if let Ok(file) = File::open(&self.config.wal_path) {
             if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
                 let mut offset = 0;
                 while offset < mmap.len() {
@@ -603,7 +603,7 @@ impl MemoryRouter {
             }
         }
 
-        let wasi_ctx = WasmEngine::build_wasi_context(fork_config)
+        let wasi_ctx = WasmEngine::build_wasi_context(fork_config);
 
         // SERVE THE OS TIES DEBUGGING
         let active_wal = if is_isolated_debug {
@@ -629,7 +629,7 @@ impl MemoryRouter {
             event_tx: self.event_tx.clone(),
             wasi: wasi_ctx,
             lance: self.lance.clone(),
-            agent_hex: agent_hex.clone(),
+            agent_hex: agent_hex.clone().to_string(),
             telemetry: self.telemetry.clone(),
 
             // Live queue start empty
@@ -667,7 +667,7 @@ impl MemoryRouter {
                 &wasm_bytes,
                 content,
                 &mut tracker,
-                payload.target_tx_id,
+                target_tx_id,
                 Some(memory_blob),
             ) {
                 eprintln!(
