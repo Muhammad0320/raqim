@@ -19,6 +19,7 @@ pub enum RebuildMode {
 
 use crate::AgentStatus;
 use crate::aegis::AegisGateKeeper;
+use crate::api::ForkConfig;
 use crate::axon::AxonGateKeeper;
 use crate::network::GlobalNetworkBridge;
 use crate::sandbox::CheckPointTracker;
@@ -539,6 +540,85 @@ impl MemoryRouter {
         });
 
         println!("[SYSTEM] Agent {} successfully resurrected. ", agent_hex);
+        Ok(())
+    }
+
+    /// The Unified Engine for both Resurrection (Live) and Time Travel (Isolated)
+    pub async fn boot_historical_agent(
+        &self,
+        agent_hex: &str,
+        target_tx_id: u64,
+        fork_config: Option<ForkConfig>,
+        is_isolated_debug: bool,
+    ) -> Result<(), anyhow::Error> {
+        let (memory_blob, historical_oplog, _) = self
+            .rebuild_agent_timeline(agent_hex, target_tx_id, self.wal_engine.clone())
+            .await?;
+
+        // Extract flight recorded data
+        let mut recovered_seeds = Vec::new();
+        let mut recovered_networks = Vec::new();
+        let mut recovered_timestamps = Vec::new();
+
+        // The phantom brain initialization
+        let (dummy_tx, _) = broadcast::channel(1);
+        let dummy_wal =
+            Arc::new(WalEngine::start(format!("phamtom_{}", agent_hex).to_string()).await);
+        let dummy_net =
+            Arc::new(GlobalNetworkBridge::new(format!("phamtom_{}", agent_hex).as_str()).await);
+        let actual_tx = if is_isolated_debug {
+            dummy_tx
+        } else {
+            self.event_tx.clone()
+        };
+
+        let target_brain = if is_isolated_debug {
+            Arc::new(SwarmState::new(
+                format!("phantom_{}", agent_hex).as_str(),
+                actual_tx.clone(),
+            ))
+        } else {
+            self.brain.clone()
+        };
+
+        // 3. Cure Schizophrenia ( Syncing the CRDT )
+        for log in historical_oplog {
+            recovered_seeds.extend(log.entropy_seeds);
+            recovered_networks.extend(log.network_responses);
+            recovered_timestamps.push(log.state.timestamp);
+
+            // Physically rebuild the LORO CRDT Memory
+            if let Err(e) = target_brain.assimilate_foreign_thought(&log.delta) {
+                eprintln!("[WARNING] Failed to assimilate historical delta: {}", e);
+            }
+        }
+
+        // APPLY REALITY FORK OVERRIDES
+        if let Some(fork) = &fork_config {
+            if let Some(seed) = fork.override_seed {
+                recovered_seeds.push(seed);
+            }
+            if let Some(network) = &fork.inject_network {
+                recovered_networks.push(network.clone());
+            }
+        }
+
+        let wasi_ctx = if let Some(fork) = fork_config {
+            WasmEngine::build_wasi_context(fork.as_ref());
+        };
+
+        // SERVE THE OS TIES DEBUGGING
+        let actiive_wal = if is_isolated_debug {
+            dummy_wal.clone()
+        } else {
+            self.wal_engine.clone()
+        };
+        let active_net = if is_isolated_debug {
+            dummy_net.clone()
+        } else {
+            self.global_net.clone()
+        };
+
         Ok(())
     }
 }
