@@ -110,7 +110,7 @@ where
                 }
                 Ok(ValidatedEnterprise)
             }
-
+            
             Err(e) => {
                 eprintln!("[SECURITY] Crytographic JWT validation failed: {}", e);
                 Err(StatusCode::UNAUTHORIZED)
