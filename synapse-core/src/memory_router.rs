@@ -619,56 +619,65 @@ impl MemoryRouter {
             self.global_net.clone()
         };
 
-            // 6. Construct the Sandbox Content
-    let content = SandboxContent {
-        axon: self.axon.clone(),
-        aegis: self.aegis.clone(),
-        brain: target_brain.clone(),
-        wal: active_wal.clone(),
-        cortex_tx: self.cortex_tx.clone(),
-        global_net: active_net.clone(),
-        global_tx_counter: self.global_tx_counter.clone(),
-        event_tx: self.event_tx.clone(),
-        wasi: wasi_ctx,
-        lance: self.lance.clone(),
-        agent_hex: agent_hex, 
-        telemetry: self.telemetry.clone(),
+        // 6. Construct the Sandbox Content
+        let content = SandboxContent {
+            axon: self.axon.clone(),
+            aegis: self.aegis.clone(),
+            brain: target_brain.clone(),
+            wal: active_wal.clone(),
+            cortex_tx: self.cortex_tx.clone(),
+            global_net: active_net.clone(),
+            global_tx_counter: self.global_tx_counter.clone(),
+            event_tx: self.event_tx.clone(),
+            wasi: wasi_ctx,
+            lance: self.lance.clone(),
+            agent_hex: agent_hex,
+            telemetry: self.telemetry.clone(),
 
-        // Live queue start empty
-        live_responses: Vec::new(),
-        live_seeds: Vec::new(),
-        live_timestamps: Vec::new(),
+            // Live queue start empty
+            live_responses: Vec::new(),
+            live_seeds: Vec::new(),
+            live_timestamps: Vec::new(),
 
-        // Relay queues loaded with history + admin overrides
-        replay_seeds: recovered_seeds, 
-        replay_responses: recovered_networks, 
-        replay_timestamps: recovered_timestamps, 
+            // Relay queues loaded with history + admin overrides
+            replay_seeds: recovered_seeds,
+            replay_responses: recovered_networks,
+            replay_timestamps: recovered_timestamps,
 
-        a2a_receiver: None, 
-        a2a_reply_channel: None, 
-        a2a_response_cache: Vec::new(),
-        http_response_cache: Vec::new()
+            a2a_receiver: None,
+            a2a_reply_channel: None,
+            a2a_response_cache: Vec::new(),
+            http_response_cache: Vec::new(),
+        };
 
-    };
+        // 7. Boot the Forked reality into the OS thread.
+        let engine = self.wasm_engine.clone();
+        let agent_id_clone = agent_hex.clone();
 
-    // 7. Boot the Forked reality into the OS thread.
-    let engine = self.wasm_engine.clone();
-    let agent_id_clone = agent_hex.clone();
+        tokio::spawn(async move {
+            // Read the WASM binary from the disk
+            let archive_batch = format!("./plugins_archive/{}.wasm.running", &agent_id_clone);
+            let wasm_bytes = std::fs::read(&archive_batch).unwrap_or_default();
 
-    tokio::spawn(async move {
-        
-        // Read the WASM binary from the disk
-        let archive_batch = format!("./plugins_archive/{}.wasm.running", &agent_id_clone);
-        let wasm_bytes = std::fs::read(&archive_batch).unwrap_or_default();
+            let mut tracker = crate::sandbox::CheckPointTracker {
+                last_snapshot_time: 0,
+                last_snapshot_tx: 0,
+            };
 
-        let mut tracker = crate::sandbox::CheckPointTracker { last_snapshot_time: 0. last_snapshot_tx: 0 };
-
-        // Execute the agent, injecting the snapshot first
-        if let Err(e) = engine.execute_agent(&wasm_bytes, content, &mut tracker, payload.target_tx_id, Some(memory_blob)) {
-            eprintln!("[TIME MACHINE] Forked Agent {} crashed: {} ", agent_id_clone, e)
-        }
-
-    });
+            // Execute the agent, injecting the snapshot first
+            if let Err(e) = engine.execute_agent(
+                &wasm_bytes,
+                content,
+                &mut tracker,
+                payload.target_tx_id,
+                Some(memory_blob),
+            ) {
+                eprintln!(
+                    "[TIME MACHINE] Forked Agent {} crashed: {} ",
+                    agent_id_clone, e
+                )
+            }
+        });
 
         Ok(())
     }
