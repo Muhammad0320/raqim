@@ -154,97 +154,11 @@ async fn time_travel(
     // 1. Lift aegis Quarantine so that the agent can actually boot
     state.aegis.lift_quarantine(&payload.agent_id);
 
-    // 2. Fetch historical timeline (Snapshot + Oplog)
-    let timeline_res = state
-        .mem_router
-        .rebuild_agent_timeline(&payload.agent_id, payload.target_tx_id, state.wal)
-        .await;
-
-    let (memory_blob, historical_oplog, _) = match timeline_res {
-        Ok(res) => res,
-        Err(e) => {
-            eprintln!("[TIME MACHINE] Timeline reconstruction failed: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-
-    // 3. Extract the deterministic flight recorder
-    let mut recovered_seed = Vec::new();
-    let mut recovered_network = Vec::new();
-    let mut recovered_timestamp = Vec::new();
-
-    for log in historical_oplog {
-        {
-            recovered_network.extend(log.network_responses);
-            recovered_seed.extend(log.entropy_seeds);
-            recovered_timestamp.push(log.state.timestamp);
-        }
-    }
-
-    // 4. THE REALITY FORK: Append the Admin's Overrides
-    if let Some(fork) = &payload.fork_config {
-        if let Some(seed) = fork.override_seed {
-            recovered_seed.push(seed);
-        }
-        if let Some(net) = &fork.inject_network {
-            recovered_network.push(net.clone());
-        }
-    }
-
-    // 5. Build the Deep Environment WASI context
-    let wasi_ctx = WasmEngine::build_wasi_context(payload.fork_config.as_ref());
-
-    // 6. Construct the Sandbox Content
-    let content = SandboxContent {
-        axon: state.axon.clone(),
-        aegis: state.aegis.clone(),
-        brain: state.brain.clone(),
-        wal: state.wal.clone(),
-        cortex_tx: state.cortex_tx.clone(),
-        global_net: state.global_net.clone(),
-        global_tx_counter: state.global_tx_counter.clone(),
-        event_tx: state.event_tx.clone(),
-        wasi: wasi_ctx,
-        lance: state.lance.clone(),
-        agent_hex: payload.agent_id, 
-        telemetry: state.telemetry.clone(),
-
-        // Live queue start empty
-        live_responses: Vec::new(),
-        live_seeds: Vec::new(),
-        live_timestamps: Vec::new(),
-
-        // Relay queues loaded with history + admin overrides
-        replay_seeds: recovered_seed, 
-        replay_responses: recovered_network, 
-        replay_timestamps: recovered_timestamp,
-
-        a2a_receiver: None, 
-        a2a_reply_channel: None, 
-        a2a_response_cache: Vec::new()
-
-    };
-
-    // 7. Boot the Forked reality into the OS thread.
-    let engine = state.wasm.clone();
-    let agent_id_clone = payload.agent_id.clone();
-
-    tokio::spawn(async move {
-        
-        // Read the WASM binary from the disk
-        let archive_batch = format!("./plugins_archive/{}.wasm.running", &agent_id_clone);
-        let wasm_bytes = std::fs::read(&archive_batch).unwrap_or_default();
-
-        let mut tracker = crate::sandbox::CheckPointTracker { last_snapshot_time: 0. last_snapshot_tx: 0 };
-
-        // Execute the agent, injecting the snapshot first
-        if let Err(e) = engine.execute_agent(&wasm_bytes, content, &mut tracker, payload.target_tx_id, Some(memory_blob)) {
-            eprintln!("[TIME MACHINE] Forked Agent {} crashed: {} ", agent_id_clone, e)
-        }
-
-    });
-
-    Ok(StatusCode::OK)
+   match  state.mem_router.boot_historical_agent(&payload.agent_id, payload.target_tx_id, Some(payload.fork_config), true).await {
+    Ok(()) => StatusCode::OK,
+    Err(_) => StatusCode::INTERNAL_SERVER_ERROR 
+   }
+   
 }
 
 async fn get_quarantine(State(state): State<ApiState>) -> Result<Json<Vec<String>>, StatusCode> {
