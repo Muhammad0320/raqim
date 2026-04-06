@@ -507,6 +507,8 @@ impl MemoryRouter {
             replay_timestamps: recovered_timestamps.clone(),
             a2a_response_cache: Vec::new(),
             http_response_cache: Vec::new(),
+            a2a_receiver: None,
+            a2a_reply_channel: None,
         };
 
         // 4. Spawn the brand new engine thread
