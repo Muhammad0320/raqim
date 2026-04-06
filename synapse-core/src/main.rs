@@ -92,28 +92,6 @@ async fn main() {
         }
     });
 
-    // BOOT THE AXUM CONTROL PLANE (port + 1 to keep it off the raw TCP port)
-    let pem_content =
-        std::fs::read(&config.public_key_path).expect("Missing Enterprise Public Key");
-    let decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content).unwrap());
-
-    let api_state = ApiState {
-        config: config.clone(),
-        aegis: aegis.clone(),
-        mem_router: mem_router.clone(),
-        decoding_key,
-    };
-
-    let axum_app = build_admin_router(api_state);
-    let api_port = config.port + 1;
-    tokio::spawn(async move {
-        let listener = TcpListener::bind(format!("0.0.0.0:{}", api_port))
-            .await
-            .unwrap();
-        println!("[SYSTEM] Axum control plane live on port {} ", api_port);
-        axum::serve(listener, axum_app).await.unwrap();
-    });
-
     // The Autonomous compactor (WAL reaper)
     let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone(), event_tx.clone());
     compactor.start_daemon();
@@ -317,6 +295,28 @@ async fn main() {
         global_net_clone
             .listen_for_foreign_thoughts(global_brain, global_axon, global_tx)
             .await;
+    });
+
+    // BOOT THE AXUM CONTROL PLANE (port + 1 to keep it off the raw TCP port)
+    let pem_content =
+        std::fs::read(&config.public_key_path).expect("Missing Enterprise Public Key");
+    let decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content).unwrap());
+
+    let api_state = ApiState {
+        config: config.clone(),
+        aegis: aegis.clone(),
+        mem_router: mem_router.clone(),
+        decoding_key,
+    };
+
+    let axum_app = build_admin_router(api_state);
+    let api_port = config.port + 1;
+    tokio::spawn(async move {
+        let listener = TcpListener::bind(format!("0.0.0.0:{}", api_port))
+            .await
+            .unwrap();
+        println!("[SYSTEM] Axum control plane live on port {} ", api_port);
+        axum::serve(listener, axum_app).await.unwrap();
     });
 
     // 3. The Production TCP ingress.
