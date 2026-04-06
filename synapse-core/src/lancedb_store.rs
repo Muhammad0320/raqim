@@ -73,6 +73,7 @@ impl LanceEngine {
     fn snapshot_schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
             Field::new("tx_id", DataType::Int64, false),
+            Field::new("timestamp", DataType::Int64, false),
             Field::new("agent_id", DataType::Utf8, false),
             Field::new("memory_blob", DataType::Binary, false), // The actual WASM RAM
         ]))
@@ -389,14 +390,21 @@ impl LanceEngine {
     }
 
     /// Saves the 2MB-5MB active memory snapshot to Cold storage.
-    pub async fn save_snapshot(&self, tx_id: i64, agent_hex: &str, memory_blob: Vec<u8>) {
+    pub async fn save_snapshot(
+        &self,
+        tx_id: i64,
+        timestamp: i64,
+        agent_hex: &str,
+        memory_blob: Vec<u8>,
+    ) {
         let tx_array = Arc::new(Int64Array::from(vec![tx_id]));
+        let time_array = Arc::new(Int64Array::from(vec![timestamp]));
         let agent_array = Arc::new(StringArray::from(vec![agent_hex.to_string()]));
         let blob_array = Arc::new(BinaryArray::from(vec![memory_blob.as_slice()]));
 
         let batch = RecordBatch::try_new(
             self.snapshot_schema(),
-            vec![tx_array, agent_array, blob_array],
+            vec![tx_array, time_array, agent_array, blob_array],
         );
 
         // THE FIX: Wrap the batch in a RecordBatchIterator with the correct schema
@@ -425,7 +433,7 @@ impl LanceEngine {
         &self,
         agent_hex: &str,
         target_tx_id: i64,
-    ) -> Result<(i64, Vec<u8>), anyhow::Error> {
+    ) -> Result<(u64, u64, Vec<u8>), anyhow::Error> {
         let table = self.db.open_table(&self.snapshot_table).execute().await?;
 
         // SQL-Style Filter: Find the highest TxID for this agent that's <= target.
@@ -435,6 +443,10 @@ impl LanceEngine {
                 "agent_id = '{}' AND tx_id <= {} ",
                 agent_hex, target_tx_id
             ))
+            // Ensure we get the absolute closest one
+            .order_by(vec![
+                lancedb::query::ExecutableQuery::order_by("tx_id").desc(),
+            ])
             .limit(1)
             .execute()
             .await?;
@@ -447,6 +459,14 @@ impl LanceEngine {
                 .as_any()
                 .downcast_ref::<Int64Array>()
                 .unwrap();
+
+            let time_col = batch
+                .column_by_name("timestamp")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+
             let blob_col = batch
                 .column_by_name("memory_blob")
                 .unwrap()
@@ -454,7 +474,11 @@ impl LanceEngine {
                 .downcast_ref::<BinaryArray>()
                 .unwrap();
 
-            return Ok((tx_col.value(0), blob_col.value(0).to_vec()));
+            return Ok((
+                tx_col.value(0) as u64,
+                time_col.value(0) as u64,
+                blob_col.value(0).to_vec(),
+            ));
         }
 
         Err(anyhow::anyhow!(
