@@ -10,6 +10,7 @@ use synapse_core::compactor::WalCompactor;
 use synapse_core::config::RaqimConfig;
 use synapse_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
 use synapse_core::lancedb_store::LanceEngine;
+use synapse_core::memory_router::MemoryRouter;
 use synapse_core::network::GlobalNetworkBridge;
 use synapse_core::nucleus::WalEngine;
 use synapse_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
@@ -24,7 +25,7 @@ use wasmtime_wasi::WasiCtxBuilder;
 
 #[tokio::main]
 async fn main() {
-    let config = RaqimConfig::load_or_bootstrap();
+    let config = Arc::new(RaqimConfig::load_or_bootstrap());
 
     println!("Bismillah. Booting Raqim Daemon on port {}...", config.port);
 
@@ -98,6 +99,8 @@ async fn main() {
 
     let api_state = ApiState {
         config: config.clone(),
+        aegis: aegis.clone(),
+        mem_router: mem_router.clone(),
         decoding_key,
     };
 
@@ -135,6 +138,21 @@ async fn main() {
     // Initialize global tracker ONCE outside the loop
     let global_tracker: Arc<Mutex<HashMap<String, CheckPointTracker>>> =
         Arc::new(Mutex::new(HashMap::new()));
+
+    let mem_router = Arc::new(MemoryRouter::new(
+        config.clone(),
+        telemetry.clone(),
+        aegis.clone(),
+        axon.clone(),
+        brain.clone(),
+        lance_engine.clone(),
+        wasm_engine.clone(),
+        wal.clone(),
+        cortex_tx.clone(),
+        global_net.clone(),
+        tx_counter.clone(),
+        event_tx.clone(),
+    ));
 
     let w_brain = brain.clone();
     let w_axon = axon.clone();

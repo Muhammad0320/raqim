@@ -32,7 +32,6 @@ use crate::{
 };
 
 pub struct MemoryRouter {
-    lance_engine: Arc<LanceEngine>,
     config: Arc<RaqimConfig>,
     telemetry: Arc<TelemetryEngine>,
     aegis: Arc<AegisGateKeeper>,
@@ -49,7 +48,6 @@ pub struct MemoryRouter {
 
 impl MemoryRouter {
     pub fn new(
-        lance_engine: Arc<LanceEngine>,
         config: Arc<RaqimConfig>,
         telemetry: Arc<TelemetryEngine>,
         aegis: Arc<AegisGateKeeper>,
@@ -64,7 +62,6 @@ impl MemoryRouter {
         event_tx: Sender<SystemEvent>,
     ) -> Self {
         Self {
-            lance_engine,
             config,
             telemetry,
             aegis,
