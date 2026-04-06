@@ -603,9 +603,7 @@ impl MemoryRouter {
             }
         }
 
-        let wasi_ctx = if let Some(fork) = fork_config {
-            WasmEngine::build_wasi_context(fork);
-        };
+        let wasi_ctx = WasmEngine::build_wasi_context(fork_config)
 
         // SERVE THE OS TIES DEBUGGING
         let active_wal = if is_isolated_debug {
@@ -631,7 +629,7 @@ impl MemoryRouter {
             event_tx: self.event_tx.clone(),
             wasi: wasi_ctx,
             lance: self.lance.clone(),
-            agent_hex: agent_hex,
+            agent_hex: agent_hex.clone(),
             telemetry: self.telemetry.clone(),
 
             // Live queue start empty
