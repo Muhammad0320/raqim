@@ -14,7 +14,6 @@ use axum::{
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast::Sender, mpsc, oneshot};
-use wasmtime_wasi::WasiCtx;
 
 use crate::{
     SystemEvent, aegis::AegisGateKeeper, axon::AxonGateKeeper, config::RaqimConfig, lancedb_store::LanceEngine, memory_router::MemoryRouter, network::GlobalNetworkBridge, nucleus::WalEngine, sandbox::{SandboxContent, WasmEngine}, state::SwarmState, telemetry::TelemetryEngine
@@ -23,37 +22,11 @@ use crate::{
 #[derive(Clone)]
 pub struct ApiState {
     pub config: Arc<RaqimConfig>,
-    pub axon: Arc<AxonGateKeeper>,
-    pub aegis: Arc<AegisGateKeeper>,
-    pub brain: Arc<SwarmState>,
-    pub wal: Arc<WalEngine>,
-    pub wasm: Arc<WasmEngine>,
-    pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
-    pub global_net: Arc<GlobalNetworkBridge>,
-    pub global_tx_counter: Arc<AtomicU64>,
-    pub event_tx: Sender<SystemEvent>,
-    pub lance: Arc<LanceEngine>,
+
     pub mem_router: Arc<MemoryRouter>,
 
     pub agent_hex: String,
-    pub telemetry: Arc<TelemetryEngine>,
 
-    // LIVE MODE: We collect seeds and HTTP responses as they happen
-    pub live_seeds: Vec<u64>,
-    pub live_responses: Vec<String>,
-    pub live_timestamps: Vec<i64>,
-
-    // REPLAY MODE: We load the seeds and HTTP responses here before booting
-    pub replay_seeds: Vec<u64>,
-    pub replay_responses: Vec<String>,
-    pub replay_timestamps: Vec<i64>,
-
-    // Temporary Cache
-    pub a2a_response_cache: Vec<u8>,
-    pub http_response_cache: Vec<u8>,
-
-    pub a2a_receiver: Option<mpsc::Receiver<(Vec<u8>, oneshot::Sender<Vec<u8>>)>>,
-    pub a2a_reply_channel: Option<oneshot::Sender<Vec<u8>>>,
     pub decoding_key: Arc<DecodingKey>,
 }
 
