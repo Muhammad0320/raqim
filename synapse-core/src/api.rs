@@ -13,10 +13,9 @@ use axum::{
 };
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast::Sender, mpsc, oneshot};
 
 use crate::{
-    SystemEvent, aegis::AegisGateKeeper, axon::AxonGateKeeper, config::RaqimConfig, lancedb_store::LanceEngine, memory_router::MemoryRouter, network::GlobalNetworkBridge, nucleus::WalEngine, sandbox::{SandboxContent, WasmEngine}, state::SwarmState, telemetry::TelemetryEngine
+    SystemEvent, aegis::AegisGateKeeper,  config::RaqimConfig,  memory_router::MemoryRouter, network::GlobalNetworkBridge, nucleus::WalEngine, sandbox::{SandboxContent, WasmEngine}, state::SwarmState, telemetry::TelemetryEngine
 };
 
 #[derive(Clone)]
@@ -165,5 +164,5 @@ pub fn build_admin_router(state: ApiState) -> Router {
         )
         route("/v1/admin/time_travel", post(time_travel))
         .route("/v1/admin/upload_agent", post(upload_agent_wasm))
-        .with_state(state)
+        .with_state(state);
 }
