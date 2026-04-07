@@ -156,7 +156,7 @@ impl AegisGateKeeper {
     }
 
     /// Locks down the agent globally across the OS
-    fn trigger_quarantine(&self, agent_hex: &str, target: &str, reason: &str) {
+    pub fn trigger_quarantine(&self, agent_hex: &str, target: &str, reason: &str) {
         eprintln!(
             "\n[AEGIS RED ALERT] Unauthorized access attempts by {} on path: {} ",
             agent_hex, target

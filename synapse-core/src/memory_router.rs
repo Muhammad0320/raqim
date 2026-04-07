@@ -467,7 +467,7 @@ impl MemoryRouter {
         );
 
         // 1. Fetch the absolute latest timeline (Snapshot + delta)
-        let (memory_blob, historical_oplog, resolved_tx) = self
+        let (memory_blob, historical_oplog, resolved_tx, resolved_timestamp) = self
             .rebuild_agent_timeline(&agent_hex, u64::MAX, wal_engine)
             .await?;
 
@@ -652,7 +652,7 @@ impl MemoryRouter {
 
         // 7. Boot the Forked reality into the OS thread.
         let engine = self.wasm_engine.clone();
-        let agent_id_clone = agent_hex.clone();
+        let agent_id_clone = agent_hex.to_string();
 
         tokio::spawn(async move {
             // Read the WASM binary from the disk

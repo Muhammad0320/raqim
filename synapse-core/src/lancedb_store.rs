@@ -444,9 +444,9 @@ impl LanceEngine {
                 agent_hex, target_tx_id
             ))
             // Ensure we get the absolute closest one
-            .order_by(vec![
-                lancedb::query::ExecutableQuery::order_by("tx_id").desc(),
-            ])
+            // .order_by(vec![
+            //     lancedb::query::ExecutableQuery::order_by("tx_id").desc(),
+            // ])
             .limit(1)
             .execute()
             .await?;
