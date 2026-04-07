@@ -18,6 +18,27 @@ use crate::{
     SystemEvent, aegis::AegisGateKeeper,  config::RaqimConfig,  memory_router::MemoryRouter, network::GlobalNetworkBridge, nucleus::WalEngine, sandbox::{SandboxContent, WasmEngine}, state::SwarmState, telemetry::TelemetryEngine
 };
 
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")] // Enables brilliant json parsing {"type": "AskQuestion", }
+pub enum WsMessage {
+
+    // Python -> Daemon: "I want to listen here"
+    RegisterCapability { capability: String },
+
+    // Python -> Daemon: "Ask the swarm this question"
+    AskQuestion { request_id: String, capability: String, question: Vec<u8> },
+
+    // Daemon -> python: "Someone is asking you a question"
+    IncomingQuestion {request_id: String, capability: String, question: Vec<u8>},
+
+    // Python -> Daemom: "Here's my answer to the incoming question"
+    ReplyToQuestion {request_id: String, answer: Vec<u8>},
+
+    // Deamon -> Python: "Here's the answer for the AskQueustion you sent earlier"
+    QuestionAnswered {request_id: String, answer: Vec<u8>}
+
+}
+
 #[derive(Clone)]
 pub struct ApiState {
     pub config: Arc<RaqimConfig>,
