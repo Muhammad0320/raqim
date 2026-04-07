@@ -7,10 +7,12 @@ use std::{
     fs,
     sync::{Arc, RwLock},
 };
+use ed25519_dalek::{PublicKey, Signature, Verifier};
 use tokio::sync::broadcast::Sender;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AegisPolicy {
+    pub public_key_hex: String,
     pub allowed_namespaces: Vec<String>,
     pub blocked_namespaces: Vec<String>,
 }
@@ -238,4 +240,31 @@ impl AegisGateKeeper {
             .map(|s| s.to_string())
             .collect()
     }
+
+    /// True Cryptographici Verification
+    pub fn verify_agent_signature(&self, agent_hex: &str, payload: &[u8], signature_bytes: &[u8; 64]) -> bool {
+
+        let policies = self.policies.read().unwrap();
+
+        if let Some(policy) = policies.get(agent_hex) {
+
+            // Decode the expected public_key from the TOML
+            let pub_key_bytes = hex::decode(&policy.public_key_hex).unwrap_or_default();
+
+             if let Ok(public_key) = PublicKey::from_bytes(&pub_key_bytes) {
+                if let Ok(signature) = Signature::from_bytes(&signature_bytes) {
+                    // Mathematically prove thhat sender owns this privage key
+
+                    if public_key.verify_strict(payload, &signature).is_ok() {
+                        return true; 
+                    }
+                }
+             }
+        }
+
+        // If the key is missing, invalid, or signature is spoofed quarantine them. 
+        self.trigger_quarantine(agent_hex, "Global", "Cryptographic Spoofing detected");
+        false 
+    }
+
 }
