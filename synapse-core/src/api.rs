@@ -2,7 +2,11 @@ use std::{
     collections::HashMap,
     sync::{Arc, atomic::AtomicU64},
 };
-
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use dashmap::DashMap;
+use futures_util::{stream::StreamExt, SinkExt};
+use tokio::sync::{mpsc, oneshot};
+use uuid::Uuid;
 use axum::{
     Json, Router, async_trait,
     extract::{FromRef, FromRequestParts, Multipart, State},
@@ -37,6 +41,7 @@ pub enum WsMessage {
     // Deamon -> Python: "Here's the answer for the AskQueustion you sent earlier"
     QuestionAnswered {request_id: String, answer: Vec<u8>}
 
+    Error {message: String}
 }
 
 #[derive(Clone)]
@@ -110,6 +115,33 @@ where
     }
 }
 
+// The shared state for this speciific ws connection
+struct WsConnectionstate {
+
+    // Maps req_id -> the pipe that wakes up the waiting zenoh thread
+    pending_a2a_requests: DashMap<String, oneshot::Sender<Vec<u8>>>,
+    // Channel to send mesages DOWN to the Python client
+    downstream_tx: mpsc::Sender<Message>,
+
+}
+
+// 3. The Axum Handler (Protected by ValidatedEnterprise) 
+pub async fn mcp_ws_handler(_auth: ValidatedEnterprise, State(state): State<ApiState>, ws: WebSocketUpgrade) -> Response {
+    ws.on_upgrade(move |socket| handle_mcp_socket(socket, state))
+}
+
+pub async fn handle_mcp_socket(socket: WebSocket, state: ApiState) {
+
+    let (mut ws_sender, mut ws_receiver) = socket.split();
+    let (downstream_tx, mut downstream_rs) = mpsc::channel::<Message>(100);
+
+    let conn_state = Arc::new(WsConnectionstate {
+        pending_a2a_requests: DashMap::new(),
+        downstream_tx: downstream_tx.clone()
+    });
+
+}
+
 // Authorization middleware ( The enterprise firewall )
 async fn auth_middleware(
     State(state): State<ApiState>,
@@ -130,6 +162,8 @@ async fn auth_middleware(
     );
     Err(StatusCode::UNAUTHORIZED)
 }
+
+
 
 // THE ACTIVE DEBUGGING ROUTE HANDLER
 async fn time_travel(
