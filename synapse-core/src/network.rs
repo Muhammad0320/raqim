@@ -14,6 +14,7 @@ use crate::aegis::AegisGateKeeper;
 pub struct GlobalNetworkBridge {
     session: Arc<Session>,
     workspace_prefix: String,
+    aegis: Arc<AegisGateKeeper>
 }
 
 impl GlobalNetworkBridge {
@@ -123,6 +124,15 @@ impl GlobalNetworkBridge {
 
                 // Extract the raw question bytes
                 let question_payload = archievd_envelope.payload.as_slice();
+                let sender_hex = hex::encode( archievd_envelope.sender_id.as_slice());
+
+                // ZERO-TRUST: Verify the signature of the question
+                let sig_array: &[u8; 64] = archievd_envelope.signature.as_slice().try_into().unwrap();
+
+                if !aegis.verify_agent_signature(&sender_hex, question_payload, sig_array) {
+                    println!("[AEGIS INTERDICTION] Cryptographic Spoofing detected.");
+                    continue;
+                }
 
                 // Executes the agent's internal logic  to generate answer
                 let answer_bytes = response_handler(question_payload);
