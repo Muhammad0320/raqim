@@ -51,10 +51,12 @@ impl LanceEngine {
         Arc::new(Schema::new(vec![
             Field::new("tx_id", DataType::Int64, false),
             Field::new("agent_id", DataType::Utf8, false),
+            Field::new("namespace", DataType::Utf8, false),
             Field::new("timestamp", DataType::Int64, false),
             Field::new("status", DataType::Utf8, false),
             Field::new("text", DataType::Utf8, false),
             Field::new("entropy_seeds", DataType::Utf8, false),
+            
             Field::new("network_responses", DataType::Utf8, false),
             // We store the raw binary delta
             Field::new("payload", DataType::Binary, false),
@@ -242,6 +244,8 @@ impl LanceEngine {
             .iter()
             .map(|l| format!("{:?}", l.state.status))
             .collect();
+        let namespaces: Vec<String> = logs.iter().map(|l| l.state.namespace.clone() ).collect();
+
         let seeds: Vec<String> = logs
             .iter()
             .map(|l| serde_json::to_string(&l.entropy_seeds).unwrap_or_else(|_| "[]".to_string()))
@@ -264,6 +268,7 @@ impl LanceEngine {
         let status_array = Arc::new(StringArray::from(statuses));
         let text_array = Arc::new(StringArray::from(texts));
         let seed_array = Arc::new(StringArray::from(seeds));
+        let namespace_array = Arc::new(StringArray::from(namespaces));
         let http_res_array = Arc::new(StringArray::from(http_responses));
 
         let vector_array = Arc::new(
@@ -281,6 +286,7 @@ impl LanceEngine {
             vec![
                 tx_id_array as Arc<dyn arrow_array::Array>,
                 agent_id_array as Arc<dyn arrow_array::Array>,
+                namespace_array as Arc<dyn arrow_array::Array>,
                 timestamp_array as Arc<dyn arrow_array::Array>,
                 status_array as Arc<dyn arrow_array::Array>,
                 text_array as Arc<dyn arrow_array::Array>,
@@ -320,6 +326,7 @@ impl LanceEngine {
     pub async fn search_memory(
         &self,
         query: &str,
+        namespace: &str,
         limit: usize,
     ) -> Result<Vec<String>, anyhow::Error> {
         // 1. Convert English query to mathematical vector
@@ -338,6 +345,7 @@ impl LanceEngine {
         let mut stream = table
             .query()
             .nearest_to(query_vector)?
+            .filter(format!("namespace LIKE '{}'", namespace))
             .limit(limit)
             .execute()
             .await?;

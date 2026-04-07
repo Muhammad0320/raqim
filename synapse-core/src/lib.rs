@@ -36,6 +36,7 @@ pub struct AgentState {
     pub status: AgentStatus,
 
     pub text: String,
+    pub namespace: String,
 }
 
 // The current execution state of the agent in the swarm.
