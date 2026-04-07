@@ -17,11 +17,12 @@ use synapse_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use synapse_core::state::SwarmState;
 use synapse_core::telemetry::TelemetryEngine;
 use synapse_core::utils::parse_agent_id;
-use synapse_core::{AgentState, SystemEvent, execute_synapse_cascade};
+use synapse_core::{AgentState, IngressEnvelope, SystemEvent, execute_synapse_cascade};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc};
 use wasmtime_wasi::WasiCtxBuilder;
+use ed25519_dalek::{PublicKey, Signature, Verifier};
 
 #[tokio::main]
 async fn main() {
@@ -337,6 +338,7 @@ async fn main() {
         let global_publisher = global_net.clone();
         let task_tx_couter = tx_counter.clone();
         let task_event_tx = event_tx.clone();
+        let task_aegis = aegis.clone();
 
         tokio::spawn(async move {
             //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
@@ -357,14 +359,34 @@ async fn main() {
                 return;
             }
 
-            // TRUE Zero-copy deserialization of incoming data
-            let archived_state = unsafe {
-                rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(&payload_buf)
-            };
+            // Zero copy payload read
+            let archived_ingress = unsafe {rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&payload_buf)  };
+
+            let agent_hex = hex::encode(archived_ingress.state.agent_id);
+            let path_intent = archived_ingress.intent_path.as_str();
+
+            // 1. Checking aegis first before doing any expensive math or hitting the wal. 
+            if !task_aegis.enforce_aegis_policy(&agent_hex, path_intent) {
+                eprintln!("[AEGIS] Dropped Unauthorized TCP packets from {}", agent_hex);
+                return; 
+            }
+
+            // 2. TRUE CRPTOGRAPHIC IDENTITY  VERIFICATION
+            let pub_key = PublicKey::from_bytes(&archived_ingress.public_key).unwrap();
+            let signature = Signature::from_bytes(&archived_ingress.signature).unwrap();
+            
+            // We verify signature against the actual raw bytes of the state 
+            let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&archived_ingress.state).unwrap();
+
+            if pub_key.verify(&state_bytes, &signature).is_err() {
+                eprintln!("[SECURITY] Invalid Ed25519 signature. Dropping TCP packet. ");
+                task_aegis.trigger_quarantine(&agent_hex, path_intent, "Cryptographic Spoofing");
+                return;
+            }
 
             // --- The Synaptic Cascade ---
             execute_synapse_cascade(
-                archived_state,
+                &archived_ingress.state,
                 task_brain,
                 task_axon,
                 task_wal,
