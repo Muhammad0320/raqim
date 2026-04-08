@@ -133,12 +133,128 @@ pub async fn mcp_ws_handler(_auth: ValidatedEnterprise, State(state): State<ApiS
 pub async fn handle_mcp_socket(socket: WebSocket, state: ApiState) {
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
-    let (downstream_tx, mut downstream_rs) = mpsc::channel::<Message>(100);
+    let (downstream_tx, mut downstream_rx) = mpsc::channel::<Message>(100);
 
     let conn_state = Arc::new(WsConnectionstate {
         pending_a2a_requests: DashMap::new(),
         downstream_tx: downstream_tx.clone()
     });
+
+    // Task 1: Forward downstream message to the actual WS
+    let mut send_task = tokio::spawn(async move {
+
+        while let Some(msg) = downstream_rx.recv().await {
+            if ws_sender.send(msg).await.is_err() {break;}
+        }
+
+    });
+
+    // Task 2: Process incoming message from Python
+    let conn_state_clone = conn_state.clone();
+    let mut revc_task = tokio::spawn(async move {
+
+        while let Some(Ok(msg)) = ws_receiver.next().await {
+
+             if let Message::Text(text) = msg {
+                if let Ok(ws_msg) = serde_json::from_str::<WsMessage>(&text) {
+                    process_ws_message(ws_msg, conn_state_clone.clone(), state.clone()).await;
+                }
+             }
+
+        }
+
+    });
+
+    // If either task fails (socket closed), kill both.
+    tokio::select!{
+        _ = (&mut send_task) => revc_task.abort(),
+        _ = (&mut recv_task) => send_task.abort()
+    };
+
+}
+
+// The Memory router 
+async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_state: ApiState) {
+
+    match msg {
+
+        WsMessage::RegisterCapability {capability} => {
+
+            let conn_clone = conn.clone();
+
+            // OS spawns the zenoh listener. 
+            tokio::spawn(async move {
+
+                os_state.global_net.register_agent_capability(&capability, move |question_bytes| {
+                    let request_id = Uuid::new_v4().to_string();
+                    let (reply_tx, reply_rx) = oneshot::channel();
+
+                    // Store the wakeup pipe in the dashMap
+                    conn_clone.pending_a2a_requests.insert(req_id, reply_tx);
+
+                    let incoming_msg = WsMessage::IncomingQuestion {
+                        request_id, capability: capability.clone(), question: question_bytes.to_vec()
+                    };
+
+                    // Send down to python
+                    let json = serde_json::to_string(&incoming_msg).unwrap();
+                    let _ conn_clone.downstream_rx.blocking_send(Message::Text(json));
+
+                    // ZERO CPU WAIT: Yield OS thread until Python replies.
+                    reply_rx.blocking_recv().unwrap_or_else(|_| b"A2A_TIMEOUT".to_vec())
+
+                }).await;
+
+            }); 
+
+
+        }
+
+        WsMessage::ReplyToQuestion {request_id, answer} => {
+
+            // Remove the wakeup ppipe from dashmap and fire the answer into it!
+            if let Some((_, reply_tx)) = conn.pending_a2a_requests.remove(&request_id) {
+                let _ = reply_tx.send(answer);
+            }
+
+        }
+
+        WsMessage:: AskQuestion { request_id: String, capability: String, question: Vec<u8> } => {
+
+            let os_state_clone = os_state.clone();
+            let conn_clone = conn.clone();
+
+            tokio::spawn(async move {
+
+                // Construct Envelope ( Simplified )
+                let envelope = A2AEnvelope {
+                    sender_id: [0; 16],
+                    target_capability: capability,
+                    payload: question, 
+                    signature: [0; 64]
+                };
+
+                match os_state_clone.global_net.execute_a2a_rpc(envelope, os_state_clone.aegis.clone(), os_state_clone.telemetry.clone() ).await {
+
+                    Ok(answer) => {
+                        let res = WsMessage::QuestionAnswered {request_id, answer};
+                        let _ = conn_clone.downstream_tx.send(Message::Text(serde_json::to_string(&res).unwrap())).await; 
+
+                    }
+
+                    Err(e) => {
+                        let err = WsMessage::Error{message: e.to_string()};
+                        let _ = conn_clone.downstream_tx.send(Message::Text(serde_json::to_string(&res).unwrap())).await;
+                    }
+
+                }
+            });
+
+        }
+
+        _ => {}
+
+    }
 
 }
 
@@ -162,7 +278,6 @@ async fn auth_middleware(
     );
     Err(StatusCode::UNAUTHORIZED)
 }
-
 
 
 // THE ACTIVE DEBUGGING ROUTE HANDLER
