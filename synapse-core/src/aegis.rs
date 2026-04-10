@@ -1,4 +1,5 @@
 use crate::SystemEvent;
+use ed25519_dalek::{PublicKey, Signature};
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
 use std::sync::mpsc::channel;
@@ -7,7 +8,6 @@ use std::{
     fs,
     sync::{Arc, RwLock},
 };
-use ed25519_dalek::{PublicKey, Signature, Verifier};
 use tokio::sync::broadcast::Sender;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -242,29 +242,31 @@ impl AegisGateKeeper {
     }
 
     /// True Cryptographici Verification
-    pub fn verify_agent_signature(&self, agent_hex: &str, payload: &[u8], signature_bytes: &[u8; 64]) -> bool {
-
+    pub fn verify_agent_signature(
+        &self,
+        agent_hex: &str,
+        payload: &[u8],
+        signature_bytes: &[u8; 64],
+    ) -> bool {
         let policies = self.policies.read().unwrap();
 
         if let Some(policy) = policies.get(agent_hex) {
-
             // Decode the expected public_key from the TOML
             let pub_key_bytes = hex::decode(&policy.public_key_hex).unwrap_or_default();
 
-             if let Ok(public_key) = PublicKey::from_bytes(&pub_key_bytes) {
+            if let Ok(public_key) = PublicKey::from_bytes(&pub_key_bytes) {
                 if let Ok(signature) = Signature::from_bytes(&signature_bytes) {
                     // Mathematically prove thhat sender owns this privage key
 
                     if public_key.verify_strict(payload, &signature).is_ok() {
-                        return true; 
+                        return true;
                     }
                 }
-             }
+            }
         }
 
-        // If the key is missing, invalid, or signature is spoofed quarantine them. 
+        // If the key is missing, invalid, or signature is spoofed quarantine them.
         self.trigger_quarantine(agent_hex, "Global", "Cryptographic Spoofing detected");
-        false 
+        false
     }
-
 }
