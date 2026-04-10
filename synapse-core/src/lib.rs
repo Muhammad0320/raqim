@@ -75,12 +75,10 @@ pub struct A2AEnvelope {
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct IngressEnvelope {
-
-    pub intent_path: String,   // "rqm_finance/ledger" ( Checked by Aegis ) 
-    pub public_key: [u8; 32],  // The Ed25519 public key of the sender 
-    pub signature: [u8; 64],    // The mathematical signauture proving authenticity
-    pub state: AgentState       // The actual thought
-
+    pub intent_path: String,  // "rqm_finance/ledger" ( Checked by Aegis )
+    pub public_key: [u8; 32], // The Ed25519 public key of the sender
+    pub signature: [u8; 64],  // The mathematical signauture proving authenticity
+    pub state: AgentState,    // The actual thought
 }
 
 pub async fn execute_synapse_cascade(
@@ -109,6 +107,7 @@ pub async fn execute_synapse_cascade(
 
     let enriched_state = AgentState {
         agent_id: Some(final_agent_id),
+        namespace: archive_state.namespace.to_string(),
         transaction_id: global_tx_counter.fetch_add(1, Ordering::SeqCst),
 
         timestamp: SystemTime::now()
