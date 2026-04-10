@@ -56,7 +56,6 @@ impl LanceEngine {
             Field::new("status", DataType::Utf8, false),
             Field::new("text", DataType::Utf8, false),
             Field::new("entropy_seeds", DataType::Utf8, false),
-            
             Field::new("network_responses", DataType::Utf8, false),
             // We store the raw binary delta
             Field::new("payload", DataType::Binary, false),
@@ -244,7 +243,7 @@ impl LanceEngine {
             .iter()
             .map(|l| format!("{:?}", l.state.status))
             .collect();
-        let namespaces: Vec<String> = logs.iter().map(|l| l.state.namespace.clone() ).collect();
+        let namespaces: Vec<String> = logs.iter().map(|l| l.state.namespace.clone()).collect();
 
         let seeds: Vec<String> = logs
             .iter()
@@ -345,7 +344,7 @@ impl LanceEngine {
         let mut stream = table
             .query()
             .nearest_to(query_vector)?
-            .filter(format!("namespace LIKE '{}'", namespace))
+            .only_if(format!("namespace LIKE '{}'", namespace))
             .limit(limit)
             .execute()
             .await?;
