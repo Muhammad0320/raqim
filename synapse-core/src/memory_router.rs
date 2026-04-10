@@ -8,7 +8,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::u64;
-use std::{fs::File, sync::Arc, u64};
+use std::{fs::File, sync::Arc};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
@@ -198,43 +198,6 @@ impl MemoryRouter {
 
     /// THE RESURRECTION ENGINE
     /// Rebuild the LORO CRDT Hive Mind from Cold storage and Hot Memory.
-    pub async fn rebuild_swarm_brain(
-        &self,
-        mode: RebuildMode,
-    ) -> Result<Arc<SwarmState>, anyhow::Error> {
-        println!("[SYSTEM] Bismillah. Initializing Swarm State Rebuild Sequence...");
-
-        let target_tx_id = match mode {
-            RebuildMode::Resurrection => u64::MAX,
-            RebuildMode::TimeTravel(tx) => tx,
-        };
-
-        // Initilaize a blank CRDT Brain
-        // TODO: In production pass the actual sender!
-        let (tx, _rx) = broadcast::channel::<SystemEvent>(1000);
-        let rebuilt_brain = Arc::new(SwarmState::new("rqm_global", tx));
-
-        // We stream the OpLogs from the WAL up to the Target tx_id
-        let mut applied_count = 0;
-
-        self.scan_wal_zero_copy(|log| {
-            if log.state.transaction_id <= target_tx_id {
-                // Re-assimilate the histocal thought into the new brain
-                if let Err(e) = rebuilt_brain.assimilate_foreign_thought(&log.delta.as_slice()) {
-                    eprintln!("Failed to assimilate historical delta during build: {}", e);
-                }
-
-                applied_count += 1;
-            }
-        });
-
-        println!(
-            "[SYSTEM] BRAIN REBUILD COMPLETE. Assimilated {} historical deltas.",
-            applied_count
-        );
-        Ok(rebuilt_brain)
-    }
-
     pub async fn rebuild_agent_timeline(
         &self,
         agent_hex: &str,

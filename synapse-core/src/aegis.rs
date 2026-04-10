@@ -1,5 +1,5 @@
 use crate::SystemEvent;
-use ed25519_dalek::{PublicKey, Signature};
+use ed25519_dalek::{ Signature, VerifyingKey, Verifier};
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
 use std::sync::mpsc::channel;
@@ -254,11 +254,11 @@ impl AegisGateKeeper {
             // Decode the expected public_key from the TOML
             let pub_key_bytes = hex::decode(&policy.public_key_hex).unwrap_or_default();
 
-            if let Ok(public_key) = PublicKey::from_bytes(&pub_key_bytes) {
-                if let Ok(signature) = Signature::from_bytes(&signature_bytes) {
-                    // Mathematically prove thhat sender owns this privage key
+            if let Ok(public_key) = VerifyingKey::from_bytes(&pub_key_bytes.as_slice().try_into().unwrap_or(&[0; 32])) {
+                if let Ok(signature) = Signature::from_bytes(signature_bytes.try_into().unwrap_or(&[0; 64])) {
+                    // Mathematically prove that sender owns this privage key
 
-                    if public_key.verify_strict(payload, &signature).is_ok() {
+                    if public_key.verify(payload, &signature).is_ok() {
                         return true;
                     }
                 }
