@@ -155,8 +155,14 @@ impl GlobalNetworkBridge {
         // 1. AEGIS INTERCEPTION: Does this agent have clearance this question?
         if !aegis.enforce_a2a_policy(sender_hex.as_str(), &envelope.target_capability) {
             return Err(anyhow::anyhow!(
-                "AEGIS INTERDICTION: Unauthorized A2A Communucation"
+                "[AEGIS INTERDICTION] Unauthorized A2A Communucation"
             ));
+        }
+
+        if !aegis.verify_agent_signature(sender_hex.as_str(), &envelope.payload, &envelope.signature) {
+            return Err(anyhow::anyhow!(
+                "[AEGIS INTERDICTION] Cryptograpic Spoofing detected"
+            ))
         }
 
         // 2. Zero-Copy Serializarion of envelope
