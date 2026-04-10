@@ -22,7 +22,7 @@ impl SwarmState {
         // We attach a deep listener to the Loro Doc. Whenever the math resolves a conflict, this closure fires syncronously
         let tx_clone = event_tx.clone();
         let doc_clone = doc.clone();
-        let subscriber = doc.subscribe_root(Arc::new(move |event: &loro::event::DiffEvent| {
+        let subscriber = doc.subscribe_root(Arc::new(move |event: loro::event::DiffEvent| {
             // event.events contains the precise diffs (what was added, deleted, updated)
             for diff in &event.events {
                 let target_path = diff
@@ -35,6 +35,7 @@ impl SwarmState {
                 // Extract the actual Loro Lamport Clock (TxID) for this exact merge event!
                 let front = doc_clone
                     .oplog_frontiers()
+                    .as_slice()
                     .first()
                     .map(|id| id.counter as u64)
                     .unwrap_or(0);
@@ -61,7 +62,7 @@ impl SwarmState {
         // 1. Capture the vector version of the CRDT *before* we changes.
         // A mathematical vector clock ( e.g Node A is at tick 5, Node B is at tick 2. )
 
-        let previous_frontier = self.doc.oplog_frontiers();
+        let previous_vv = self.doc.oplog_vv();
 
         // 2. Locate or create a specific mmap for this agent id. let
         let agent_memory = self
@@ -90,9 +91,7 @@ impl SwarmState {
         // 5. TRUE DELTA EXPORT: We tell loro to export ONLY the bytes that changed since the `previous_frontier`.
         // Ultimately creating a tiny [u8] payload
         self.doc
-            .export(loro::ExportMode::Updates {
-                from: &previous_frontier,
-            })
+            .export(loro::ExportMode::Updates { from: &previous_vv })
             .expect("Failed to export CRDT delta")
     }
 

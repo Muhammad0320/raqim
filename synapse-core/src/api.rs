@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, atomic::AtomicU64},
 };
+use tokio::time::{timeout, Duration};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use dashmap::DashMap;
 use futures_util::{stream::StreamExt, SinkExt};
@@ -30,7 +31,7 @@ pub enum WsMessage {
     RegisterCapability { capability: String },
 
     // Python -> Daemon: "Ask the swarm this question"
-    AskQuestion { request_id: String, capability: String, question: Vec<u8> },
+    AskQuestion { request_id: String, capability: String, question: Vec<u8>, sender_hex: String, public_key: Vec<u8>, signature: Vec<u8> },
 
     // Daemon -> python: "Someone is asking you a question"
     IncomingQuestion {request_id: String, capability: String, question: Vec<u8>},
@@ -200,8 +201,18 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     let json = serde_json::to_string(&incoming_msg).unwrap();
                     let _ conn_clone.downstream_rx.blocking_send(Message::Text(json));
 
-                    // ZERO CPU WAIT: Yield OS thread until Python replies.
-                    reply_rx.blocking_recv().unwrap_or_else(|_| b"A2A_TIMEOUT".to_vec())
+                    // ZERO CPU WAIT: Yield OS thread until Python replies. 15 seconds max wait time.
+                    match tokio::runtime::Handle::current().block_on(timeout(Duration::from_secs(15), reply_rx)) {
+
+                        Ok(Ok(answer)) => answer, // Python replied in time. 
+                        _ => {
+                            // Python crashed or too long. Clean up the DashMap to prevent memory leaks.
+                            conn_clone.pending_a2a_requests.remove(&request_id);
+                            b"A2A_TIMEOUT_OR_CRASH".to_vec()
+                        }
+                        
+                    }
+
 
                 }).await;
 
@@ -219,19 +230,27 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
         }
 
-        WsMessage:: AskQuestion { request_id: String, capability: String, question: Vec<u8> } => {
+        WsMessage:: AskQuestion { request_id: String, capability: String, question: Vec<u8>, sender_hex: String, public_key: Vec<u8>, signature: Vec<u8> } => {
 
             let os_state_clone = os_state.clone();
             let conn_clone = conn.clone();
 
             tokio::spawn(async move {
 
-                // Construct Envelope ( Simplified )
+                // Construct Envelope.
+                let mut sender_id_bytes = [0u8; 16];
+                if let Ok(decoded) = hex::decode(&sender_hex) {
+                    if decoded.len() == 16 {sender_id_bytes.copy_from_slice(&decoded);}
+                }
+
+                let mut sig_bytes = [0u8; 64];
+                if signature.len == 64 {sig_bytes.copy_from_slice(&signature)}
+
                 let envelope = A2AEnvelope {
-                    sender_id: [0; 16],
+                    sender_id: sender_id_bytes,
                     target_capability: capability,
                     payload: question, 
-                    signature: [0; 64]
+                    signature: sig_bytes
                 };
 
                 match os_state_clone.global_net.execute_a2a_rpc(envelope, os_state_clone.aegis.clone(), os_state_clone.telemetry.clone() ).await {
