@@ -6,6 +6,8 @@ use memmap2::MmapOptions;
 use rkyv::{Archive, Archived};
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::u64;
 use std::{fs::File, sync::Arc, u64};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
@@ -173,6 +175,7 @@ impl MemoryRouter {
     pub async fn semantic_search_with_context(
         &self,
         query: &str,
+        namespace: &str,
         limit: usize,
     ) -> Result<Vec<String>, anyhow::Error> {
         let mut final_context = Vec::new();
@@ -183,7 +186,10 @@ impl MemoryRouter {
         });
 
         // 2. Supplement with Deep Semantic search
-        let mut deep_memories = self.lance_engine.search_memory(query, limit).await?;
+        let mut deep_memories = self
+            .lance_engine
+            .search_memory(query, namespace, limit)
+            .await?;
 
         final_context.append(&mut deep_memories);
 
@@ -549,12 +555,14 @@ impl MemoryRouter {
     pub async fn boot_historical_agent(
         &self,
         agent_hex: &str,
-        target_tx_id: u64,
+        target_tx_id: Option<u64>,
         fork_config: Option<ForkConfig>,
         is_isolated_debug: bool,
     ) -> Result<(), anyhow::Error> {
+        let fetch_target = target_tx_id.unwrap_or(u64::MAX);
+
         let (memory_blob, historical_oplog, snapshot_tx, snapshot_timestamp) = self
-            .rebuild_agent_timeline(agent_hex, target_tx_id, self.wal_engine.clone())
+            .rebuild_agent_timeline(agent_hex, fetch_target, self.wal_engine.clone())
             .await?;
 
         // Extract flight recorded data
@@ -654,6 +662,11 @@ impl MemoryRouter {
         let engine = self.wasm_engine.clone();
         let agent_id_clone = agent_hex.to_string();
 
+        // If we're time travelling the agent starts from the target_tx_id
+        // If Resurrection, we pass in the CURRENT global counter so it resumes at the tip of reality
+        let execution_start_tx =
+            target_tx_id.unwrap_or_else(|| self.global_tx_counter.load(Ordering::SeqCst));
+
         tokio::spawn(async move {
             // Read the WASM binary from the disk
             let archive_batch = format!("./plugins_archive/{}.wasm.running", &agent_id_clone);
@@ -669,13 +682,10 @@ impl MemoryRouter {
                 &wasm_bytes,
                 content,
                 &mut tracker,
-                target_tx_id,
+                execution_start_tx,
                 Some(memory_blob),
             ) {
-                eprintln!(
-                    "[TIME MACHINE] Forked Agent {} crashed: {} ",
-                    agent_id_clone, e
-                )
+                eprintln!("[TIME MACHINE]  Agent {} crashed: {} ", agent_id_clone, e)
             }
         });
 
