@@ -10,16 +10,17 @@ use zenoh::Session;
 use zenoh::config::Config;
 
 use crate::aegis::AegisGateKeeper;
+use tokio::time::{Duration, timeout};
 
 pub struct GlobalNetworkBridge {
     session: Arc<Session>,
     workspace_prefix: String,
-    aegis: Arc<AegisGateKeeper>
+    aegis: Arc<AegisGateKeeper>,
 }
 
 impl GlobalNetworkBridge {
     /// Bootstraps the modern Zenoh P2P Node
-    pub async fn new(swarm_name: &str) -> Self {
+    pub async fn new(swarm_name: &str, aegis: Arc<AegisGateKeeper>) -> Self {
         println!("Bismillah. Initialializing Zenoh Global Network Bridge...");
 
         // Config::default() automatically discovers other nodes on LAN/WAN
@@ -29,6 +30,7 @@ impl GlobalNetworkBridge {
         Self {
             session: Arc::new(session),
             workspace_prefix: format!("synapse/swarm/{}", swarm_name),
+            aegis,
         }
     }
 
@@ -105,7 +107,7 @@ impl GlobalNetworkBridge {
     ) {
         let key_expr = format!("{}/a2a/{}", self.workspace_prefix, capability_path);
         let session = self.session.clone();
-
+        let aegis = self.aegis.clone();
         tokio::spawn(async move {
             // A Queryable tells the global network: "I can answer questions for this topic"
             let queryable = session.declare_queryable(&key_expr).await.unwrap();
@@ -124,10 +126,11 @@ impl GlobalNetworkBridge {
 
                 // Extract the raw question bytes
                 let question_payload = archievd_envelope.payload.as_slice();
-                let sender_hex = hex::encode( archievd_envelope.sender_id.as_slice());
+                let sender_hex = hex::encode(archievd_envelope.sender_id.as_slice());
 
                 // ZERO-TRUST: Verify the signature of the question
-                let sig_array: &[u8; 64] = archievd_envelope.signature.as_slice().try_into().unwrap();
+                let sig_array: &[u8; 64] =
+                    archievd_envelope.signature.as_slice().try_into().unwrap();
 
                 if !aegis.verify_agent_signature(&sender_hex, question_payload, sig_array) {
                     println!("[AEGIS INTERDICTION] Cryptographic Spoofing detected.");
@@ -159,10 +162,14 @@ impl GlobalNetworkBridge {
             ));
         }
 
-        if !aegis.verify_agent_signature(sender_hex.as_str(), &envelope.payload, &envelope.signature) {
+        if !aegis.verify_agent_signature(
+            sender_hex.as_str(),
+            &envelope.payload,
+            &envelope.signature,
+        ) {
             return Err(anyhow::anyhow!(
                 "[AEGIS INTERDICTION] Cryptograpic Spoofing detected"
-            ))
+            ));
         }
 
         // 2. Zero-Copy Serializarion of envelope
@@ -179,10 +186,12 @@ impl GlobalNetworkBridge {
 
         // 3. Zenoh GET request (The RPC )
         // We broadcast the question and wait for the authoritative answer to reply.
-        let mut replies = self.session.get(&key_expr).payload(bytes).await.unwrap();
+        let replies = self.session.get(&key_expr).payload(bytes).await.unwrap();
+
+        let reply_future = replies.recv_async();
 
         // 4. Await the response from the target agent
-        if let Ok(reply) = replies.recv_async().await {
+        if let Ok(Ok(reply)) = timeout(Duration::from_secs(15), reply_future).await {
             if let Ok(sample) = reply.result() {
                 // Return the answer bytes back to the caller
                 let res_bytes = sample.payload().to_bytes().to_vec();

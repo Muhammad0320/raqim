@@ -1,7 +1,9 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{SystemTime, UNIX_EPOCH};
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
+use tokio::time::{Duration, timeout};
+use wasmtime_wasi::WasiCtxBuilder;
+use wasmtime_wasi::preview1::WasiP1Ctx;
 
 use crate::aegis::AegisGateKeeper;
 use crate::api::ForkConfig;
@@ -29,7 +31,7 @@ pub struct SandboxContent {
     pub global_net: Arc<GlobalNetworkBridge>,
     pub global_tx_counter: Arc<AtomicU64>,
     pub event_tx: Sender<SystemEvent>,
-    pub wasi: WasiCtx,
+    pub wasi: WasiP1Ctx,
     pub lance: Arc<LanceEngine>,
     pub agent_hex: String,
     pub telemetry: Arc<TelemetryEngine>,
@@ -99,7 +101,7 @@ impl WasmEngine {
     }
 
     // Reality Forking
-    pub fn build_wasi_context(fork_config: Option<ForkConfig>) -> WasiCtx {
+    pub fn build_wasi_context(fork_config: Option<ForkConfig>) -> WasiP1Ctx {
         let mut builder = WasiCtxBuilder::new();
 
         // Inject Default OS Environment
@@ -120,7 +122,7 @@ impl WasmEngine {
             )
         }
 
-        builder.build()
+        builder.build_p1()
     }
 
     /// Executes a compiled WASM agent securely.
@@ -419,12 +421,12 @@ impl WasmEngine {
                         {
                             // Wait for the WASM to process it and reply
                             return reply_rx
-                                .blocking_recv()
+                                .recv_timeout(Duration::from_secs(15))
                                 .unwrap_or_else(|_| b"A2A_GUEST_CRASH".to_vec());
                         }
                         b"A2A_QUEUE_FULL".to_vec()
                     })
-                    .await;
+                    .await
                 });
             },
         )?;
@@ -541,7 +543,12 @@ impl WasmEngine {
             // Spawn an independent OS task to handle the heavy I/O
             tokio::spawn(async move {
                 lance_clone
-                    .save_snapshot(current_tx_id as i64, &agent_hex_clone, snapshot_clone)
+                    .save_snapshot(
+                        current_tx_id as i64,
+                        current_time as i64,
+                        &agent_hex_clone,
+                        snapshot_clone,
+                    )
                     .await;
 
                 println!(

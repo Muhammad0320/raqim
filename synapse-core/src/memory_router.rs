@@ -14,11 +14,6 @@ use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 use wasmtime_wasi::WasiCtxBuilder;
 
-pub enum RebuildMode {
-    Resurrection,
-    TimeTravel(u64), //
-}
-
 use crate::AgentStatus;
 use crate::aegis::AegisGateKeeper;
 use crate::api::ForkConfig;
@@ -32,6 +27,11 @@ use crate::{
     OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
     state::SwarmState,
 };
+
+pub enum RebuildMode {
+    Resurrection,
+    TimeTravel(u64), //
+}
 
 pub struct MemoryRouter {
     config: Arc<RaqimConfig>,
@@ -537,8 +537,13 @@ impl MemoryRouter {
         let (dummy_tx, _) = broadcast::channel(1);
         let dummy_wal =
             Arc::new(WalEngine::start(format!("phamtom_{}", agent_hex).to_string()).await);
-        let dummy_net =
-            Arc::new(GlobalNetworkBridge::new(format!("phamtom_{}", agent_hex).as_str()).await);
+        let dummy_net = Arc::new(
+            GlobalNetworkBridge::new(
+                format!("phamtom_{}", agent_hex).as_str(),
+                self.aegis.clone(),
+            )
+            .await,
+        );
         let actual_tx = if is_isolated_debug {
             dummy_tx
         } else {
