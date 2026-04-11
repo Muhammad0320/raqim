@@ -52,7 +52,8 @@ pub struct ApiState {
     pub mem_router: Arc<MemoryRouter>,
     pub aegis: Arc<AegisGateKeeper>,
     pub decoding_key: Arc<DecodingKey>,
-    pub global_net: Arc<GlobalNetworkBridge>
+    pub global_net: Arc<GlobalNetworkBridge>,
+    pub telemetry: Arc<TelemetryEngine>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -169,7 +170,7 @@ pub async fn handle_mcp_socket(socket: WebSocket, state: ApiState) {
 
     // If either task fails (socket closed), kill both.
     tokio::select!{
-        _ = (&mut send_task) => revc_task.abort(),
+        _ = (&mut send_task) => recv_task.abort(),
         _ = (&mut recv_task) => send_task.abort()
     };
 
@@ -200,7 +201,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                     // Send down to python
                     let json = serde_json::to_string(&incoming_msg).unwrap();
-                    let _ = conn_clone.downstream_rx.blocking_send(Message::Text(json));
+                    let _ = conn_clone.downstream_tx.blocking_send(Message::Text(json));
 
                     // ZERO CPU WAIT: Yield OS thread until Python replies. 15 seconds max wait time.
                     match tokio::runtime::Handle::current().block_on(timeout(Duration::from_secs(15), reply_rx)) {
@@ -264,7 +265,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                     Err(e) => {
                         let err = WsMessage::Error{message: e.to_string()};
-                        let _ = conn_clone.downstream_tx.send(Message::Text(serde_json::to_string(&res).unwrap())).await;
+                        let _ = conn_clone.downstream_tx.send(Message::Text(serde_json::to_string(&err).unwrap())).await;
                     }
 
                 }
@@ -328,7 +329,6 @@ async fn get_quarantine(State(state): State<ApiState>) -> Result<Json<Vec<String
 #[derive(Deserialize)]
 struct ResurrectPayload {
     agent_id: String,
-    target_tx_id: u64,
 }
 
 async fn lift_qurantine_and_resurrect(
@@ -338,7 +338,7 @@ async fn lift_qurantine_and_resurrect(
     // List the Aegis Block.
     state.aegis.lift_quarantine(&payload.agent_id);
 
-        match  state.mem_router.boot_historical_agent(&payload.agent_id, payload.target_tx_id, Some(payload.fork_config), false).await {
+        match  state.mem_router.boot_historical_agent(&payload.agent_id, None, None, false).await {
     Ok(()) => StatusCode::OK,
     Err(_) => StatusCode::INTERNAL_SERVER_ERROR 
    }

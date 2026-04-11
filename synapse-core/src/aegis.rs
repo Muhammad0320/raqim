@@ -257,7 +257,7 @@ impl AegisGateKeeper {
             if let Ok(public_key) =
                 VerifyingKey::from_bytes(pub_key_bytes.as_slice().try_into().unwrap_or(&[0; 32]))
             {
-                if let Ok(signature) =
+                if let signature =
                     Signature::from_bytes(signature_bytes.try_into().unwrap_or(&[0; 64]))
                 {
                     // Mathematically prove that sender owns this privage key
