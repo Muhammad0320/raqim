@@ -20,7 +20,7 @@ use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    SystemEvent, aegis::AegisGateKeeper,  config::RaqimConfig,  memory_router::MemoryRouter, network::GlobalNetworkBridge, nucleus::WalEngine, sandbox::{SandboxContent, WasmEngine}, state::SwarmState, telemetry::TelemetryEngine
+    A2AEnvelope, SystemEvent, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter, network::GlobalNetworkBridge, nucleus::WalEngine, sandbox::{SandboxContent, WasmEngine}, state::SwarmState, telemetry::TelemetryEngine
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,9 +40,9 @@ pub enum WsMessage {
     ReplyToQuestion {request_id: String, answer: Vec<u8>},
 
     // Deamon -> Python: "Here's the answer for the AskQueustion you sent earlier"
-    QuestionAnswered {request_id: String, answer: Vec<u8>}
+    QuestionAnswered {request_id: String, answer: Vec<u8>},
 
-    Error {message: String}
+    Error {message: String},
 }
 
 #[derive(Clone)]
@@ -52,6 +52,7 @@ pub struct ApiState {
     pub mem_router: Arc<MemoryRouter>,
     pub aegis: Arc<AegisGateKeeper>,
     pub decoding_key: Arc<DecodingKey>,
+    pub global_net: Arc<GlobalNetworkBridge>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -152,7 +153,7 @@ pub async fn handle_mcp_socket(socket: WebSocket, state: ApiState) {
 
     // Task 2: Process incoming message from Python
     let conn_state_clone = conn_state.clone();
-    let mut revc_task = tokio::spawn(async move {
+    let mut recv_task = tokio::spawn(async move {
 
         while let Some(Ok(msg)) = ws_receiver.next().await {
 
@@ -191,7 +192,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     let (reply_tx, reply_rx) = oneshot::channel();
 
                     // Store the wakeup pipe in the dashMap
-                    conn_clone.pending_a2a_requests.insert(req_id, reply_tx);
+                    conn_clone.pending_a2a_requests.insert(request_id, reply_tx);
 
                     let incoming_msg = WsMessage::IncomingQuestion {
                         request_id, capability: capability.clone(), question: question_bytes.to_vec()
@@ -199,7 +200,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                     // Send down to python
                     let json = serde_json::to_string(&incoming_msg).unwrap();
-                    let _ conn_clone.downstream_rx.blocking_send(Message::Text(json));
+                    let _ = conn_clone.downstream_rx.blocking_send(Message::Text(json));
 
                     // ZERO CPU WAIT: Yield OS thread until Python replies. 15 seconds max wait time.
                     match tokio::runtime::Handle::current().block_on(timeout(Duration::from_secs(15), reply_rx)) {
@@ -230,7 +231,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
         }
 
-        WsMessage:: AskQuestion { request_id: String, capability: String, question: Vec<u8>, sender_hex: String, public_key: Vec<u8>, signature: Vec<u8> } => {
+        WsMessage:: AskQuestion { request_id, capability, question, sender_hex, public_key, signature } => {
 
             let os_state_clone = os_state.clone();
             let conn_clone = conn.clone();
@@ -244,7 +245,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                 }
 
                 let mut sig_bytes = [0u8; 64];
-                if signature.len == 64 {sig_bytes.copy_from_slice(&signature)}
+                if signature.len() == 64 {sig_bytes.copy_from_slice(&signature)}
 
                 let envelope = A2AEnvelope {
                     sender_id: sender_id_bytes,
