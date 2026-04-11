@@ -184,19 +184,20 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
         WsMessage::RegisterCapability {capability} => {
 
             let conn_clone = conn.clone();
+            let cap_clone = capability.to_string();
 
             // OS spawns the zenoh listener. 
             tokio::spawn(async move {
 
-                os_state.global_net.register_agent_capability(&capability, move |question_bytes| {
+                os_state.global_net.register_agent_capability(&cap_clone.as_str(), move |question_bytes| {
                     let request_id = Uuid::new_v4().to_string();
                     let (reply_tx, reply_rx) = oneshot::channel();
 
                     // Store the wakeup pipe in the dashMap
-                    conn_clone.pending_a2a_requests.insert(request_id, reply_tx);
+                    conn_clone.pending_a2a_requests.insert(request_id.clone(), reply_tx);
 
                     let incoming_msg = WsMessage::IncomingQuestion {
-                        request_id, capability: capability.clone(), question: question_bytes.to_vec()
+                        request_id.clone(), capability: cap_clone.clone(), question: question_bytes.to_vec()
                     };
 
                     // Send down to python
