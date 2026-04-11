@@ -1,5 +1,5 @@
 [package]
-name = "rqm-tui"
+name = "synapse-tui"
 version = "0.1.0"
 edition = "2024"
 

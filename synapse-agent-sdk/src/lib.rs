@@ -1,4 +1,4 @@
-
+use synapse_core::AgentState;
 
 #[link(wasm_import_module = "synapse_env")]
 extern "C" {
@@ -26,9 +26,9 @@ extern "C" {
 }
 
 //  The Safe Rust Wrapper for Enterprise Developers
-pub struct Raqim;
+pub struct Synapse;
 
-impl Raqim {
+impl Synapse {
 
     /// Get deterministic time (safe for replay)
     pub fn time() -> i64 {

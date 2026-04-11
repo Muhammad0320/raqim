@@ -1,0 +1,8 @@
+[package]
+name = "synapse-agent-sdk"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rkyv = "0.8.15"
+synapse-core = { path = "../synapse-core" }

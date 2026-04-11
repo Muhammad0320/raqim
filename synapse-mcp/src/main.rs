@@ -3,7 +3,7 @@ use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
 use serde_json::{Value, json};
-use synapse_core::config::RaqimConfig;
+use synapse_core::config::SynapseConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -14,17 +14,17 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
 // 1. Define our custom handler struct
-struct RaqimHandler {
+struct SynapseHandler {
     commit_tool: Tool,
     query_tool: Tool,
 }
 
-impl RaqimHandler {
+impl SynapseHandler {
     fn new() -> Self {
         Self {
             commit_tool: Tool {
                 name: "commit_thought".to_string(),
-                description: "Commits a verified thought to the Raqim OS".to_string(),
+                description: "Commits a verified thought to the Synapse OS".to_string(),
                 schema: json!({
                     "type": "object",
                     "properties": {
@@ -38,7 +38,7 @@ impl RaqimHandler {
 
             query_tool: Tool {
                 name: "query_memory".to_string(),
-                description: "Searches Raqims's deep semantic history for context.".to_string(),
+                description: "Searches Synapses's deep semantic history for context.".to_string(),
                 schema: json!({
                     "type": "object",
                     "properties": {
@@ -53,9 +53,9 @@ impl RaqimHandler {
 }
 
 #[async_trait]
-impl ServerHandler for RaqimHandler {
+impl ServerHandler for SynapseHandler {
 
-    let config = RaqimConfig::load_or_bootstrap();
+    let config = SynapseConfig::load_or_bootstrap();
 
     // 1. The Boot sequence
     async fn initialize(
@@ -144,7 +144,7 @@ impl ServerHandler for RaqimHandler {
                     Ok(json!({
                        "content": [{
                            "type": "text",
-                           "text": format!("Successfully commited to Roqim OS: {}. IMPORTANT: Your assigned agent_hex_id is '{}'. You MUST include this exact ID in all future tool calls for this task. ", text, hex_id_to_return)
+                           "text": format!("Successfully commited to Synapse OS: {}. IMPORTANT: Your assigned agent_hex_id is '{}'. You MUST include this exact ID in all future tool calls for this task. ", text, hex_id_to_return)
                        }]
                     }))
                 } else if name == "query_memory" {
@@ -192,11 +192,11 @@ impl ServerHandler for RaqimHandler {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Bismillah. Booting RQM MPC Universal Translator... ");
+    println!("Bismillah. Booting synapse MPC Universal Translator... ");
 
     let (transport, _message_sender) = StdioTransport::new();
 
-    let handler = Arc::new(RaqimHandler::new());
+    let handler = Arc::new(SynapseHandler::new());
     let server = Server::new(Arc::new(transport), handler);
 
     server.start().await?;
