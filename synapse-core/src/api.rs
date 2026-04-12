@@ -393,6 +393,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
             "/v1/admin/quarantine/lift",
             post(lift_qurantine_and_resurrect),
         )
+        .route("/v1/admin/a2a", post(mcp_ws_handler))
         .route("/v1/admin/time_travel", post(time_travel))
         // .route("/v1/admin/upload_agent", post(upload_agent_wasm))
         .with_state(state)
