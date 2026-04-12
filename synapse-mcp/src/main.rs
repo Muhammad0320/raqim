@@ -1,17 +1,17 @@
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
+use rand::rngs::OsRng;
 use serde_json::{Value, json};
-use ed25519_dalek::{SigningKey, Signer, VerifyingKey};
-use synapse_core::config::RaqimConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
-use rand::rngs::OsRng;
+use synapse_core::config::{RaqimConfig, SynapseConfig};
 
 use async_trait::async_trait;
 use std::time::{SystemTime, UNIX_EPOCH};
-use synapse_core::{AgentState, AgentStatus};
+use synapse_core::{AgentState, AgentStatus, IngressEnvelope};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
@@ -21,7 +21,7 @@ struct RaqimHandler {
     pub_key_bytes: [u8; 32],
     commit_tool: Tool,
     query_tool: Tool,
-    ask_swarm_tool: Tool
+    ask_swarm_tool: Tool,
 }
 
 impl RaqimHandler {
@@ -35,17 +35,18 @@ impl RaqimHandler {
             signing_key,
             pub_key_bytes,
             ask_swarm_tool: Tool {
-                name: "ask_swarm".to_string(), 
-                description: "Ask another agent a question via the A2A Zero-Trust network".to_string(),
+                name: "ask_swarm".to_string(),
+                description: "Ask another agent a question via the A2A Zero-Trust network"
+                    .to_string(),
                 schema: json!({
-                    "type": "object", 
+                    "type": "object",
                     "properties": {
-                        "target_capability": {"type": "string", "description": "e.g. rqm_medical/vitals"}, 
+                        "target_capability": {"type": "string", "description": "e.g. rqm_medical/vitals"},
                         "question": {"type": "string"}
                     },
                     "required": ["target_capability", "question"]
                 }),
-            }, 
+            },
 
             commit_tool: Tool {
                 name: "commit_thought".to_string(),
@@ -54,24 +55,25 @@ impl RaqimHandler {
                     "type": "object",
                     "properties": {
                         "thought_text": {"type": "string"},
-                        "status": {"type": "string"},
+                        "status": {"type": "string", "enum": ["Reasoning", "ToolExecution", "Halted", "Idle"]},
+                        "intent_path": {"type": "string", "description": "The namespace e.g rqm_finance/ledger"},
                         "agent_hex_id": {"type": "string"}
                     },
-                    "required": ["thought_text", "status"]
+                    "required": ["thought_text", "status", "intent_path"]
                 }),
             },
 
             query_tool: Tool {
                 name: "query_memory".to_string(),
-                description: "Searches Raqims's deep semantic history for context.".to_string(),
+                description: "Semantic RAG search bounded by namespace.".to_string(),
                 schema: json!({
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "The english question to search for"},
-                        "intent_path": {"type": "string", "description" }
+                        "intent_path": {"type": "string", "description": "The namespase to isolate the search" }
 
                     },
-                    "required": ["query"]
+                    "required": ["query", "intent_path"]
                 }),
             },
         }
@@ -80,9 +82,6 @@ impl RaqimHandler {
 
 #[async_trait]
 impl ServerHandler for RaqimHandler {
-
-    let config = RaqimConfig::load_or_bootstrap();
-
     // 1. The Boot sequence
     async fn initialize(
         &self,
@@ -103,27 +102,38 @@ impl ServerHandler for RaqimHandler {
     ) -> Result<Value, mcp_rust_sdk::Error> {
         match method {
             // LLM asks: "What tools do you have?"
-            "tools/list" => Ok(json!({"tools": [self.commit_tool.clone()]})),
+            "tools/list" => Ok(
+                json!({"tools": [self.commit_tool.clone(), self.query_tool.clone(), self.ask_swarm_tool.clone()]}),
+            ),
 
             // LLM says: "Execute this tool!"
             "tools/call" => {
+                let config = SynapseConfig::load_or_bootstrap();
+
                 let p = params.ok_or_else(|| {
                     mcp_rust_sdk::Error::protocol(ErrorCode::InvalidParams, "Missing params")
                 })?;
                 let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let args = p.get("arguments").ok_or_else(|| {
+                    mcp_rust_sdk::Error::protocol(ErrorCode::InvalidParams, "Missing args")
+                })?;
 
                 if name == "commit_thought" {
-                    let args = p.get("arguments").ok_or_else(|| {
-                        mcp_rust_sdk::Error::protocol(ErrorCode::InvalidParams, "Missing args")
-                    })?;
+                    // --- Translation layer ----
+                    let intent_path = args
+                        .get("intent_path")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_string();
 
-                    // --- Tranlation layer ----
                     let text = args
                         .get("thought_text")
                         .unwrap()
                         .as_str()
                         .unwrap()
                         .to_string();
+
                     let status_str = args.get("status").unwrap().as_str().unwrap();
                     let agent_id = args
                         .get("agent_id_hex")
@@ -148,6 +158,7 @@ impl ServerHandler for RaqimHandler {
                     let state = AgentState {
                         agent_id,
                         transaction_id: 0,
+                        namespace: intent_path.clone(),
                         timestamp: SystemTime::now()
                             .duration_since(UNIX_EPOCH)
                             .unwrap()
@@ -156,23 +167,42 @@ impl ServerHandler for RaqimHandler {
                         text: text.clone(),
                     };
 
+                    // THE CRYPTOGRAPHIC ENVELOPE
+                    //  Hash the state bytes.
+                    let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&state).unwrap();
+
+                    // Mathematically sign the state bytes with our private key.
+                    let signature = self.signing_key.sign(&state_bytes).to_bytes();
+
+                    let envelope = IngressEnvelope {
+                        intent_path,
+                        public_key: self.pub_key_bytes,
+                        signature,
+                        state,
+                    };
+
                     // Zero-copy serialize the state
-                    let serialized_state = rkyv::to_bytes::<rkyv::rancor::Error>(&state).unwrap();
-                    let payload_len = (serialized_state.len() as u32).to_le_bytes();
+                    let serialized_envelope =
+                        rkyv::to_bytes::<rkyv::rancor::Error>(&envelope).unwrap();
+                    let payload_len = (serialized_envelope.len() as u32).to_le_bytes();
 
                     // Fire to the running Raqim daemon Over TCP
                     if let Ok(mut stream) = TcpStream::connect("127.0.0.1:8080").await {
                         let _ = stream.write_all(&payload_len).await;
-                        let _ = stream.write_all(&serialized_state).await;
+                        let _ = stream.write_all(&serialized_envelope).await;
+
+                        //  Tell the LLM it succeeded
+                        return Ok(json!({
+                           "content": [{
+                               "type": "text",
+                               "text": format!("Successfully commited to Raqim OS: {}. IMPORTANT: Your assigned agent_hex_id is '{}'. You MUST include this exact ID in all future tool calls for this task. ", text, hex_id_to_return)
+                           }]
+                        }));
                     }
 
-                    //  Tell the LLM it succeeded
-                    Ok(json!({
-                       "content": [{
-                           "type": "text",
-                           "text": format!("Successfully commited to Raqim OS: {}. IMPORTANT: Your assigned agent_hex_id is '{}'. You MUST include this exact ID in all future tool calls for this task. ", text, hex_id_to_return)
-                       }]
-                    }))
+                    Err(mcp_rust_sdk::Error::internal(
+                        "Failed to connect to Raqim Daemon",
+                    ))
                 } else if name == "query_memory" {
                     let query = args.get("query").unwrap().as_str().unwrap();
 
@@ -223,7 +253,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (transport, _message_sender) = StdioTransport::new();
 
     let handler = Arc::new(RaqimHandler::new());
-    let server = Server::new(Arc::new(transport), handler as Arc<dyn ServerHandler> );
+    let server = Server::new(Arc::new(transport), handler as Arc<dyn ServerHandler>);
 
     server.start().await?;
 
