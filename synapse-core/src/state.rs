@@ -1,6 +1,6 @@
 use crate::{AgentState, AgentStatus, SystemEvent};
 use loro::{ImportStatus, LoroDoc, LoroMap, Subscription};
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 use tokio::sync::broadcast::Sender;
 
 // ARC (Atomic Reference counting) becaue multiple (threads) agents will hold pointers to this document in memory
@@ -35,8 +35,8 @@ impl SwarmState {
                 // Extract the actual Loro Lamport Clock (TxID) for this exact merge event!
                 let front = doc_clone
                     .oplog_frontiers()
-                    .as_slice()
-                    .first()
+                    .into_iter()
+                    .next()
                     .map(|id| id.counter as u64)
                     .unwrap_or(0);
 
@@ -91,7 +91,9 @@ impl SwarmState {
         // 5. TRUE DELTA EXPORT: We tell loro to export ONLY the bytes that changed since the `previous_frontier`.
         // Ultimately creating a tiny [u8] payload
         self.doc
-            .export(loro::ExportMode::Updates { from: &previous_vv })
+            .export(loro::ExportMode::Updates {
+                from: Cow::Borrowed(&previous_vv),
+            })
             .expect("Failed to export CRDT delta")
     }
 

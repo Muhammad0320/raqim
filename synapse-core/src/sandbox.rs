@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{self, SystemTime, UNIX_EPOCH};
 use tokio::time::{Duration, timeout};
 use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::preview1::WasiP1Ctx;
