@@ -6,6 +6,7 @@ use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities
 use rand::rngs::OsRng;
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::fs;
 use std::sync::Arc;
 use synapse_core::config::{RaqimConfig, SynapseConfig};
 
@@ -19,21 +20,25 @@ use tokio::net::TcpStream;
 struct RaqimHandler {
     signing_key: SigningKey,
     pub_key_bytes: [u8; 32],
+    daemon_http_url: String,
+
     commit_tool: Tool,
     query_tool: Tool,
     ask_swarm_tool: Tool,
 }
 
 impl RaqimHandler {
-    fn new() -> Self {
-        // ENTERPRISE CRYTOGRAPHY: Generate a session key
-        let mut csprng = OsRng;
-        let signing_key = SigningKey::generate(&mut csprng);
+    fn new(private_key_path: &str, daemon_http_url: &str) -> Self {
+        // ENTERPRISE CRYTOGRAPHY: Load from config
+        let key_bytes = fs::read(private_key_path)
+            .expect("FATAL: Missing Private Key. Aegis identity is required.");
+        let signing_key = SigningKey::from_bytes(key_bytes.as_slice().try_into().unwrap());
         let pub_key_bytes = signing_key.verifying_key().to_bytes();
 
         Self {
             signing_key,
             pub_key_bytes,
+            daemon_http_url: daemon_http_url.to_string(),
             ask_swarm_tool: Tool {
                 name: "ask_swarm".to_string(),
                 description: "Ask another agent a question via the A2A Zero-Trust network"
@@ -50,16 +55,16 @@ impl RaqimHandler {
 
             commit_tool: Tool {
                 name: "commit_thought".to_string(),
-                description: "Commits a verified thought to the Raqim OS".to_string(),
+                description: "Commits a verified thought to the Raqim OS CRDT".to_string(),
                 schema: json!({
                     "type": "object",
                     "properties": {
                         "thought_text": {"type": "string"},
                         "status": {"type": "string", "enum": ["Reasoning", "ToolExecution", "Halted", "Idle"]},
                         "intent_path": {"type": "string", "description": "The namespace e.g rqm_finance/ledger"},
-                        "agent_hex_id": {"type": "string"}
+                        "agent_id_hex": {"type": "string", "description": "The exact 32-char hex UUID of this agent thread."}
                     },
-                    "required": ["thought_text", "status", "intent_path"]
+                    "required": ["thought_text", "status", "intent_path", "agent_id_hex"]
                 }),
             },
 
@@ -88,8 +93,8 @@ impl ServerHandler for RaqimHandler {
         _client_info: Implementation,
         _client_caps: ClientCapabilities,
     ) -> Result<ServerCapabilities, mcp_rust_sdk::Error> {
-        let mut tool_cap = HashMap::new();
-        tool_cap.insert("listChanged".to_string(), json!(false));
+        // let mut tool_cap = HashMap::new();
+        // tool_cap.insert("listChanged".to_string(), json!(false));
 
         Ok(ServerCapabilities { custom: None })
     }
@@ -200,8 +205,8 @@ impl ServerHandler for RaqimHandler {
                         }));
                     }
 
-                    Err(mcp_rust_sdk::Error::internal(
-                        "Failed to connect to Raqim Daemon",
+                    Err(mcp_rust_sdk::Error::Other(
+                        "Failed to connect to Raqim Deamon TCP".into(),
                     ))
                 } else if name == "query_memory" {
                     let query = args.get("query").unwrap().as_str().unwrap();
