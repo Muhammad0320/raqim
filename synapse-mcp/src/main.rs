@@ -3,9 +3,11 @@ use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
 use serde_json::{Value, json};
-use synapse_core::config::SynapseConfig;
+use ed25519_dalek::{SigningKey, Signer, VerifyingKey};
+use synapse_core::config::RaqimConfig;
 use std::collections::HashMap;
 use std::sync::Arc;
+use rand::rngs::OsRng;
 
 use async_trait::async_trait;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,17 +16,40 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
 // 1. Define our custom handler struct
-struct SynapseHandler {
+struct RaqimHandler {
+    signing_key: SigningKey,
+    pub_key_bytes: [u8; 32],
     commit_tool: Tool,
     query_tool: Tool,
+    ask_swarm_tool: Tool
 }
 
-impl SynapseHandler {
+impl RaqimHandler {
     fn new() -> Self {
+        // ENTERPRISE CRYTOGRAPHY: Generate a session key
+        let mut csprng = OsRng;
+        let signing_key = SigningKey::generate(&mut csprng);
+        let pub_key_bytes = signing_key.verifying_key().to_bytes();
+
         Self {
+            signing_key,
+            pub_key_bytes,
+            ask_swarm_tool: Tool {
+                name: "ask_swarm".to_string(), 
+                description: "Ask another agent a question via the A2A Zero-Trust network".to_string(),
+                schema: json!({
+                    "type": "object", 
+                    "properties": {
+                        "target_capability": {"type": "string", "description": "e.g. rqm_medical/vitals"}, 
+                        "question": {"type": "string"}
+                    },
+                    "required": ["target_capability", "question"]
+                }),
+            }, 
+
             commit_tool: Tool {
                 name: "commit_thought".to_string(),
-                description: "Commits a verified thought to the Synapse OS".to_string(),
+                description: "Commits a verified thought to the Raqim OS".to_string(),
                 schema: json!({
                     "type": "object",
                     "properties": {
@@ -38,11 +63,12 @@ impl SynapseHandler {
 
             query_tool: Tool {
                 name: "query_memory".to_string(),
-                description: "Searches Synapses's deep semantic history for context.".to_string(),
+                description: "Searches Raqims's deep semantic history for context.".to_string(),
                 schema: json!({
                     "type": "object",
                     "properties": {
                         "query": {"type": "string", "description": "The english question to search for"},
+                        "intent_path": {"type": "string", "description" }
 
                     },
                     "required": ["query"]
@@ -53,9 +79,9 @@ impl SynapseHandler {
 }
 
 #[async_trait]
-impl ServerHandler for SynapseHandler {
+impl ServerHandler for RaqimHandler {
 
-    let config = SynapseConfig::load_or_bootstrap();
+    let config = RaqimConfig::load_or_bootstrap();
 
     // 1. The Boot sequence
     async fn initialize(
@@ -118,7 +144,7 @@ impl ServerHandler for SynapseHandler {
                         _ => AgentStatus::Idle,
                     };
 
-                    // Translate into synapse core logic
+                    // Translate into Raqim core logic
                     let state = AgentState {
                         agent_id,
                         transaction_id: 0,
@@ -134,7 +160,7 @@ impl ServerHandler for SynapseHandler {
                     let serialized_state = rkyv::to_bytes::<rkyv::rancor::Error>(&state).unwrap();
                     let payload_len = (serialized_state.len() as u32).to_le_bytes();
 
-                    // Fire to the running synapse daemon Over TCP
+                    // Fire to the running Raqim daemon Over TCP
                     if let Ok(mut stream) = TcpStream::connect("127.0.0.1:8080").await {
                         let _ = stream.write_all(&payload_len).await;
                         let _ = stream.write_all(&serialized_state).await;
@@ -144,14 +170,14 @@ impl ServerHandler for SynapseHandler {
                     Ok(json!({
                        "content": [{
                            "type": "text",
-                           "text": format!("Successfully commited to Synapse OS: {}. IMPORTANT: Your assigned agent_hex_id is '{}'. You MUST include this exact ID in all future tool calls for this task. ", text, hex_id_to_return)
+                           "text": format!("Successfully commited to Raqim OS: {}. IMPORTANT: Your assigned agent_hex_id is '{}'. You MUST include this exact ID in all future tool calls for this task. ", text, hex_id_to_return)
                        }]
                     }))
                 } else if name == "query_memory" {
                     let query = args.get("query").unwrap().as_str().unwrap();
 
                     // Boot read-only semantic engine
-                    let engine = synapse_core::lancedb_store::LanceEngine::new(
+                    let engine = Raqim_core::lancedb_store::LanceEngine::new(
                         &config.lance_path,
                         &config.table_name,
                         config.dims,
@@ -192,12 +218,12 @@ impl ServerHandler for SynapseHandler {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Bismillah. Booting synapse MPC Universal Translator... ");
+    println!("Bismillah. Booting Raqim MPC Universal Translator... ");
 
     let (transport, _message_sender) = StdioTransport::new();
 
-    let handler = Arc::new(SynapseHandler::new());
-    let server = Server::new(Arc::new(transport), handler);
+    let handler = Arc::new(RaqimHandler::new());
+    let server = Server::new(Arc::new(transport), handler as Arc<dyn ServerHandler> );
 
     server.start().await?;
 
