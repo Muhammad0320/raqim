@@ -411,7 +411,7 @@ impl WasmEngine {
 
                 // Start listening on zenoh globally
                 tokio::spawn(async move {
-                    net.register_agent_capability(&capability, move |question_bytes| {
+                    net.register_agent_capability(&capability, async move |question_bytes| {
                         let (reply_tx, reply_rx) = oneshot::channel();
 
                         // Send the question to the suspended WASM thread.
@@ -420,9 +420,13 @@ impl WasmEngine {
                             .is_ok()
                         {
                             // Wait for the WASM to process it and reply
-                            return reply_rx
-                                .recv_timeout(Duration::from_secs(15))
-                                .unwrap_or_else(|_| b"A2A_GUEST_CRASH".to_vec());
+                            return match tokio::time::timeout(Duration::from_secs(15), reply_rx)
+                                .await
+                            {
+                                Ok(Ok(data)) => data, // Timeout didn't trigger, and channel yielded data
+                                Ok(Err(_)) => b"A2A_GUEST_CRASH".to_vec(), // Channel dropped/crashed
+                                Err(_) => b"A2A_TIMEOUT".to_vec(),         // 15 seconds passed!
+                            };
                         }
                         b"A2A_QUEUE_FULL".to_vec()
                     })

@@ -309,27 +309,6 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
     }
 }
 
-// Authorization middleware ( The enterprise firewall )
-async fn auth_middleware(
-    State(state): State<ApiState>,
-    req: Request<axum::body::Body>,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    if let Some(auth_header) = req.headers().get("Authorization") {
-        if let Ok(auth_str) = auth_header.to_str() {
-            if auth_str == format!("Bearer {}", state.config.license_key) {
-                return Ok(next.run(req).await);
-            }
-        }
-    }
-
-    eprintln!(
-        "[SECURITY] Blocked unauthorized API request to {}",
-        req.uri()
-    );
-    Err(StatusCode::UNAUTHORIZED)
-}
-
 // THE ACTIVE DEBUGGING ROUTE HANDLER
 async fn time_travel(
     _auth: ValidatedEnterprise,
@@ -348,18 +327,21 @@ async fn time_travel(
         .mem_router
         .boot_historical_agent(
             &payload.agent_id,
-            payload.target_tx_id,
+            Some(payload.target_tx_id),
             Some(payload.fork_config),
             true,
         )
         .await
     {
-        Ok(()) => StatusCode::OK,
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        Ok(()) => Ok(StatusCode::OK),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
-async fn get_quarantine(State(state): State<ApiState>) -> Result<Json<Vec<String>>, StatusCode> {
+async fn get_quarantine(
+    _auth: ValidatedEnterprise,
+    State(state): State<ApiState>,
+) -> Result<Json<Vec<String>>, StatusCode> {
     Ok(Json(state.aegis.fetch_quaratined_agents()))
 }
 
@@ -369,6 +351,7 @@ struct ResurrectPayload {
 }
 
 async fn lift_qurantine_and_resurrect(
+    _auth: ValidatedEnterprise,
     State(state): State<ApiState>,
     Json(payload): Json<ResurrectPayload>,
 ) -> Result<StatusCode, StatusCode> {
@@ -385,6 +368,19 @@ async fn lift_qurantine_and_resurrect(
     }
 }
 
+// pub async fn upload_wasm_endpoint(
+//     _auth: ValidatedEnterprise,
+//     mut multipart: Multipart,
+// ) -> Result<StatusCode, StatusCode> {
+//     while let Some(mut field) = multipart
+//         .next_field()
+//         .await
+//         .map_err(|_| StatusCode::BAD_REQUEST)?
+//     {}
+
+//     Err(StatusCode::BAD_REQUEST)
+// }
+
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
@@ -393,8 +389,8 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
             "/v1/admin/quarantine/lift",
             post(lift_qurantine_and_resurrect),
         )
-        .route("/v1/admin/a2a", post(mcp_ws_handler))
         .route("/v1/admin/time_travel", post(time_travel))
+        .route("/v1/admin/a2a", post(mcp_ws_handler))
         // .route("/v1/admin/upload_agent", post(upload_agent_wasm))
         .with_state(state)
 }
