@@ -34,10 +34,10 @@ impl SwarmState {
 
                 // Extract the actual Loro Lamport Clock (TxID) for this exact merge event!
                 let front = doc_clone
-                    .oplog_frontiers()
-                    .into_iter()
+                    .oplog_vv()
+                    .iter()
                     .next()
-                    .map(|id| id.counter as u64)
+                    .map(|(_, &counter)| counter as u64)
                     .unwrap_or(0);
 
                 // We broadcast the exact internal memory mutation to the daemon.
@@ -75,7 +75,7 @@ impl SwarmState {
             .insert("transaction_id", state.transaction_id as i64)
             .unwrap();
         agent_memory.insert("timestamp", state.timestamp).unwrap();
-        agent_memory.insert("text", state.text).unwrap();
+        agent_memory.insert("text", state.text.clone()).unwrap();
 
         let status_str = match state.status {
             AgentStatus::Idle => "IDLE",

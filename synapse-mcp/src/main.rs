@@ -124,6 +124,16 @@ impl ServerHandler for RaqimHandler {
                 })?;
 
                 if name == "commit_thought" {
+                    // Enforce agent identity
+                    let agent_id_hex = args
+                        .get("agent_id_hex")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| {
+                            mcp_rust_sdk::Error::Other("Missing agent_id_hex".to_string())
+                        })?;
+                    let agent_id_bytes = hex::decode(agent_id_hex)
+                        .map_err(|_| mcp_rust_sdk::Error::Other("Invalid Hex".to_string()))?;
+
                     // --- Translation layer ----
                     let intent_path = args
                         .get("intent_path")
@@ -140,18 +150,6 @@ impl ServerHandler for RaqimHandler {
                         .to_string();
 
                     let status_str = args.get("status").unwrap().as_str().unwrap();
-                    let agent_id = args
-                        .get("agent_id_hex")
-                        .and_then(|id| id.as_str())
-                        .and_then(|hex_str| hex::decode(hex_str).ok())
-                        .and_then(|bytes: Vec<u8>| bytes.try_into().ok());
-
-                    let final_agent_id = match agent_id {
-                        Some(id) => id,
-                        None => uuid::Uuid::new_v4().into_bytes(),
-                    };
-                    let hex_id_to_return = hex::encode(final_agent_id);
-
                     let status = match status_str {
                         "Reasoning" => AgentStatus::Reasoning,
                         "ToolExecution" => AgentStatus::ToolExecution,
@@ -161,7 +159,7 @@ impl ServerHandler for RaqimHandler {
 
                     // Translate into Raqim core logic
                     let state = AgentState {
-                        agent_id,
+                        agent_id: Some(agent_id_bytes.try_into().unwrap_or([0; 16])),
                         transaction_id: 0,
                         namespace: intent_path.clone(),
                         timestamp: SystemTime::now()
@@ -200,7 +198,7 @@ impl ServerHandler for RaqimHandler {
                         return Ok(json!({
                            "content": [{
                                "type": "text",
-                               "text": format!("Successfully commited to Raqim OS: {}. IMPORTANT: Your assigned agent_hex_id is '{}'. You MUST include this exact ID in all future tool calls for this task. ", text, hex_id_to_return)
+                               "text": "Thought securely committed."
                            }]
                         }));
                     }
@@ -255,9 +253,18 @@ impl ServerHandler for RaqimHandler {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Bismillah. Booting Raqim MPC Universal Translator... ");
 
+    // Load from environment
+    let key_path =
+        std::env::var("RQM_MCP_KEY_PATH").unwrap_or_else(|_| "./keys/mcp_private.pem".to_string());
+    let daemon_url =
+        std::env::var("RQM_DEAMON_URL").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
+
     let (transport, _message_sender) = StdioTransport::new();
 
-    let handler = Arc::new(RaqimHandler::new());
+    let handler = Arc::new(RaqimHandler::new(
+        "./keys/mcp_private.pem",
+        " http://127.0.0.1:8081",
+    ));
     let server = Server::new(Arc::new(transport), handler as Arc<dyn ServerHandler>);
 
     server.start().await?;
