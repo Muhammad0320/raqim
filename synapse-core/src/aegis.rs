@@ -261,7 +261,6 @@ impl AegisGateKeeper {
                     Signature::from_bytes(signature_bytes.try_into().unwrap_or(&[0; 64]));
 
                 // Mathematically prove that sender owns this privage key
-
                 if public_key.verify(payload, &signature).is_ok() {
                     return true;
                 }

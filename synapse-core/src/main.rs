@@ -28,7 +28,10 @@ use wasmtime_wasi::WasiCtxBuilder;
 async fn main() {
     let config = Arc::new(SynapseConfig::load_or_bootstrap());
 
-    println!("Bismillah. Booting Synapse Daemon on port {}...", config.port);
+    println!(
+        "Bismillah. Booting Synapse Daemon on port {}...",
+        config.port
+    );
 
     // BOOT TELEMETRY SINKER
     let telemetry = TelemetryEngine::new(&config.tenant_id, &config.license_key);
@@ -190,7 +193,7 @@ async fn main() {
                         });
 
                         // WASI Context Must be built per-execution
-                        let wasi_ctx = WasiCtxBuilder::new().build();
+                        let wasi_ctx = WasiCtxBuilder::new().build_p1();
 
                         // We must clone the layers for the specific execution
                         let a_clone = w_axon.clone();
