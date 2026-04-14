@@ -180,9 +180,14 @@ impl MemoryRouter {
     ) -> Result<Vec<String>, anyhow::Error> {
         let mut final_context = Vec::new();
 
-        // 1. The WAL is the absolute truth of present. We take ALL recent active thoughts.
+        // 1. HOT MEMORY (WAL): Zero-Copy Semantic Filtering
         self.scan_wal_zero_copy(|archived| {
-            final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
+            // PHYSICS: We read the name_space as a string slice without allocating mem
+            let log_namespace = archived.state.namespace.as_str();
+
+            if log_namespace.starts_with(namespace) {
+                final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
+            }
         });
 
         // 2. Supplement with Deep Semantic search

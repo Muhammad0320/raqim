@@ -241,7 +241,7 @@ impl AegisGateKeeper {
             .collect()
     }
 
-    /// True Cryptographici Verification
+    /// Universally verifies any crytographic payload at the network edge
     pub fn verify_agent_signature(
         &self,
         agent_hex: &str,
