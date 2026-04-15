@@ -1,9 +1,11 @@
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+use futures_util::{SinkExt, StreamExt};
 use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
 use rand::rngs::OsRng;
+use raqim_core::api::WsMessage;
 use raqim_core::config::RaqimConfig;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -12,7 +14,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use raqim_core::{AgentState, AgentStatus, IngressEnvelope};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
@@ -215,27 +217,99 @@ impl ServerHandler for RaqimHandler {
                         "Failed to connect to Raqim Deamon TCP".into(),
                     ))
                 } else if name == "query_memory" {
+                    let intent_path = args.get("intent_path").unwrap().as_str().unwrap();
                     let query = args.get("query").unwrap().as_str().unwrap();
 
-                    // Boot read-only semantic engine
-                    let engine = raqim_core::lancedb_store::LanceEngine::new(
-                        &config.lance_path,
-                        &config.table_name,
-                        config.dims,
-                    )
+                    let url = format!(
+                        "{}/v1/swarm/memory?namespace={}&query={}",
+                        self.daemon_http_url, intent_path, query
+                    );
+
+                    // AXUM HTTP RAG CALL
+                    let response = self
+                        .http_client
+                        .get(&url)
+                        .header("Authorization", format!("Bearer {}", self.license_key))
+                        .send()
+                        .await
+                        .map_err(|e| mcp_rust_sdk::Error::Other(e.to_string()))?;
+
+                    if response.status().is_success() {
+                        let memories: Vec<String> = response.json().await.unwrap_or_default();
+                        return Ok(
+                            json!({"content": [{"type": "text", "text": format!("Retrieved:\n{}", memories.join("\n"))}]}),
+                        );
+                    }
+                    return Err(mcp_rust_sdk::Error::Other("RAG Query Failed".to_string()));
+                } else if name == "ask_swarm" {
+                    let target_capability = args
+                        .get("target_capability")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_string();
+                    let question_text = args.get("question").unwrap().as_str().unwrap().to_string();
+                    let request_id = uuid::Uuid::new_v4().to_string();
+
+                    // 1. SIGN THE QUESTION
+                    let question_bytes = question_text.into_bytes();
+                    let signature = self.signing_key.sign(&question_bytes).to_bytes();
+                    let sender_hex = hex::encode("agent_id");
+
+                    let ask_msg = WsMessage::AskQuestion {
+                        request_id: request_id.clone(),
+                        capability: target_capability,
+                        question: question_bytes,
+                        sender_hex,
+                        public_key: self.pub_key_bytes.to_vec(),
+                        signature: signature.to_vec(),
+                    };
+
+                    // 2. Connect to RQM Daemon Websocket.
+                    let ws_url = self.daemon_http_url.replace("http", "ws") + "/v1/mcp/ws";
+
+                    let (mut ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
+                        .await
+                        .map_err(|e| {
+                            mcp_rust_sdk::Error::Other(format!("WS Connect Failed: {}", e))
+                        })?;
+
+                    // 4. AWAIT THE RESPONSE (With Timeout)
+                    let response = tokio::time::timeout(Duration::from_secs(15), async {
+                        while let Some(msg) = ws_stream.next().await {
+                            if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
+                                if let Ok(WsMessage::QuestionAnswered {
+                                    request_id: incoming_id,
+                                    answer,
+                                }) = serde_json::from_str(&text)
+                                {
+                                    if incoming_id == request_id {
+                                        return Ok(String::from_utf8(answer).unwrap());
+                                    }
+                                } else if let Ok(WsMessage::Error { message }) =
+                                    serde_json::from_str(&text)
+                                {
+                                    return Err(message);
+                                }
+                            }
+                        }
+
+                        Err("WebSocket closed unexpectedly".to_string())
+                    })
                     .await;
 
-                    let memories = engine
-                        .search_memory(qeury, 5)
-                        .await
-                        .unwrap_or_else(|_| vec!["No memories found.".to_string()]);
-
-                    return Ok(json!({
-                        "content": [{
-                            "type": "text",
-                            "text": format!("Retreived Memories: \n{}", memories.join("\n"))
-                        }]
-                    }));
+                    match response {
+                        Ok(Ok(answer_text)) => {
+                            let _ = ws_stream.close(None).await; // Graceful cleanup 
+                            return Ok(json!({"content": [{"type": "text", "text": answer_text}]}));
+                        }
+                        Ok(Err(e)) => return Err(mcp_rust_sdk::Error::Other(e)),
+                        Err(_) => {
+                            return Err(mcp_rust_sdk::Error::Other(
+                                "A2A Timeout exceeed 15s".to_string(),
+                            ));
+                        }
+                    }
                 } else {
                     return Err(mcp_rust_sdk::Error::protocol(
                         ErrorCode::MethodNotFound,
