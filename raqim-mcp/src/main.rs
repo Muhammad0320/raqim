@@ -4,15 +4,15 @@ use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
 use rand::rngs::OsRng;
+use raqim_core::config::RaqimConfig;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
-use raqim_core::config::RaqimConfig;
 
 use async_trait::async_trait;
-use std::time::{SystemTime, UNIX_EPOCH};
 use raqim_core::{AgentState, AgentStatus, IngressEnvelope};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
@@ -21,6 +21,8 @@ struct RaqimHandler {
     signing_key: SigningKey,
     pub_key_bytes: [u8; 32],
     daemon_http_url: String,
+    license_key: String,
+    http_client: reqwest::Client,
 
     commit_tool: Tool,
     query_tool: Tool,
@@ -28,16 +30,22 @@ struct RaqimHandler {
 }
 
 impl RaqimHandler {
-    fn new(private_key_path: &str, daemon_http_url: &str) -> Self {
+    fn new(private_key_path: &str, daemon_http_url: &str, license_key: &str) -> Self {
         // ENTERPRISE CRYTOGRAPHY: Load from config
         let key_bytes = fs::read(private_key_path)
             .expect("FATAL: Missing Private Key. Aegis identity is required.");
         let signing_key = SigningKey::from_bytes(key_bytes.as_slice().try_into().unwrap());
         let pub_key_bytes = signing_key.verifying_key().to_bytes();
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap();
 
         Self {
             signing_key,
             pub_key_bytes,
+            license_key: license_key.to_string(),
+            http_client,
             daemon_http_url: daemon_http_url.to_string(),
             ask_swarm_tool: Tool {
                 name: "ask_swarm".to_string(),
@@ -258,13 +266,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("RQM_MCP_KEY_PATH").unwrap_or_else(|_| "./keys/mcp_private.pem".to_string());
     let daemon_url =
         std::env::var("RQM_DEAMON_URL").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
+    let license_key = std::env::var("RQM_LICENSE_KEY").unwrap_or_else(|_| "".to_string());
 
     let (transport, _message_sender) = StdioTransport::new();
 
-    let handler = Arc::new(RaqimHandler::new(
-        "./keys/mcp_private.pem",
-        " http://127.0.0.1:8081",
-    ));
+    let handler = Arc::new(RaqimHandler::new(&key_path, &daemon_url, &license_key));
     let server = Server::new(Arc::new(transport), handler as Arc<dyn ServerHandler>);
 
     server.start().await?;

@@ -1,6 +1,6 @@
-use anyhow::Ok;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Query};
+use axum::response::Response;
 use axum::{
     Json, async_trait,
     extract::{FromRef, FromRequestParts, State},
@@ -14,21 +14,25 @@ use futures_util::{SinkExt, stream::StreamExt};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::result::Result::{Err, Ok};
+use std::sync::atomic::AtomicU64;
 use std::{collections::HashMap, sync::Arc};
 use tokio::io::AsyncWriteExt;
+use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
+use crate::axon::AxonGateKeeper;
 use crate::cortex::CortexDataPlane;
 use crate::nucleus::WalEngine;
+use crate::state::SwarmState;
 use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge, telemetry::TelemetryEngine,
 };
-use crate::{IngressEnvelope, utils};
+use crate::{IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")] // Enables brilliant json parsing {"type": "AskQuestion", }
@@ -77,13 +81,16 @@ pub struct ApiState {
     pub config: Arc<RaqimConfig>,
 
     pub mem_router: Arc<MemoryRouter>,
+    pub axon: Arc<AxonGateKeeper>,
+    pub brain: Arc<SwarmState>,
     pub aegis: Arc<AegisGateKeeper>,
     pub decoding_key: Arc<DecodingKey>,
     pub global_net: Arc<GlobalNetworkBridge>,
     pub telemetry: Arc<TelemetryEngine>,
-    pub cortex_tx: Arc<UnboundedSender<Vec<u8>>>,
+    pub cortex_tx: UnboundedSender<Vec<u8>>,
     pub wal: Arc<WalEngine>,
     pub global_tx_counter: Arc<AtomicU64>,
+
     pub event_tx: Sender<SystemEvent>,
 }
 
@@ -452,9 +459,40 @@ pub async fn http_ingress_endpoint(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Fire the cascade.
+    // The True Zero-Copy Spawn.
+    let task_brain = state.brain.clone();
+    let task_axon = state.axon.clone();
+    let task_aegis = state.aegis.clone();
+    let task_cortex = state.cortex_tx.clone();
+    let task_net = state.global_net.clone();
+    let task_counter_tx = state.global_tx_counter.clone();
+    let task_telemetry = state.telemetry.clone();
+    let task_event = state.event_tx.clone();
 
-    tokio::spawn(async move {});
+    let body_clone = body.clone();
+
+    tokio::spawn(async move {
+        // Recast the pointer inside the 'static task bounds
+        let envelope = unsafe {
+            rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&body_clone)
+        };
+
+        // Pass
+        execute_raqim_cascade(
+            &envelope.state,
+            task_brain,
+            task_axon,
+            task_wal,
+            task_cortex,
+            task_net,
+            task_counter_tx,
+            task_event,
+            Vec::new(),
+            Vec::new(),
+            task_telemetry,
+        )
+        .await;
+    });
 
     Ok(StatusCode::ACCEPTED)
 }
