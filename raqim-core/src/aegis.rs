@@ -125,7 +125,7 @@ impl AegisGateKeeper {
         // 2. Evaluate Semantic Namespace policy.
         let policies = self.policies.read().unwrap();
         if let Some(policy) = policies.get(agent_hex) {
-            // Check explicit Blocks (e.g., "synapse_finance/*")
+            // Check explicit Blocks (e.g., "raqim_finance/*")
             for blocked in &policy.blocked_namespaces {
                 if intent_path.starts_with(blocked) {
                     self.trigger_quarantine(

@@ -1,7 +1,7 @@
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
-use synapse_core::cortex::{AgentThought, CortexDataPlane};
+use raqim_core::cortex::{AgentThought, CortexDataPlane};
 
 #[test]
 fn test_zero_copy_swarm_speed() {

@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
-use raqim_core::config::{RaqimConfig, RaqimConfig};
+use raqim_core::config::RaqimConfig;
 
 use async_trait::async_trait;
 use std::time::{SystemTime, UNIX_EPOCH};

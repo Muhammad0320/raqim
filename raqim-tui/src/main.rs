@@ -11,7 +11,7 @@ use std::{
     io::{Result, stdout},
     time::Duration,
 };
-use synapse_core::{OpLog, SystemEvent, config::SynapseConfig};
+use raqim_core::{OpLog, SystemEvent, config::RaqimConfig};
 use tokio::sync::mpsc::channel;
 
 // 1. The State machine
@@ -33,7 +33,7 @@ impl AppState {
     fn new() -> Self {
         Self {
             mode: AppMode::LiveLedger,
-            ledger_stream: vec!["[SYSTEM] Synapse OS Mission Control Initialized...".to_string()],
+            ledger_stream: vec!["[SYSTEM] Raqim OS Mission Control Initialized...".to_string()],
             active_agents: Vec::new(),
             aegis_alert: Vec::new(),
             replay_input_text: String::new(),
@@ -44,7 +44,7 @@ impl AppState {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = SynapseConfig::load_or_bootstrap();
+    let config = RaqimConfig::load_or_bootstrap();
 
     // Extract ENV vars
 
@@ -137,7 +137,7 @@ async fn main() -> Result<()> {
             };
 
             let header_text =
-                Paragraph::new(format!(" synapse :: ZERO-COPY AGENT OS :: {} ", mode_str))
+                Paragraph::new(format!(" raqim :: ZERO-COPY AGENT OS :: {} ", mode_str))
                     .style(
                         Style::default()
                             .fg(Color::Cyan)
