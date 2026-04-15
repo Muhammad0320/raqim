@@ -1,9 +1,9 @@
+use raqim_core::AgentState;
 
-
-#[link(wasm_import_module = "synapse_env")]
+#[link(wasm_import_module = "raqim_env")]
 extern "C" {
 
-    host_emit_thought(ptr: *const u8, len: usize);
+    fn host_emit_thought(ptr: *const u8, len: usize);
     fn host_register_capability(ptr: *const u8, len: usize);
     fn host_get_time() -> i64;
     fn host_request_entropy() -> u64;
@@ -15,8 +15,8 @@ extern "C" {
         payload_ptr: *const u8, payload_len: usize,
     ) -> i32;
 
-    fn host_pull_a2a_response(out_ptr: *mut u8)
-    fn host_pull_http_response(out_ptr: *mut u8)
+    fn host_pull_a2a_response(out_ptr: *mut u8);
+    fn host_pull_http_response(out_ptr: *mut u8);
 
         // The A2A Listener Suite
         fn host_register_capability(cap_ptr: *const u8, cap_len: usize); 
@@ -111,7 +111,7 @@ impl Raqim {
 
             // This function yields to the os. It consumes ZERO CPU while waiting.
             let bytes_read = unsafe { host_await_a2a_question((question_buffer.as_mut_ptr(), question_buffer.len() as i32 )) };
-            
+
             if bytes_read > 0 {
 
                 let question = &question_buffer[..bytes_read as usize];
@@ -125,5 +125,5 @@ impl Raqim {
 
         };
     }
-    
+
 }

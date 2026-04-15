@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "Synapse Daemon configuration")]
+#[command(author, version, about = "Raqim Daemon configuration")]
 pub struct CliArgs {
     #[arg(short, long)]
     pub topic: Option<String>,
@@ -38,7 +38,7 @@ pub struct CliArgs {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct SynapseConfig {
+pub struct RaqimConfig {
     pub topic: String,
     pub wal_path: String,
     pub lance_path: String,
@@ -52,10 +52,10 @@ pub struct SynapseConfig {
     pub port: u16,
 }
 
-impl Default for SynapseConfig {
+impl Default for RaqimConfig {
     fn default() -> Self {
         Self {
-            topic: "synapse_default".to_string(),
+            topic: "raqim_default".to_string(),
             wal_path: "./production.wal".to_string(),
             lance_path: "./production_semantic.lancedb".to_string(),
             aegis_path: "./aegis.toml".to_string(),
@@ -70,21 +70,21 @@ impl Default for SynapseConfig {
     }
 }
 
-impl SynapseConfig {
+impl RaqimConfig {
     pub fn load_or_bootstrap() -> Self {
         let args = CliArgs::parse();
-        let config_path = "synapse.toml";
+        let config_path = "raqim.toml";
 
         // Load from the disk or rely on default
         let mut config = if Path::new(config_path).exists() {
             let content =
-                fs::read_to_string(config_path).expect("[FATAL] Failed to read synapse.toml");
+                fs::read_to_string(config_path).expect("[FATAL] Failed to read raqim.toml");
 
-            toml::from_str(&content).expect("[FATAL] Invalid TOML syntax in synapse.toml")
+            toml::from_str(&content).expect("[FATAL] Invalid TOML syntax in raqim.toml")
         } else {
             let default_cfg = Self::default();
             let toml_string = toml::to_string(&default_cfg).unwrap();
-            fs::write(config_path, toml_string).expect("Failed to bootstap synapse.toml");
+            fs::write(config_path, toml_string).expect("Failed to bootstap raqim.toml");
             println!(
                 "[SYSTEM] Bootstapped  default configuration at {}",
                 config_path

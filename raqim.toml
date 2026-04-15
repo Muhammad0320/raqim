@@ -1,5 +1,5 @@
 [daemon]
-topic = "synapse_medical"
+topic = "raqim_medical"
 wal_path = "./production.wal"
 
 [storage]

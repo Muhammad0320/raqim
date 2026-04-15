@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
 members = [
-    "synapse-core",
-    "synapse-cli"
-, "synapse-mcp", "synapse-tui", "synapse-agent-sdk"]
+    "raqim-core",
+    "raqim-cli"
+, "raqim-mcp", "raqim-tui", "raqim-agent-sdk"]
 
 [patch.crates-io]
 # This must be the full path to the repository

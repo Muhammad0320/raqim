@@ -105,7 +105,7 @@ impl WasmEngine {
         let mut builder = WasiCtxBuilder::new();
 
         // Inject Default OS Environment
-        builder.env("synapse_VERSION", "1.0.0");
+        builder.env("raqim_VERSION", "1.0.0");
 
         // Inject Deep Reality overrides (Environment Variables)
         if let Some(fork) = &fork_config {
@@ -113,7 +113,7 @@ impl WasmEngine {
                 builder.env(key, value);
             }
             for (key, value) in &fork.config_overrides {
-                builder.env(format!("synapse_CFG_{}", key), value);
+                builder.env(format!("raqim_CFG_{}", key), value);
             }
 
             println!(
@@ -142,7 +142,7 @@ impl WasmEngine {
         })?;
 
         linker.func_wrap(
-            "synapse_env",
+            "raqim_env",
             "host_emit_thought",
             move |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {
                 // 1. Get the Isolated memory of the WASM cage
@@ -189,7 +189,7 @@ impl WasmEngine {
                         rkyv::access_unchecked::<<AgentState as Archive>::Archived>(&temp_buffer)
                     };
 
-                    crate::execute_synapse_cascade(
+                    crate::execute_raqim_cascade(
                         archived_bytes,
                         brain_clone,
                         axon_clone,
@@ -223,7 +223,7 @@ impl WasmEngine {
 
         // Entropy interceptor
         linker.func_wrap(
-            "synapse_env",
+            "raqim_env",
             "host_request_entropy",
             move |mut caller: Caller<'_, SandboxContent>| -> u64 {
                 let content = caller.data_mut();
@@ -244,7 +244,7 @@ impl WasmEngine {
         // Network Interceptor (Reality Fork) -- PASS 1.
         // The WASM agent passes a pointer to the URL it wants to fetch
         linker.func_wrap(
-            "synapse_env",
+            "raqim_env",
             "host_fetch_url",
             move |mut caller: Caller<'_, SandboxContent>, url_ptr: i32, url_len: i32| -> i32 {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
@@ -289,7 +289,7 @@ impl WasmEngine {
 
         // PASS 2: Pull the bytes
         linker.func_wrap(
-            "synapse_env",
+            "raqim_env",
             "host_pull_http_response",
             move |mut caller: Caller<'_, SandboxContent>, out_ptr: i32| {
                 let cached_response = caller.data_mut().http_response_cache.clone();
@@ -301,7 +301,7 @@ impl WasmEngine {
 
         // PASS 1: The Request
         linker.func_wrap(
-            "synapse_env",
+            "raqim_env",
             "host_ask_agent",
             move |mut caller: Caller<'_, SandboxContent>,
                   cap_ptr: i32,
@@ -312,7 +312,7 @@ impl WasmEngine {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
                 let mem_slice = mem.data(&caller);
 
-                // Read Capability String (e.g., "synapse_finance/ledger" )
+                // Read Capability String (e.g., "raqim_finance/ledger" )
                 let cap_bytes = &mem_slice[cap_ptr as usize..(cap_ptr + cap_len) as usize];
                 let capability = std::str::from_utf8(cap_bytes).unwrap().to_string();
 
@@ -356,7 +356,7 @@ impl WasmEngine {
 
         // Pass 2: The Receiver
         linker.func_wrap(
-            "synapse_env",
+            "raqim_env",
             "host_pull_a2a_response",
             move |mut caller: Caller<'_, SandboxContent>, out_ptr: i32| {
                 let cached_res = caller.data_mut().a2a_response_cache.clone();
@@ -372,7 +372,7 @@ impl WasmEngine {
 
         // The Perception of Time
         linker.func_wrap(
-            "synapse_env",
+            "raqim_env",
             "host_get_time",
             move |mut caller: Caller<'_, SandboxContent>| -> i64 {
                 let content = caller.data_mut();
@@ -395,7 +395,7 @@ impl WasmEngine {
         )?;
 
         linker.func_wrap(
-            "synapse_env",
+            "raqim_env",
             "host_register_capability",
             move |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
@@ -437,7 +437,7 @@ impl WasmEngine {
 
         // The Async Yield (Zero CPU while waiting)
         linker.func_wrap_async(
-            "synapse_env",
+            "raqim_env",
             "host_await_a2a_question",
             |mut caller: Caller<'_, SandboxContent>, (out_ptr, max_len): (i32, i32)| {
                 Box::new(async move {
@@ -472,7 +472,7 @@ impl WasmEngine {
 
         // Sending the Reply back.
         linker.func_wrap(
-            "synapse_env",
+            "raqim_env",
             "host_reply_a2a",
             move |mut caller: Caller<'_, SandboxContent>, ptr: i32, len: i32| {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();

@@ -75,13 +75,13 @@ pub struct A2AEnvelope {
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct IngressEnvelope {
-    pub intent_path: String,  // "synapse_finance/ledger" ( Checked by Aegis )
+    pub intent_path: String,  // "raqim_finance/ledger" ( Checked by Aegis )
     pub public_key: [u8; 32], // The Ed25519 public key of the sender
     pub signature: [u8; 64],  // The mathematical signauture proving authenticity
     pub state: AgentState,    // The actual thought
 }
 
-pub async fn execute_synapse_cascade(
+pub async fn execute_raqim_cascade(
     archive_state: &rkyv::Archived<AgentState>, // True Zero Copy
     brain: Arc<SwarmState>,
     axon: Arc<AxonGateKeeper>,

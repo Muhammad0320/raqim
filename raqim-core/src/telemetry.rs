@@ -90,9 +90,9 @@ impl TelemetryEngine {
                     .await
                     .unwrap_or_default();
 
-                // 4. Ship to Cloud: Send the usage data to Synapse cloud API
+                // 4. Ship to Cloud: Send the usage data to Raqim cloud API
                 let res = client
-                    .post("https://api.Synapse.cloud/v1/metering/injest")
+                    .post("https://api.Raqim.cloud/v1/metering/injest")
                     .header("Authorization", format!("Bearer {}", engine.licence_key))
                     .header("Content-Type", "application/x-ndjson") // NDJSON for multiple lines
                     .body(pending_data)
@@ -101,7 +101,7 @@ impl TelemetryEngine {
 
                 match res {
                     Ok(r) if r.status().is_success() => {
-                        println!("[TELEMETRY] Successfully synced 60s usage to Synapse cloud");
+                        println!("[TELEMETRY] Successfully synced 60s usage to Raqim cloud");
                         billing_wal
                             .set_len(0)
                             .await

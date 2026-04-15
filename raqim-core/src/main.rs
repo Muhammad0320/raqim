@@ -4,21 +4,21 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
-use synapse_core::aegis::AegisGateKeeper;
-use synapse_core::api::{ApiState, build_admin_router};
-use synapse_core::axon::AxonGateKeeper;
-use synapse_core::compactor::WalCompactor;
-use synapse_core::config::SynapseConfig;
-use synapse_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
-use synapse_core::lancedb_store::LanceEngine;
-use synapse_core::memory_router::MemoryRouter;
-use synapse_core::network::GlobalNetworkBridge;
-use synapse_core::nucleus::WalEngine;
-use synapse_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
-use synapse_core::state::SwarmState;
-use synapse_core::telemetry::TelemetryEngine;
-use synapse_core::utils::parse_agent_id;
-use synapse_core::{AgentState, IngressEnvelope, SystemEvent, execute_synapse_cascade};
+use raqim_core::aegis::AegisGateKeeper;
+use raqim_core::api::{ApiState, build_admin_router};
+use raqim_core::axon::AxonGateKeeper;
+use raqim_core::compactor::WalCompactor;
+use raqim_core::config::RaqimConfig;
+use raqim_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
+use raqim_core::lancedb_store::LanceEngine;
+use raqim_core::memory_router::MemoryRouter;
+use raqim_core::network::GlobalNetworkBridge;
+use raqim_core::nucleus::WalEngine;
+use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
+use raqim_core::state::SwarmState;
+use raqim_core::telemetry::TelemetryEngine;
+use raqim_core::utils::parse_agent_id;
+use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc};
@@ -26,10 +26,10 @@ use wasmtime_wasi::WasiCtxBuilder;
 
 #[tokio::main]
 async fn main() {
-    let config = Arc::new(SynapseConfig::load_or_bootstrap());
+    let config = Arc::new(RaqimConfig::load_or_bootstrap());
 
     println!(
-        "Bismillah. Booting Synapse Daemon on port {}...",
+        "Bismillah. Booting Raqim Daemon on port {}...",
         config.port
     );
 
@@ -78,7 +78,7 @@ async fn main() {
         LanceEngine::new(
             &format!("{}_semantic.lancedb", &config.topic),
             "agent_history",
-            config.embedding_dims.clone(),
+            config.dims.clone(),
         )
         .await,
     );
@@ -395,8 +395,8 @@ async fn main() {
                 return;
             }
 
-            // --- The Synaptic Cascade ---
-            execute_synapse_cascade(
+            // --- The Raqim Cascade ---
+            execute_raqim_cascade(
                 &archived_ingress.state,
                 task_brain,
                 task_axon,

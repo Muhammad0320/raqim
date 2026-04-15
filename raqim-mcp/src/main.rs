@@ -8,11 +8,11 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
-use synapse_core::config::{RaqimConfig, SynapseConfig};
+use raqim_core::config::{RaqimConfig, RaqimConfig};
 
 use async_trait::async_trait;
 use std::time::{SystemTime, UNIX_EPOCH};
-use synapse_core::{AgentState, AgentStatus, IngressEnvelope};
+use raqim_core::{AgentState, AgentStatus, IngressEnvelope};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
@@ -113,7 +113,7 @@ impl ServerHandler for RaqimHandler {
 
             // LLM says: "Execute this tool!"
             "tools/call" => {
-                let config = SynapseConfig::load_or_bootstrap();
+                let config = RaqimConfig::load_or_bootstrap();
 
                 let p = params.ok_or_else(|| {
                     mcp_rust_sdk::Error::protocol(ErrorCode::InvalidParams, "Missing params")
@@ -210,7 +210,7 @@ impl ServerHandler for RaqimHandler {
                     let query = args.get("query").unwrap().as_str().unwrap();
 
                     // Boot read-only semantic engine
-                    let engine = Raqim_core::lancedb_store::LanceEngine::new(
+                    let engine = raqim_core::lancedb_store::LanceEngine::new(
                         &config.lance_path,
                         &config.table_name,
                         config.dims,

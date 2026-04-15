@@ -1,10 +1,10 @@
 [package]
-name = "synapse-mcp"
+name = "raqim-mcp"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-synapse-core = { path = "../synapse-core" }
+raqim-core = { path = "../raqim-core" }
 mcp_rust_sdk = "0.1.1"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

@@ -3,11 +3,11 @@ use memmap2::MmapOptions;
 use rkyv::Archive;
 use std::fs::File;
 use std::path::PathBuf;
-use synapse_core::OpLog;
-use synapse_core::axon::AxonGateKeeper;
-use synapse_core::state::SwarmState;
+use raqim_core::OpLog;
+use raqim_core::axon::AxonGateKeeper;
+use raqim_core::state::SwarmState;
 
-/// Synapse Control Plane: Time Travel & Forensic Audit API
+/// Raqim Control Plane: Time Travel & Forensic Audit API
 #[derive(Parser)]
 #[command(author, version, about, long_about=None)]
 struct Cli {
@@ -40,7 +40,7 @@ fn main() {
 }
 
 fn execute_time_travel(wal_path: &PathBuf, target_tx_id: Option<u64>) {
-    println!("Bismillah. Initializing Project Synapse Time Machine...");
+    println!("Bismillah. Initializing Project Raqim Time Machine...");
 
     // 1. Initialize empty, clean layers
     let forensic_brain = SwarmState::new("hospital_triage");

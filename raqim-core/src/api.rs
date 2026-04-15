@@ -1,25 +1,34 @@
+use anyhow::Ok;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{Multipart, Query};
 use axum::{
     Json, async_trait,
     extract::{FromRef, FromRequestParts, State},
-    http::{Request, StatusCode, request::Parts},
-    middleware::Next,
-    response::Response,
+    http::{StatusCode, request::Parts},
     routing::{get, post},
 };
+
+use axum::body::Bytes;
 use dashmap::DashMap;
 use futures_util::{SinkExt, stream::StreamExt};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use rkyv::Archive;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::{collections::HashMap, sync::Arc};
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
+use crate::cortex::CortexDataPlane;
+use crate::nucleus::WalEngine;
 use crate::{
-    A2AEnvelope, aegis::AegisGateKeeper, config::SynapseConfig, memory_router::MemoryRouter,
+    A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge, telemetry::TelemetryEngine,
 };
+use crate::{IngressEnvelope, utils};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")] // Enables brilliant json parsing {"type": "AskQuestion", }
@@ -65,13 +74,17 @@ pub enum WsMessage {
 
 #[derive(Clone)]
 pub struct ApiState {
-    pub config: Arc<SynapseConfig>,
+    pub config: Arc<RaqimConfig>,
 
     pub mem_router: Arc<MemoryRouter>,
     pub aegis: Arc<AegisGateKeeper>,
     pub decoding_key: Arc<DecodingKey>,
     pub global_net: Arc<GlobalNetworkBridge>,
     pub telemetry: Arc<TelemetryEngine>,
+    pub cortex_tx: Arc<UnboundedSender<Vec<u8>>>,
+    pub wal: Arc<WalEngine>,
+    pub global_tx_counter: Arc<AtomicU64>,
+    pub event_tx: Sender<SystemEvent>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -368,28 +381,123 @@ async fn lift_qurantine_and_resurrect(
     }
 }
 
-// pub async fn upload_wasm_endpoint(
-//     _auth: ValidatedEnterprise,
-//     mut multipart: Multipart,
-// ) -> Result<StatusCode, StatusCode> {
-//     while let Some(mut field) = multipart
-//         .next_field()
-//         .await
-//         .map_err(|_| StatusCode::BAD_REQUEST)?
-//     {}
+pub async fn upload_wasm_endpoint(
+    _auth: ValidatedEnterprise,
+    State(state): State<ApiState>,
+    mut multipart: Multipart,
+) -> Result<StatusCode, StatusCode> {
+    while let Some(mut field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+    {
+        let file_name = field.field_name().unwrap_or("").to_string();
 
-//     Err(StatusCode::BAD_REQUEST)
-// }
+        // Strict Hex Validation
+        let hex_str = file_name.trim_end_matches(".wasm");
+        if utils::parse_agent_id(hex_str).is_err() {
+            eprintln!("[SECURITY] Rejected WASM upload: Invalid Agent ID Hex");
+            return Err(StatusCode::BAD_REQUEST);
+        }
+
+        let filepath = format!("./plugins/{}", file_name);
+        let mut file = tokio::fs::File::create(&filepath)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        // RAM-SAFE CHUNK STREAMING
+        while let Some(chunk) = field.chunk().await.unwrap() {
+            if file.write_all(&chunk).await.is_err() {
+                let _ = tokio::fs::remove_file(&filepath).await; // Clean up the corrpted upload
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+
+        println!(
+            "[SYSTEM] Securely streamed new agent binary to disk: {}",
+            filepath
+        );
+    }
+
+    Ok(StatusCode::CREATED)
+}
+
+// THE ZERO-COPY HTTP INGRESS: The endpoint expects raw binary `rkyv` bytes, Not JSON.
+pub async fn http_ingress_endpoint(
+    State(state): State<ApiState>,
+    body: Bytes,
+) -> Result<StatusCode, StatusCode> {
+    // Zero copy access the IngressEnvelope
+    let ingress_envelope =
+        unsafe { rkyv::access_unchecked::<<IngressEnvelope as Archive>::Archived>(&body) };
+
+    let agent_hex = hex::encode(ingress_envelope.state.agent_id.unwrap().as_slice());
+    let path_intent = ingress_envelope.intent_path.as_str();
+
+    // O(1) Aegis Policy Check.
+    if !state.aegis.enforce_aegis_policy(&agent_hex, path_intent) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Extract bytes for Signature Verification
+    let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&ingress_envelope.state).unwrap();
+    let mut sig_bytes = [0u8; 64];
+    sig_bytes.copy_from_slice(ingress_envelope.signature.as_slice());
+
+    // Crytographic Perimeter
+    if !state
+        .aegis
+        .verify_agent_signature(&agent_hex, &state_bytes, &sig_bytes)
+    {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    // Fire the cascade.
+
+    tokio::spawn(async move {});
+
+    Ok(StatusCode::ACCEPTED)
+}
+
+// 2. THE RAG SEMANTIC SEARCH ENDPOINT
+#[derive(Deserialize)]
+pub struct RagQuery {
+    namespace: String,
+    query: String,
+    limit: Option<usize>,
+}
+
+pub async fn semantic_search_endpoint(
+    _auth: ValidatedEnterprise,
+    State(state): State<ApiState>,
+    Query(params): Query<RagQuery>,
+) -> Result<Json<Vec<String>>, StatusCode> {
+    let limit = params.limit.unwrap_or(5);
+
+    match state
+        .mem_router
+        .semantic_search_with_context(&params.query, &params.namespace, limit)
+        .await
+    {
+        Ok(memories) => Ok(Json(memories)),
+        Err(e) => {
+            eprintln!("[RAG ERROR] {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
 
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
+        // Admin / Debugging endpoints
         .route("/v1/admin/quarantine", get(get_quarantine))
         .route(
             "/v1/admin/quarantine/lift",
             post(lift_qurantine_and_resurrect),
         )
         .route("/v1/admin/time_travel", post(time_travel))
+        // System /deployment endpoints
         .route("/v1/admin/a2a", post(mcp_ws_handler))
         // .route("/v1/admin/upload_agent", post(upload_agent_wasm))
         .with_state(state)

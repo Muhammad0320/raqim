@@ -29,7 +29,7 @@ impl GlobalNetworkBridge {
 
         Self {
             session: Arc::new(session),
-            workspace_prefix: format!("synapse/swarm/{}", swarm_name),
+            workspace_prefix: format!("raqim/swarm/{}", swarm_name),
             aegis,
         }
     }

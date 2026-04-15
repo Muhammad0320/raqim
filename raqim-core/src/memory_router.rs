@@ -24,7 +24,7 @@ use crate::sandbox::SandboxContent;
 use crate::sandbox::WasmEngine;
 use crate::telemetry::TelemetryEngine;
 use crate::{
-    OpLog, SystemEvent, config::SynapseConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
+    OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
     state::SwarmState,
 };
 
@@ -34,7 +34,7 @@ pub enum RebuildMode {
 }
 
 pub struct MemoryRouter {
-    config: Arc<SynapseConfig>,
+    config: Arc<RaqimConfig>,
     telemetry: Arc<TelemetryEngine>,
     aegis: Arc<AegisGateKeeper>,
     axon: Arc<AxonGateKeeper>,
@@ -50,7 +50,7 @@ pub struct MemoryRouter {
 
 impl MemoryRouter {
     pub fn new(
-        config: Arc<SynapseConfig>,
+        config: Arc<RaqimConfig>,
         telemetry: Arc<TelemetryEngine>,
         aegis: Arc<AegisGateKeeper>,
         axon: Arc<AxonGateKeeper>,
