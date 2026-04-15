@@ -536,8 +536,11 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
             post(lift_qurantine_and_resurrect),
         )
         .route("/v1/admin/time_travel", post(time_travel))
-        // System /deployment endpoints
-        .route("/v1/admin/a2a", post(mcp_ws_handler))
-        // .route("/v1/admin/upload_agent", post(upload_agent_wasm))
+        // System / Deployment endpoints
+        .route("/v1/system_boot_agent", post(upload_wasm_endpoint))
+        // Agent Swarm endpoints
+        .route("/v1/mcp/ws", post(mcp_ws_handler))
+        .route("/v1/swarm/ingress", post(http_ingress_endpoint))
+        .route("/v1/swarm/memory", get(semantic_search_endpoint))
         .with_state(state)
 }
