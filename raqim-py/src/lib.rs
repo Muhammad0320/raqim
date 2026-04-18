@@ -1,6 +1,7 @@
 use ed25519_dalek::{Signer, SigningKey};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The Python Class wrapping the Rust Cryptography
@@ -55,7 +56,7 @@ impl RaqimCryptoCore {
         let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&state).unwrap();
         let signature = self.signing_key.sign(&state_bytes).to_bytes();
 
-        let envelope = IngressEnvelope {
+        let envelope = raqim_core::IngressEnvelope {
             intent_path: intent_path.to_string(),
             public_key: self.pub_key_bytes,
             signature,
