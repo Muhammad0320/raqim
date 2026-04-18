@@ -70,7 +70,7 @@ impl Raqim {
         // First pass
         let required_size = unsafe {
             host_fetch_url(url.as_ptr(), url.len())
-        }
+        };
 
         if required_size < 0 {
             return Err("Network request failed or payload exceeds 2MB limit ".to_string());
