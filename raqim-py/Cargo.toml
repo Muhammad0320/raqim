@@ -2,3 +2,7 @@
 name = "raqim-py"
 version = "0.1.0"
 edition = "2024"
+
+[dependencies]
+ed25519-dalek = "2.2.0"
+pyo3 = "0.28.3"
