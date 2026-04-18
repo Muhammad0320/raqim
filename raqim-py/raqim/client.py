@@ -1,0 +1,116 @@
+import asyncio
+import json
+import uuid
+from typing import Dict, Callable, Awaitable
+import websockets
+import httpx
+from raqim_core import RaqimCryptoCore  # Our compiled PyO3 Rust extension!
+
+class RaqimClient:
+    def __init__(self, private_key_path: str, daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081):
+        self.crypto_core = RaqimCryptoCore(private_key_path)
+        self.tcp_addr = (daemon_host, tcp_port)
+        self.http_url = f"http://{daemon_host}:{http_port}"
+        self.ws_url = f"ws://{daemon_host}:{http_port}/v1/mcp/ws"
+        
+        # THE ASYNC MULTIPLEXER (Python's equivalent to DashMap + oneshot)
+        self._pending_requests: Dict[str, asyncio.Future] = {}
+        self._capabilities: Dict[str, Callable[[bytes], Awaitable[bytes]]] = {}
+        self._ws_connection = None
+
+    async def commit_thought(self, agent_hex: str, intent_path: str, text: str):
+        """Firehose Data Plane: Shoots pure RKYV bytes over raw TCP."""
+        # The Rust PyO3 extension handles the blazing-fast serialization and signing
+        raw_payload = self.crypto_core.generate_tcp_payload(agent_hex, intent_path, text)
+        
+        reader, writer = await asyncio.open_connection(*self.tcp_addr)
+        writer.write(raw_payload)
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    async def query_memory(self, intent_path: str, query: str, license_key: str) -> list[str]:
+        """Control Plane: Uses Axum HTTP for complex JSON RAG returns."""
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{self.http_url}/v1/swarm/memory",
+                params={"namespace": intent_path, "query": query},
+                headers={"Authorization": f"Bearer {license_key}"}
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    async def connect_swarm(self):
+        """Initializes the background WebSocket Multiplexer for A2A."""
+        self._ws_connection = await websockets.connect(self.ws_url)
+        asyncio.create_task(self._websocket_listener())
+
+    async def _websocket_listener(self):
+        """The Background Router: Mirrors the Rust tokio::select/recv loop."""
+        try:
+            async for message in self._ws_connection:
+                data = json.loads(message)
+                msg_type = data.get("type")
+
+                if msg_type == "QuestionAnswered":
+                    # We got an answer! Wake up the specific suspended function.
+                    req_id = data["request_id"]
+                    if req_id in self._pending_requests:
+                        future = self._pending_requests.pop(req_id)
+                        future.set_result(data["answer"])
+                
+                elif msg_type == "IncomingQuestion":
+                    # Someone is asking us a question!
+                    cap = data["capability"]
+                    if cap in self._capabilities:
+                        handler = self._capabilities[cap]
+                        # Execute the user's AI logic
+                        answer_bytes = await handler(bytes(data["question"]))
+                        
+                        # Send the reply back up the socket
+                        reply = {
+                            "type": "ReplyToQuestion",
+                            "request_id": data["request_id"],
+                            "answer": list(answer_bytes) # JSON arrays for bytes
+                        }
+                        await self._ws_connection.send(json.dumps(reply))
+                        
+        except websockets.ConnectionClosed:
+            print("[RAQIM] Swarm WebSocket disconnected.")
+
+    async def ask_swarm(self, capability: str, question: bytes, sender_hex: str) -> bytes:
+        """Suspends the Python coroutine until the answer arrives over WS."""
+        if not self._ws_connection:
+            raise Exception("Must call connect_swarm() first.")
+
+        request_id = str(uuid.uuid4())
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        self._pending_requests[request_id] = future
+
+        # True crytography
+        signature = self.crypto_core.sign_payload(question)
+
+        ask_msg = {
+            "type": "AskQuestion",
+            "request_id": request_id,
+            "capability": capability,
+            "question": list(question),
+            "sender_hex": sender_hex,
+            "public_key": list(self.crypto_core.public_key_bytes),
+            "signature": list(signature) 
+        }
+
+        await self._ws_connection.send(json.dumps(ask_msg))
+        
+        # ZERO CPU YIELD: Suspends Python execution until the _websocket_listener wakes it up
+        return await asyncio.wait_for(future, timeout=15.0)
+
+    async def serve_capability(self, capability: str, handler: Callable[[bytes], Awaitable[bytes]]):
+        """Registers a listener on the Global Swarm."""
+        if not self._ws_connection:
+            raise Exception("Must call connect_swarm() first.")
+            
+        self._capabilities[capability] = handler
+        msg = {"type": "RegisterCapability", "capability": capability}
+        await self._ws_connection.send(json.dumps(msg))
