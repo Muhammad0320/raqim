@@ -1,9 +1,5 @@
 use clap::Parser;
 use ed25519_dalek::{PublicKey, Signature, Verifier};
-use std::collections::HashMap;
-use std::fs;
-use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex};
 use raqim_core::aegis::AegisGateKeeper;
 use raqim_core::api::{ApiState, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
@@ -19,6 +15,10 @@ use raqim_core::state::SwarmState;
 use raqim_core::telemetry::TelemetryEngine;
 use raqim_core::utils::parse_agent_id;
 use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
+use std::collections::HashMap;
+use std::fs;
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc};
@@ -28,10 +28,7 @@ use wasmtime_wasi::WasiCtxBuilder;
 async fn main() {
     let config = Arc::new(RaqimConfig::load_or_bootstrap());
 
-    println!(
-        "Bismillah. Booting Raqim Daemon on port {}...",
-        config.port
-    );
+    println!("Bismillah. Booting Raqim Daemon on port {}...", config.port);
 
     // BOOT TELEMETRY SINKER
     let telemetry = TelemetryEngine::new(&config.tenant_id, &config.license_key);
@@ -312,6 +309,12 @@ async fn main() {
         mem_router: mem_router.clone(),
         global_net: global_net.clone(),
         telemetry: telemetry.clone(),
+        axon: axon.clone(),
+        brain: brain.clone(),
+        cortex_tx: cortex_tx.clone(),
+        global_tx_counter: tx_counter.clone(),
+        wal: wal.clone(),
+        event_tx: event_tx.clone(),
         decoding_key,
     };
 
