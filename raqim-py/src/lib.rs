@@ -23,6 +23,12 @@ impl RaqimCryptoCore {
         })
     }
 
+    /// Mathematically signs any raw byte array and returns the 64-byte signature
+    fn sign_payload<'py>(&self, py: Python<'py>, payload: &[u8]) -> PyResult<&'py PyBytes> {
+        let signature = self.signing_key.sign(payload).to_bytes();
+        Ok(PyBytes::new(py, &signature))
+    }
+
     /// Converts Python strings directly into zero-copy TCP payload!
     fn generate_tcp_payload<'py>(
         &self,
