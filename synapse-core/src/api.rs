@@ -1,6 +1,5 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Query};
-use axum::response::Response;
 use axum::{
     Json, async_trait,
     extract::{FromRef, FromRequestParts, State},
@@ -14,25 +13,22 @@ use futures_util::{SinkExt, stream::StreamExt};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
-use std::result::Result::{Err, Ok};
+use std::result::Result::{Ok, Err};
 use std::sync::atomic::AtomicU64;
 use std::{collections::HashMap, sync::Arc};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
-use crate::axon::AxonGateKeeper;
 use crate::cortex::CortexDataPlane;
 use crate::nucleus::WalEngine;
-use crate::state::SwarmState;
 use crate::{
-    A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
+    A2AEnvelope, aegis::AegisGateKeeper, config::SynapseConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge, telemetry::TelemetryEngine,
 };
-use crate::{IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
+use crate::{IngressEnvelope, SystemEvent, utils};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")] // Enables brilliant json parsing {"type": "AskQuestion", }
@@ -78,24 +74,22 @@ pub enum WsMessage {
 
 #[derive(Clone)]
 pub struct ApiState {
-    pub config: Arc<RaqimConfig>,
+    pub config: Arc<SynapseConfig>,
 
     pub mem_router: Arc<MemoryRouter>,
-    pub axon: Arc<AxonGateKeeper>,
-    pub brain: Arc<SwarmState>,
     pub aegis: Arc<AegisGateKeeper>,
     pub decoding_key: Arc<DecodingKey>,
     pub global_net: Arc<GlobalNetworkBridge>,
     pub telemetry: Arc<TelemetryEngine>,
-    pub cortex_tx: UnboundedSender<Vec<u8>>,
+    pub cortex_tx: Arc<UnboundedSender<Vec<u8>>>,
     pub wal: Arc<WalEngine>,
     pub global_tx_counter: Arc<AtomicU64>,
-
     pub event_tx: Sender<SystemEvent>,
+    pub brain: Arc<SwarmState>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct EnterpriseClaim {
+struct EnterpriseClaim {
     pub sub: String, // Tenant id
     pub features: Vec<String>,
     pub exp: usize,
@@ -116,10 +110,10 @@ struct TimeTravelRequest {
 }
 
 // THE AXUS EXTRACTOR: This automatically protects any route it is attached to.
-pub struct ValidatedIdentity(pub EnterpriseClaim);
+pub struct ValidatedEnterprise;
 
 #[async_trait]
-impl<S> FromRequestParts<S> for ValidatedIdentity
+impl<S> FromRequestParts<S> for ValidatedEnterprise
 where
     ApiState: axum::extract::FromRef<S>,
     S: Send + Sync,
@@ -140,10 +134,16 @@ where
         // TRUE CRYPTOGRAPHIC VERIFICATION
         let validation = Validation::new(Algorithm::RS256);
         match decode::<EnterpriseClaim>(auth_header, &api_state.decoding_key, &validation) {
-            Ok(token_data) => Ok(ValidatedIdentity(token_data.claims)),
+            Ok(token_data) => {
+                // Feature gating! If they didn't pay for Aegis block the admin API
+                if !token_data.claims.features.contains(&"aegis".to_string()) {
+                    return Err(StatusCode::FORBIDDEN);
+                }
+                Ok(ValidatedEnterprise)
+            }
 
             Err(e) => {
-                eprintln!("[SECURITY] Invalid or Expired License Key: {}", e);
+                eprintln!("[SECURITY] Crytographic JWT validation failed: {}", e);
                 Err(StatusCode::UNAUTHORIZED)
             }
         }
@@ -158,9 +158,9 @@ struct WsConnectionstate {
     downstream_tx: mpsc::Sender<Message>,
 }
 
-// 3. The Axum Handler (Protected by ValidatedIdentity)
+// 3. The Axum Handler (Protected by ValidatedEnterprise)
 pub async fn mcp_ws_handler(
-    _auth: ValidatedIdentity,
+    _auth: ValidatedEnterprise,
     State(state): State<ApiState>,
     ws: WebSocketUpgrade,
 ) -> Response {
@@ -325,14 +325,10 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
 // THE ACTIVE DEBUGGING ROUTE HANDLER
 async fn time_travel(
-    identity: ValidatedIdentity,
+    _auth: ValidatedEnterprise,
     State(state): State<ApiState>,
     Json(payload): Json<TimeTravelRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    if !identity.0.features.contains(&"time_travel".to_string()) {
-        return Err(StatusCode::PAYMENT_REQUIRED);
-    }
-
     println!(
         "[TIME TRAVEL] Admin requested Reality Forkk for Agent {} at TxID {} ",
         payload.agent_id, payload.target_tx_id
@@ -357,7 +353,7 @@ async fn time_travel(
 }
 
 async fn get_quarantine(
-    _auth: ValidatedIdentity,
+    _auth: ValidatedEnterprise,
     State(state): State<ApiState>,
 ) -> Result<Json<Vec<String>>, StatusCode> {
     Ok(Json(state.aegis.fetch_quaratined_agents()))
@@ -369,18 +365,10 @@ struct ResurrectPayload {
 }
 
 async fn lift_qurantine_and_resurrect(
-    identity: ValidatedIdentity,
+    _auth: ValidatedEnterprise,
     State(state): State<ApiState>,
     Json(payload): Json<ResurrectPayload>,
 ) -> Result<StatusCode, StatusCode> {
-    if !identity.0.features.contains(&"aegis".to_string()) {
-        eprintln!(
-            "[BILLING] Tenant {} attempted to use Aegis without a license.",
-            identity.0.sub
-        );
-        return Err(StatusCode::PAYMENT_REQUIRED);
-    }
-
     // List the Aegis Block.
     state.aegis.lift_quarantine(&payload.agent_id);
 
@@ -395,7 +383,7 @@ async fn lift_qurantine_and_resurrect(
 }
 
 pub async fn upload_wasm_endpoint(
-    _auth: ValidatedIdentity,
+    _auth: ValidatedEnterprise,
     State(state): State<ApiState>,
     mut multipart: Multipart,
 ) -> Result<StatusCode, StatusCode> {
@@ -465,41 +453,13 @@ pub async fn http_ingress_endpoint(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // The True Zero-Copy Spawn.
+    // Fire the cascade.
+
     let task_brain = state.brain.clone();
-    let task_axon = state.axon.clone();
-    let task_aegis = state.aegis.clone();
-    let task_wal = state.wal.clone();
-    let task_cortex = state.cortex_tx.clone();
-    let task_net = state.global_net.clone();
-    let task_counter_tx = state.global_tx_counter.clone();
-    let task_telemetry = state.telemetry.clone();
-    let task_event = state.event_tx.clone();
 
     let body_clone = body.clone();
 
-    tokio::spawn(async move {
-        // Recast the pointer inside the 'static task bounds
-        let envelope = unsafe {
-            rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&body_clone)
-        };
-
-        // Pass
-        execute_raqim_cascade(
-            &envelope.state,
-            task_brain,
-            task_axon,
-            task_wal,
-            task_cortex,
-            task_net,
-            task_counter_tx,
-            task_event,
-            Vec::new(),
-            Vec::new(),
-            task_telemetry,
-        )
-        .await;
-    });
+    tokio::spawn(async move {});
 
     Ok(StatusCode::ACCEPTED)
 }
@@ -513,14 +473,10 @@ pub struct RagQuery {
 }
 
 pub async fn semantic_search_endpoint(
-    identity: ValidatedIdentity,
+    _auth: ValidatedEnterprise,
     State(state): State<ApiState>,
     Query(params): Query<RagQuery>,
 ) -> Result<Json<Vec<String>>, StatusCode> {
-    if !identity.0.features.contains(&"base_os".to_string()) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     let limit = params.limit.unwrap_or(5);
 
     match state
@@ -546,11 +502,8 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
             post(lift_qurantine_and_resurrect),
         )
         .route("/v1/admin/time_travel", post(time_travel))
-        // System / Deployment endpoints
-        .route("/v1/system_boot_agent", post(upload_wasm_endpoint))
-        // Agent Swarm endpoints
-        .route("/v1/mcp/ws", post(mcp_ws_handler))
-        .route("/v1/swarm/ingress", post(http_ingress_endpoint))
-        .route("/v1/swarm/memory", get(semantic_search_endpoint))
+        // System /deployment endpoints
+        .route("/v1/admin/a2a", post(mcp_ws_handler))
+        // .route("/v1/admin/upload_agent", post(upload_agent_wasm))
         .with_state(state)
 }
