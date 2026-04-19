@@ -1,7 +1,8 @@
 use clap::Parser;
 use ed25519_dalek::{PublicKey, Signature, Verifier};
+use jsonwebtoken::{DecodingKey, Validation, decode};
 use raqim_core::aegis::AegisGateKeeper;
-use raqim_core::api::{ApiState, build_admin_router};
+use raqim_core::api::{ApiState, EnterpriseClaim, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
@@ -63,13 +64,41 @@ async fn main() {
         }
     });
 
+    // BOOT-TIME LICENSE_VERIFIICATION
+    let public_key = include_bytes!("../keys/raqim_cloud_public.pem"); // Hardcoded cloud key
+    let decoding_key = DecodingKey::from_rsa_pem(public_key).expect("FATAL: Corrupted OS pubKey");
+    let validation = Validation::new(jsonwebtoken::Algorithm::RS256);
+
+    let mut allow_wan = false;
+
+    if let Ok(token_data) =
+        decode::<EnterpriseClaim>(&config.license_key, &decoding_key, &validation)
+    {
+        if token_data
+            .claims
+            .features
+            .contains(&"global_a2a".to_string())
+        {
+            allow_wan = true;
+            println!(
+                "[SYSTEM] Enterprise Global WAN Authorized for Tenant: {} ",
+                token_data.claims.sub
+            );
+        } else {
+            println!("[SYSTEM] Open Core License detected. WAN routing disabled.");
+        }
+    } else {
+        println!("[WARNING] Invalid License. Defaulting to Local LAN Swarm mode.");
+    }
+
     // ===============================
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain = Arc::new(SwarmState::new(&config.topic, event_tx.clone()));
     let axon = Arc::new(AxonGateKeeper::new());
     let aegis = AegisGateKeeper::new("aegis.toml", event_tx);
     let wal = Arc::new(WalEngine::start(config.wal_path.clone()).await);
-    let global_net = Arc::new(GlobalNetworkBridge::new(&config.topic, aegis.clone()).await);
+    let global_net =
+        Arc::new(GlobalNetworkBridge::new(&config.topic, aegis.clone(), allow_wan).await);
 
     let lance_engine = Arc::new(
         LanceEngine::new(
@@ -298,7 +327,7 @@ async fn main() {
             .await;
     });
 
-    // BOOT THE AXUM CONTROL PLANE (port + 1 to keep it off the raw TCP port)
+    // AXUM BOOT
     let pem_content =
         std::fs::read(&config.public_key_path).expect("Missing Enterprise Public Key");
     let decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content).unwrap());
