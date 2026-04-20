@@ -78,6 +78,10 @@ async fn main() {
             .claims
             .features
             .contains(&"global_a2a".to_string())
+            || token_data
+                .claims
+                .features
+                .contains(&"global_crdt".to_string())
         {
             allow_wan = true;
             println!(
