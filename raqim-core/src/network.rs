@@ -20,7 +20,12 @@ pub struct GlobalNetworkBridge {
 
 impl GlobalNetworkBridge {
     /// Bootstraps the modern Zenoh P2P Node
-    pub async fn new(swarm_name: &str, aegis: Arc<AegisGateKeeper>, allow_wan: bool) -> Self {
+    pub async fn new(
+        tenant_id: &str,
+        swarm_name: &str,
+        aegis: Arc<AegisGateKeeper>,
+        allow_wan: bool,
+    ) -> Self {
         println!("Bismillah. Initialializing Zenoh Global Network Bridge...");
 
         // Config::default() automatically discovers other nodes on LAN/WAN
@@ -31,11 +36,11 @@ impl GlobalNetworkBridge {
             // 1. Disable connecting to external zenoh router.
             config.connect.endpoints.clear();
 
-            // 2. Restrict listening to Local Loopback and LAN - This prevents the OS from accepting packets from the open internet
-            config.listen.endpoints = vec![
-                "tcp/127.0.0.1:7447".parse().unwrap(), // Localhost only
-                "udp/224.0.0.155:7447",                // Multicasts for LAN discovery (optional)
-            ];
+            // Listen on all local IP address (e.g., 192.168.1.5)
+            config.listen.endpoints = vec!["tcp/0.0.0.0:7447".parse().unwrap()];
+
+            // Multicast: Shouts "Are there any other Raqim nodes here?" across the wifi
+            config.scouting.multicast.enabled = Some(true);
             println!("[NETWORK] Zenoh locked to Localhost/LAN. Egress blocked!");
         } else {
             // Connect to Raqim cloud global routers.
@@ -49,7 +54,7 @@ impl GlobalNetworkBridge {
 
         Self {
             session: Arc::new(session),
-            workspace_prefix: format!("raqim/swarm/{}", swarm_name),
+            workspace_prefix: format!("raqim/{}/{}", tenant_id, swarm_name),
             aegis,
         }
     }
