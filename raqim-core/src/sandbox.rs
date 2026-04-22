@@ -413,7 +413,7 @@ impl WasmEngine {
                 tokio::spawn(async move {
                     net.register_agent_capability(
                         &capability,
-                        async move |question_bytes: &[u8]| {
+                        async move |question_bytes: &[u8]| -> Vec<u8> {
                             let (reply_tx, reply_rx) = oneshot::channel();
 
                             // Send the question to the suspended WASM thread.

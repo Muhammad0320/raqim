@@ -208,13 +208,13 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
     match msg {
         WsMessage::RegisterCapability { capability } => {
             let conn_clone = conn.clone();
-            let cap_clone = capability.to_string();
+            let cap_clone = capability.clone();
 
             // OS spawns the zenoh listener.
             tokio::spawn(async move {
                 os_state
                     .global_net
-                    .register_agent_capability(&cap_clone.as_str(), move |question_bytes| {
+                    .register_agent_capability(&capability.as_str(), move |question_bytes| {
                         let request_id = Uuid::new_v4().to_string();
                         let (reply_tx, reply_rx) = oneshot::channel();
 
@@ -451,8 +451,11 @@ pub async fn http_ingress_endpoint(
         return Err(StatusCode::FORBIDDEN);
     }
 
-    // Extract bytes for Signature Verification
-    let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&ingress_envelope.state).unwrap();
+    // O(1) Zero-Copy memory mapping:
+    let state_ptr = &ingress_envelope.state as *const _ as *const u8;
+    let state_len = std::mem::size_of_val(&ingress_envelope.state);
+    let state_bytes = unsafe { std::slice::from_raw_parts(state_ptr, state_len) };
+
     let mut sig_bytes = [0u8; 64];
     sig_bytes.copy_from_slice(ingress_envelope.signature.as_slice());
 
