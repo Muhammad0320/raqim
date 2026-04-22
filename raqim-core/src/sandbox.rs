@@ -413,7 +413,7 @@ impl WasmEngine {
                 tokio::spawn(async move {
                     net.register_agent_capability(
                         &capability,
-                        async move |question_bytes: &[u8]| -> Vec<u8> {
+                        move |question_bytes: &[u8]| -> Vec<u8> {
                             let (reply_tx, reply_rx) = oneshot::channel();
 
                             // Send the question to the suspended WASM thread.
@@ -423,7 +423,6 @@ impl WasmEngine {
                             {
                                 // Wait for the WASM to process it and reply
                                 return match tokio::time::timeout(Duration::from_secs(15), reply_rx)
-                                    .await
                                 {
                                     Result::Ok(Result::Ok(data)) => data, // Timeout didn't trigger, and channel yielded data
                                     Result::Ok(Result::Err(_)) => b"A2A_GUEST_CRASH".to_vec(), // Channel dropped/crashed

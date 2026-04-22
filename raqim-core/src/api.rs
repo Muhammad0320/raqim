@@ -403,7 +403,7 @@ pub async fn upload_wasm_endpoint(
         .await
         .map_err(|_| StatusCode::BAD_REQUEST)?
     {
-        let file_name = field.field_name().unwrap_or("").to_string();
+        let file_name = field.file_name().unwrap_or("").to_string();
 
         // Strict Hex Validation
         let hex_str = file_name.trim_end_matches(".wasm");
