@@ -320,6 +320,12 @@ impl MemoryRouter {
                     .as_any()
                     .downcast_ref::<arrow_array::StringArray>()
                     .expect(" FATAL: network_reponse isn't a StringArray");
+                let namespace_col = batch
+                    .column_by_name("namespace")
+                    .unwrap()
+                    .as_any()
+                    .downcast_ref::<arrow_array::StringArray>()
+                    .expect("namespace is not a StringArray");
                 let delta_col = batch
                     .column_by_name("payload")
                     .unwrap()
@@ -336,9 +342,9 @@ impl MemoryRouter {
                         _ => {
                             // Log the currection and default to a safe state
                             eprintln!(
-                                "[WARNING] Unknown statuts '{}' in LanceDB for TxID {}. Defaulting to Halted.",
+                                "[WARNING] Unknown status '{}' in LanceDB for TxID {}. Defaulting to Halted.",
                                 status_col.value(i),
-                                tx_id
+                                tx_id_col.value(i)
                             );
                             AgentStatus::Halted
                         }
@@ -354,6 +360,7 @@ impl MemoryRouter {
                         current_hash: [0; 32],
                         state: crate::AgentState {
                             agent_id: Some([0; 16]),
+                            namespace: namespace_col.value(i).to_string(),
                             transaction_id: tx_id_col.value(i) as u64,
                             timestamp: timestamp_col.value(i),
                             status,
@@ -454,8 +461,10 @@ impl MemoryRouter {
             Arc::new(WalEngine::start(format!("phamtom_{}", agent_hex).to_string()).await);
         let dummy_net = Arc::new(
             GlobalNetworkBridge::new(
+                "phantom_tenant",
                 format!("phamtom_{}", agent_hex).as_str(),
                 self.aegis.clone(),
+                false,
             )
             .await,
         );
