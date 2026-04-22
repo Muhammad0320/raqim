@@ -7,7 +7,6 @@ use crate::{A2AEnvelope, OpLog, SystemEvent};
 use rkyv::{Archive, to_bytes};
 use tokio::sync::broadcast::Sender;
 use zenoh::Session;
-use zenoh::config::Config;
 
 use crate::aegis::AegisGateKeeper;
 use tokio::time::{Duration, timeout};
@@ -34,20 +33,24 @@ impl GlobalNetworkBridge {
         if !allow_wan {
             // THE PHYSICAL BARRICADE
             // 1. Disable connecting to external zenoh router.
-            config.connect.endpoints.clear();
+            config.insert_json5("connect/endpoints", r#"[]"#).unwrap();
 
-            // Listen on all local IP address (e.g., 192.168.1.5)
-            config.listen.endpoints = vec!["tcp/0.0.0.0:7447".parse().unwrap()];
+            // Listen on all local IP addresses (e.g., 192.168.1.5)
+            config
+                .insert_json5("listen/endpoints", r#"["tcp/0.0.0.0:7447"]"#)
+                .unwrap();
 
             // Multicast: Shouts "Are there any other Raqim nodes here?" across the wifi
-            config.scouting.multicast.enabled = Some(true);
+            config
+                .insert_json5("scouting/multicast/enabled", "true")
+                .unwrap();
+
             println!("[NETWORK] Zenoh locked to Localhost/LAN. Egress blocked!");
         } else {
             // Connect to Raqim cloud global routers.
             config
-                .connect
-                .endpoints
-                .push("tcp/router.raqim.cloud:7447".parse().unwrap());
+                .insert_json5("connect/endpoints", r#"["tcp/router.raqim.cloud:7447"]"#)
+                .unwrap();
         }
 
         let session = zenoh::open(config).await.expect("Failed to start zenoh");
