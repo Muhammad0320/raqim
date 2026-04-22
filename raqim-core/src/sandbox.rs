@@ -1,7 +1,8 @@
+use std::result::Result;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::{self, SystemTime, UNIX_EPOCH};
-use tokio::time::{Duration, timeout};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::time::Duration;
 use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::preview1::WasiP1Ctx;
 
@@ -13,7 +14,6 @@ use crate::nucleus::WalEngine;
 use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, SystemEvent};
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
-use anyhow::Ok;
 use anyhow::anyhow;
 use rkyv::Archive;
 use tokio::sync::broadcast::Sender;
@@ -423,9 +423,9 @@ impl WasmEngine {
                             return match tokio::time::timeout(Duration::from_secs(15), reply_rx)
                                 .await
                             {
-                                Ok(Ok(data)) => data, // Timeout didn't trigger, and channel yielded data
-                                Ok(Err(_)) => b"A2A_GUEST_CRASH".to_vec(), // Channel dropped/crashed
-                                Err(_) => b"A2A_TIMEOUT".to_vec(),         // 15 seconds passed!
+                                Result::Ok(Result::Ok(data)) => data, // Timeout didn't trigger, and channel yielded data
+                                Result::Ok(Result::Err(_)) => b"A2A_GUEST_CRASH".to_vec(), // Channel dropped/crashed
+                                Result::Err(_) => b"A2A_TIMEOUT".to_vec(), // 15 seconds passed!
                             };
                         }
                         b"A2A_QUEUE_FULL".to_vec()
