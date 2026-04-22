@@ -25,7 +25,6 @@ use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 use crate::axon::AxonGateKeeper;
-use crate::cortex::CortexDataPlane;
 use crate::nucleus::WalEngine;
 use crate::state::SwarmState;
 use crate::{
@@ -323,39 +322,6 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
     }
 }
 
-// THE ACTIVE DEBUGGING ROUTE HANDLER
-async fn time_travel(
-    identity: ValidatedIdentity,
-    State(state): State<ApiState>,
-    Json(payload): Json<TimeTravelRequest>,
-) -> Result<StatusCode, StatusCode> {
-    if !identity.0.features.contains(&"time_travel".to_string()) {
-        return Err(StatusCode::PAYMENT_REQUIRED);
-    }
-
-    println!(
-        "[TIME TRAVEL] Admin requested Reality Forkk for Agent {} at TxID {} ",
-        payload.agent_id, payload.target_tx_id
-    );
-
-    // 1. Lift aegis Quarantine so that the agent can actually boot
-    state.aegis.lift_quarantine(&payload.agent_id);
-
-    match state
-        .mem_router
-        .boot_historical_agent(
-            &payload.agent_id,
-            Some(payload.target_tx_id),
-            Some(payload.fork_config),
-            true,
-        )
-        .await
-    {
-        Ok(()) => Ok(StatusCode::OK),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
 async fn get_quarantine(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
@@ -391,6 +357,39 @@ async fn lift_qurantine_and_resurrect(
     {
         Ok(()) => Ok(StatusCode::OK),
         Err(_) => Ok(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+// THE ACTIVE DEBUGGING ROUTE HANDLER
+async fn time_travel(
+    identity: ValidatedIdentity,
+    State(state): State<ApiState>,
+    Json(payload): Json<TimeTravelRequest>,
+) -> Result<StatusCode, StatusCode> {
+    if !identity.0.features.contains(&"time_travel".to_string()) {
+        return Err(StatusCode::PAYMENT_REQUIRED);
+    }
+
+    println!(
+        "[TIME TRAVEL] Admin requested Reality Forkk for Agent {} at TxID {} ",
+        payload.agent_id, payload.target_tx_id
+    );
+
+    // 1. Lift aegis Quarantine so that the agent can actually boot
+    state.aegis.lift_quarantine(&payload.agent_id);
+
+    match state
+        .mem_router
+        .boot_historical_agent(
+            &payload.agent_id,
+            Some(payload.target_tx_id),
+            Some(payload.fork_config),
+            true,
+        )
+        .await
+    {
+        Ok(()) => Ok(StatusCode::OK),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
