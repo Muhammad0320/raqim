@@ -12,14 +12,12 @@ use std::{fs::File, sync::Arc};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
-use wasmtime_wasi::WasiCtxBuilder;
 
 use crate::AgentStatus;
 use crate::aegis::AegisGateKeeper;
 use crate::api::ForkConfig;
 use crate::axon::AxonGateKeeper;
 use crate::network::GlobalNetworkBridge;
-use crate::sandbox::CheckPointTracker;
 use crate::sandbox::SandboxContent;
 use crate::sandbox::WasmEngine;
 use crate::telemetry::TelemetryEngine;

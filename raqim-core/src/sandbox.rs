@@ -411,25 +411,28 @@ impl WasmEngine {
 
                 // Start listening on zenoh globally
                 tokio::spawn(async move {
-                    net.register_agent_capability(&capability, async move |question_bytes| {
-                        let (reply_tx, reply_rx) = oneshot::channel();
+                    net.register_agent_capability(
+                        &capability,
+                        async move |question_bytes: &[u8]| {
+                            let (reply_tx, reply_rx) = oneshot::channel();
 
-                        // Send the question to the suspended WASM thread.
-                        if tx
-                            .blocking_send((question_bytes.to_vec(), reply_tx))
-                            .is_ok()
-                        {
-                            // Wait for the WASM to process it and reply
-                            return match tokio::time::timeout(Duration::from_secs(15), reply_rx)
-                                .await
+                            // Send the question to the suspended WASM thread.
+                            if tx
+                                .blocking_send((question_bytes.to_vec(), reply_tx))
+                                .is_ok()
                             {
-                                Result::Ok(Result::Ok(data)) => data, // Timeout didn't trigger, and channel yielded data
-                                Result::Ok(Result::Err(_)) => b"A2A_GUEST_CRASH".to_vec(), // Channel dropped/crashed
-                                Result::Err(_) => b"A2A_TIMEOUT".to_vec(), // 15 seconds passed!
-                            };
-                        }
-                        b"A2A_QUEUE_FULL".to_vec()
-                    })
+                                // Wait for the WASM to process it and reply
+                                return match tokio::time::timeout(Duration::from_secs(15), reply_rx)
+                                    .await
+                                {
+                                    Result::Ok(Result::Ok(data)) => data, // Timeout didn't trigger, and channel yielded data
+                                    Result::Ok(Result::Err(_)) => b"A2A_GUEST_CRASH".to_vec(), // Channel dropped/crashed
+                                    Result::Err(_) => b"A2A_TIMEOUT".to_vec(), // 15 seconds passed!
+                                };
+                            }
+                            b"A2A_QUEUE_FULL".to_vec()
+                        },
+                    )
                     .await
                 });
             },
