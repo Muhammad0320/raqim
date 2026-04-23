@@ -108,15 +108,9 @@ pub struct ForkConfig {
     pub config_overrides: HashMap<String, String>,
 }
 
-struct TimeTravelRequest {
-    agent_id: String,
-    target_tx_id: u64,
-    fork_config: ForkConfig,
-}
-
-// THE AXUS EXTRACTOR: This automatically protects any route it is attached to.
 pub struct ValidatedIdentity(pub EnterpriseClaim);
 
+// THE AXUM EXTRACTOR: This automatically protects any route it is attached onto.
 #[async_trait]
 impl<S> FromRequestParts<S> for ValidatedIdentity
 where
@@ -360,6 +354,12 @@ async fn lift_qurantine_and_resurrect(
     }
 }
 
+#[derive(Deserialize)]
+struct TimeTravelRequest {
+    agent_id: String,
+    target_tx_id: u64,
+    fork_config: ForkConfig,
+}
 // THE ACTIVE DEBUGGING ROUTE HANDLER
 async fn time_travel(
     identity: ValidatedIdentity,
