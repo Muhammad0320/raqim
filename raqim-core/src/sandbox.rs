@@ -151,6 +151,9 @@ impl WasmEngine {
                 };
 
                 // EXTRACT AND DROP: Copy the bytes into an owned Vec immediately. The `to_vec()` ends the immutable borrow of 'caller' instantly!
+                // To cross thread boundaries. We must read the required bytes into a temp buffer, because the pointer is tied to WASM memory lifespan.
+                // (Lifetime prevents moving pointers across threads )
+
                 let temp_buffer = mem
                     .data(&caller)
                     .get(ptr as usize..(ptr + len) as usize)
@@ -178,10 +181,6 @@ impl WasmEngine {
                 // Clear the live queues for the next thought cycle
                 caller.data_mut().live_responses.clear();
                 caller.data_mut().live_seeds.clear();
-
-                // To cross thread boundaries. We must read the required bytes into a temp buffer, because the pointer is tied to WASM memory lifespan.
-                // (Lifetime prevents moving pointers across threads )
-                let temp_buffer = data.to_vec();
 
                 // used tokio::spawn to bridge syncronous WASM call to out async cascade
                 tokio::spawn(async move {
