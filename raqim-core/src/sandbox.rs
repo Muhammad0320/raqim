@@ -150,15 +150,17 @@ impl WasmEngine {
                     _ => return Err(anyhow!("Failed to locate WASM linear memory")),
                 };
 
-                // 2. Read the raw bytes safely from the WASM linear memory
-                let data = mem
+                // EXTRACT AND DROP: Copy the bytes into an owned Vec immediately. The `to_vec()` ends the immutable borrow of 'caller' instantly!
+                let temp_buffer = mem
                     .data(&caller)
                     .get(ptr as usize..(ptr + len) as usize)
-                    .ok_or_else(|| anyhow!("Memory access out of bounds"))?;
+                    .ok_or_else(|| anyhow!("Memory access out of bounds"))?
+                    .to_vec();
 
                 // Zero-copy Pointer cast
-                let archived_state =
-                    unsafe { rkyv::access_unchecked::<<AgentState as Archive>::Archived>(data) };
+                let archived_state = unsafe {
+                    rkyv::access_unchecked::<<AgentState as Archive>::Archived>(&temp_buffer)
+                };
 
                 let layers = caller.data();
 
@@ -308,6 +310,7 @@ impl WasmEngine {
                   payload_len: i32|
                   -> i32 {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
+
                 let mem_slice = mem.data(&caller);
 
                 // Read Capability String (e.g., "raqim_finance/ledger" )
