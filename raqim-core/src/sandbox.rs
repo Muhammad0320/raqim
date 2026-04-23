@@ -425,12 +425,12 @@ impl WasmEngine {
                                     .recv_timeout(std::time::Duration::from_secs(15))
                                 {
                                     Result::Ok(data) => data, // Timeout didn't trigger, and channel yielded data
-                                    Result::Err(mpsc::RecvTimeoutError::Timeout) => {
+                                    Result::Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                                         b"A2A_TIMEOUT".to_vec()
                                     } // 15 seconds passed!
-                                    Result::Err(mpsc::RecvTimeoutError::Disconnected) => {
-                                        b"A2A_GUEST_CRASH".to_vec()
-                                    } // Channel dropped/crashed
+                                    Result::Err(
+                                        std::sync::mpsc::RecvTimeoutError::Disconnected,
+                                    ) => b"A2A_GUEST_CRASH".to_vec(), // Channel dropped/crashed
                                 };
                             }
                             b"A2A_QUEUE_FULL".to_vec()
