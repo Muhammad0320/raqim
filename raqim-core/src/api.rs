@@ -470,7 +470,6 @@ pub async fn http_ingress_endpoint(
     // The True Zero-Copy Spawn.
     let task_brain = state.brain.clone();
     let task_axon = state.axon.clone();
-    let task_aegis = state.aegis.clone();
     let task_wal = state.wal.clone();
     let task_cortex = state.cortex_tx.clone();
     let task_net = state.global_net.clone();
