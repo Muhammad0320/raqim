@@ -204,16 +204,15 @@ impl WasmEngine {
                     .await;
                 });
 
+                let agent_id_hex = archived_state
+                    .agent_id
+                    .as_ref()
+                    .map(|id_bytes| hex::encode(id_bytes))
+                    .unwrap_or_else(|| "UNKNOWN_AGENT_ID".to_string());
+
                 println!(
                     "WASM sandbox successfully parsed state from agent {} ",
-                    hex::encode(
-                        archived_state
-                            .agent_id
-                            .as_ref()
-                            .as_slice()
-                            .try_into()
-                            .unwrap()
-                    )
+                    agent_id_hex
                 );
 
                 Ok(())
