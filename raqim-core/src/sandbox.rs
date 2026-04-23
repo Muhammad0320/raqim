@@ -251,7 +251,7 @@ impl WasmEngine {
                 let url_bytes = mem
                     .data(&caller)
                     .get(url_ptr as usize..(url_ptr + url_len) as usize)
-                    .ok_or_else(|| anyhow!("Memory access out of bounds"))
+                    .ok_or_else(|| anyhow!("Memory access out of bounds"))?
                     .to_vec();
 
                 let url = std::str::from_utf8(&url_bytes).unwrap();
