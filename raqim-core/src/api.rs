@@ -395,7 +395,7 @@ async fn time_travel(
 
 pub async fn upload_wasm_endpoint(
     _auth: ValidatedIdentity,
-    State(state): State<ApiState>,
+    State(_): State<ApiState>,
     mut multipart: Multipart,
 ) -> Result<StatusCode, StatusCode> {
     while let Some(mut field) = multipart
