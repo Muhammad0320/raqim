@@ -2,7 +2,7 @@ use std::result::Result;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::time::Duration;
+use tokio::sync::mpsc;
 use wasmtime_wasi::WasiCtxBuilder;
 use wasmtime_wasi::preview1::WasiP1Ctx;
 
@@ -17,7 +17,6 @@ use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
 use anyhow::anyhow;
 use rkyv::Archive;
 use tokio::sync::broadcast::Sender;
-use tokio::sync::{mpsc, oneshot};
 use wasmtime::*;
 
 ///  The internal state we pass into sandbox,
@@ -50,8 +49,8 @@ pub struct SandboxContent {
     pub a2a_response_cache: Vec<u8>,
     pub http_response_cache: Vec<u8>,
 
-    pub a2a_receiver: Option<mpsc::Receiver<(Vec<u8>, oneshot::Sender<Vec<u8>>)>>,
-    pub a2a_reply_channel: Option<oneshot::Sender<Vec<u8>>>,
+    pub a2a_receiver: Option<mpsc::Receiver<(Vec<u8>, std::sync::mpsc::Sender<Vec<u8>>)>>,
+    pub a2a_reply_channel: Option<std::sync::mpsc::Sender<Vec<u8>>>,
 }
 
 pub struct CheckPointTracker {
@@ -406,7 +405,7 @@ impl WasmEngine {
 
                 // Create a channel for zenoh to send questions to this specific WASM sandbox
                 let (tx, rx) =
-                    tokio::sync::mpsc::channel::<(Vec<u8>, oneshot::Sender<Vec<u8>>)>(100);
+                    tokio::sync::mpsc::channel::<(Vec<u8>, std::sync::mpsc::Sender<Vec<u8>>)>(100);
                 caller.data_mut().a2a_receiver = Some(rx);
 
                 // Start listening on zenoh globally
@@ -414,7 +413,7 @@ impl WasmEngine {
                     net.register_agent_capability(
                         &capability,
                         move |question_bytes: &[u8]| -> Vec<u8> {
-                            let (reply_tx, reply_rx) = oneshot::channel();
+                            let (reply_tx, reply_rx) = std::sync::mpsc::channel();
 
                             // Send the question to the suspended WASM thread.
                             if tx
@@ -422,11 +421,16 @@ impl WasmEngine {
                                 .is_ok()
                             {
                                 // Wait for the WASM to process it and reply
-                                return match tokio::time::timeout(Duration::from_secs(15), reply_rx)
+                                return match reply_rx
+                                    .recv_timeout(std::time::Duration::from_secs(15))
                                 {
-                                    Result::Ok(Result::Ok(data)) => data, // Timeout didn't trigger, and channel yielded data
-                                    Result::Ok(Result::Err(_)) => b"A2A_GUEST_CRASH".to_vec(), // Channel dropped/crashed
-                                    Result::Err(_) => b"A2A_TIMEOUT".to_vec(), // 15 seconds passed!
+                                    Result::Ok(data) => data, // Timeout didn't trigger, and channel yielded data
+                                    Result::Err(mpsc::RecvTimeoutError::Timeout) => {
+                                        b"A2A_TIMEOUT".to_vec()
+                                    } // 15 seconds passed!
+                                    Result::Err(mpsc::RecvTimeoutError::Disconnected) => {
+                                        b"A2A_GUEST_CRASH".to_vec()
+                                    } // Channel dropped/crashed
                                 };
                             }
                             b"A2A_QUEUE_FULL".to_vec()
