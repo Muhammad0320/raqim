@@ -248,13 +248,21 @@ impl WasmEngine {
             move |mut caller: Caller<'_, SandboxContent>, url_ptr: i32, url_len: i32| -> i32 {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
 
-                let url_bytes = mem
+                // THE LET-ELSE PATTERN: Safely extract the slice or return SDK error code
+                let Some(memory_slice) = mem
                     .data(&caller)
-                    .get(url_ptr as usize..(url_ptr + url_len) as usize)
-                    .ok_or_else(|| anyhow!("Memory access out of bounds"))?
-                    .to_vec();
+                    .get(url_ptr as usize..(url_ptr + url_len) as size)
+                else {
+                    eprintln!("[SANDBOX PROTECT]: Guest attempted out-of-bound memory read.");
+                    return -1;
+                };
 
-                let url = std::str::from_utf8(&url_bytes).unwrap();
+                let url_bytes = memory_slice.to_vec();
+
+                let Ok(url) = std::str::from_utf8(&url_bytes) else {
+                    eprintln!("[SANDBOX PROTECT] Guest passed invalid UTF-8 for URL");
+                    return -1;
+                };
 
                 let content = caller.data_mut();
 
