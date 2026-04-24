@@ -21,7 +21,7 @@ use wasmtime::*;
 
 ///  The internal state we pass into sandbox,
 ///  so that the host fxns can interact with the rest of the synpase organism.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SandboxContent {
     pub axon: Arc<AxonGateKeeper>,
     pub aegis: Arc<AegisGateKeeper>,
