@@ -251,7 +251,7 @@ impl WasmEngine {
                 // THE LET-ELSE PATTERN: Safely extract the slice or return SDK error code
                 let Some(memory_slice) = mem
                     .data(&caller)
-                    .get(url_ptr as usize..(url_ptr + url_len) as size)
+                    .get(url_ptr as usize..(url_ptr + url_len) as usize)
                 else {
                     eprintln!("[SANDBOX PROTECT]: Guest attempted out-of-bound memory read.");
                     return -1;
