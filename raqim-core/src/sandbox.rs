@@ -21,6 +21,7 @@ use wasmtime::*;
 
 ///  The internal state we pass into sandbox,
 ///  so that the host fxns can interact with the rest of the synpase organism.
+#[derive(Debug, Clone)]
 pub struct SandboxContent {
     pub axon: Arc<AxonGateKeeper>,
     pub aegis: Arc<AegisGateKeeper>,
@@ -504,7 +505,7 @@ impl WasmEngine {
         )?;
 
         // Initialize the Sandbox Context
-        let mut store = Store::new(&self.engine, content);
+        let mut store = Store::new(&self.engine, content.clone());
 
         // Give the agent exactly 1_000_000 CPU instructions of fuel
         store.set_fuel(1_000_000)?;
