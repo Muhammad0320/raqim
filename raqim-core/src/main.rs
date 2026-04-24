@@ -70,10 +70,12 @@ async fn main() {
     let validation = Validation::new(jsonwebtoken::Algorithm::RS256);
 
     let mut allow_wan = false;
+    let mut verified_tenat_id = String::from("local_open_core");
 
     if let Ok(token_data) =
         decode::<EnterpriseClaim>(&config.license_key, &decoding_key, &validation)
     {
+        verified_tenat_id = token_data.claims.sub.clone();
         if token_data
             .claims
             .features
@@ -101,8 +103,9 @@ async fn main() {
     let axon = Arc::new(AxonGateKeeper::new());
     let aegis = AegisGateKeeper::new("aegis.toml", event_tx);
     let wal = Arc::new(WalEngine::start(config.wal_path.clone()).await);
-    let global_net =
-        Arc::new(GlobalNetworkBridge::new(&config.topic, aegis.clone(), allow_wan).await);
+    let global_net = Arc::new(
+        GlobalNetworkBridge::new(&verified_tenat_id, &config.topic, aegis.clone(), allow_wan).await,
+    );
 
     let lance_engine = Arc::new(
         LanceEngine::new(
