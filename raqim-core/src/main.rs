@@ -1,5 +1,4 @@
-use clap::Parser;
-use ed25519_dalek::{PublicKey, Signature, Verifier};
+use ed25519_dalek::{Signature, SigningKey, Verifier};
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use raqim_core::aegis::AegisGateKeeper;
 use raqim_core::api::{ApiState, EnterpriseClaim, build_admin_router};
@@ -15,7 +14,7 @@ use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmState;
 use raqim_core::telemetry::TelemetryEngine;
 use raqim_core::utils::parse_agent_id;
-use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
+use raqim_core::{IngressEnvelope, SystemEvent, execute_raqim_cascade};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::AtomicU64;
