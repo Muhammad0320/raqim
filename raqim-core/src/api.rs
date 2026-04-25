@@ -9,8 +9,13 @@ use axum::{
 };
 
 use axum::body::Bytes;
+use axum::response::sse::{Event, Sse};
 use dashmap::DashMap;
+use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
+use std::convert::Infallible;
+use tokio_stream::wrappers::BroadcastStream;
+
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
@@ -31,7 +36,7 @@ use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge, telemetry::TelemetryEngine,
 };
-use crate::{IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
+use crate::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")] // Enables brilliant json parsing {"type": "AskQuestion", }
@@ -91,6 +96,7 @@ pub struct ApiState {
     pub global_tx_counter: Arc<AtomicU64>,
 
     pub event_tx: Sender<SystemEvent>,
+    pub ui_tx: Sender<AgentState>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -314,6 +320,33 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
         _ => {}
     }
+}
+
+// The Firehose Route Handler
+pub async fn sse_firehose_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    // Subscribe to the live broadcast channel
+    let receiver = state.ui_tx.subscribe();
+
+    // Convert the Tokio Receiver into a standard async Stream.
+    let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
+        match msg {
+            Ok(agent_state) => {
+                // Convert high-speed rust struct into json for react DAG.
+                let json_payload = serde_json::to_string(&agent_state).unwrap();
+                Some(Ok(Event::default().data(json_payload)))
+            }
+            Err(_) => {
+                // Lagging subscribers are skipped automatically by tokio broadcast
+                None
+            }
+        }
+    });
+
+    // Return thr SSE stream to the browser.
+    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new());
 }
 
 async fn get_quarantine(
@@ -552,6 +585,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         // Agent Swarm endpoints
         .route("/v1/mcp/ws", post(mcp_ws_handler))
         .route("/v1/swarm/ingress", post(http_ingress_endpoint))
+        .route("/v1/swarm/live", get(sse_firehose_endpoint))
         .route("/v1/swarm/memory", get(semantic_search_endpoint))
         .with_state(state)
 }
