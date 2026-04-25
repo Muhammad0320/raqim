@@ -548,8 +548,8 @@ impl WasmEngine {
             tracker.last_snapshot_tx = current_tx_id;
 
             // 3. THE TRUE BACKGROUND ASYNC DB WRITE
-            let lance_clone = content.lance.clone();
-            let agent_hex_clone = content.agent_hex.clone();
+            let lance_clone = store.data().lance.clone();
+            let agent_hex_clone = store.data().agent_hex.clone();
             let snapshot_clone = active_snapshot.clone();
 
             println!(
