@@ -131,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let res = http_client
                 .post(&url)
                 .header("Authorization", format!("Bearer {}", get_auth()))
-                .json(&json!("agent_id": agent_id))
+                .json(&json!("agent_id:", agent_id))
                 .send()
                 .await?;
 
@@ -160,8 +160,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let url = format!("{}/v1/admin/time_travel", cli.daemon_url);
             println!(
-                "⌛ Initializing Time Travel for {} to TxID {}...".agent_id,
-                tx_id
+                "⌛ Initializing Time Travel for {} to TxID {}...",
+                agent_id, tx_id
             );
 
             let res = http_client
