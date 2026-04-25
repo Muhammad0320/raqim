@@ -322,15 +322,17 @@ impl WasmEngine {
                   -> i32 {
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
 
-                let mem_slice = mem.data(&caller);
-
                 // Read Capability String (e.g., "raqim_finance/ledger" )
-                let cap_bytes = &mem_slice[cap_ptr as usize..(cap_ptr + cap_len) as usize];
+                let cap_bytes = mem
+                    .data(&caller)
+                    .get(cap_ptr as usize..(cap_ptr + cap_len) as usize)
+                    .unwrap();
                 let capability = std::str::from_utf8(cap_bytes).unwrap().to_string();
 
                 // Read Question Payload
-                let payload_bytes =
-                    &mem_slice[payload_ptr as usize..(payload_ptr + payload_len) as usize];
+                let payload_bytes = mem
+                    .data(&caller)
+                    .get(payload_ptr as usize..(payload_ptr + payload_len) as usize);
 
                 let content = caller.data_mut();
 
@@ -361,8 +363,10 @@ impl WasmEngine {
                     return -1; // Error code for payload too large!
                 }
 
+                let len = response_bytes.len() as i32;
                 content.a2a_response_cache = response_bytes;
-                response_bytes.len() as i32
+
+                len
             },
         )?;
 
