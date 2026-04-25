@@ -332,7 +332,8 @@ impl WasmEngine {
                 // Read Question Payload
                 let payload_bytes = mem
                     .data(&caller)
-                    .get(payload_ptr as usize..(payload_ptr + payload_len) as usize);
+                    .get(payload_ptr as usize..(payload_ptr + payload_len) as usize)
+                    .unwrap();
 
                 let content = caller.data_mut();
 
