@@ -346,7 +346,7 @@ pub async fn sse_firehose_endpoint(
     });
 
     // Return thr SSE stream to the browser.
-    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new());
+    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new())
 }
 
 async fn get_quarantine(
