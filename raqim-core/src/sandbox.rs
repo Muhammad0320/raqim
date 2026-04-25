@@ -160,13 +160,7 @@ impl WasmEngine {
                     .ok_or_else(|| anyhow!("Memory access out of bounds"))?
                     .to_vec();
 
-                // Zero-copy Pointer cast
-                let archived_state = unsafe {
-                    rkyv::access_unchecked::<<AgentState as Archive>::Archived>(&temp_buffer)
-                };
-
                 let layers = caller.data();
-
                 let brain_clone = layers.brain.clone();
                 let axon_clone = layers.axon.clone();
                 let wal_clone = layers.wal.clone();
@@ -181,6 +175,24 @@ impl WasmEngine {
                 // Clear the live queues for the next thought cycle
                 caller.data_mut().live_responses.clear();
                 caller.data_mut().live_seeds.clear();
+
+                let agent_id_hex = {
+                    // Zero-copy Pointer cast
+                    let archived_state = unsafe {
+                        rkyv::access_unchecked::<<AgentState as Archive>::Archived>(&temp_buffer)
+                    };
+
+                    archived_state
+                        .agent_id
+                        .as_ref()
+                        .map(|id_bytes| hex::encode(id_bytes))
+                        .unwrap_or_else(|| "UNKNOWN_AGENT_ID".to_string())
+                };
+
+                println!(
+                    "WASM sandbox successfully parsed state from agent {} ",
+                    agent_id_hex
+                );
 
                 // used tokio::spawn to bridge syncronous WASM call to out async cascade
                 tokio::spawn(async move {
@@ -204,17 +216,6 @@ impl WasmEngine {
                     )
                     .await;
                 });
-
-                let agent_id_hex = archived_state
-                    .agent_id
-                    .as_ref()
-                    .map(|id_bytes| hex::encode(id_bytes))
-                    .unwrap_or_else(|| "UNKNOWN_AGENT_ID".to_string());
-
-                println!(
-                    "WASM sandbox successfully parsed state from agent {} ",
-                    agent_id_hex
-                );
 
                 Ok(())
             },
