@@ -333,7 +333,8 @@ impl WasmEngine {
                 let payload_bytes = mem
                     .data(&caller)
                     .get(payload_ptr as usize..(payload_ptr + payload_len) as usize)
-                    .unwrap();
+                    .unwrap()
+                    .to_vec();
 
                 let content = caller.data_mut();
 
@@ -341,7 +342,7 @@ impl WasmEngine {
                 let envelope = A2AEnvelope {
                     sender_id: content.agent_hex.as_bytes().try_into().unwrap_or([0; 16]),
                     target_capability: capability.clone(),
-                    payload: payload_bytes.to_vec(),
+                    payload: payload_bytes,
                     signature: [0; 64],
                 };
 
