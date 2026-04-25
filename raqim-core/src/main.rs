@@ -14,7 +14,7 @@ use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmState;
 use raqim_core::telemetry::TelemetryEngine;
 use raqim_core::utils::parse_agent_id;
-use raqim_core::{IngressEnvelope, SystemEvent, execute_raqim_cascade};
+use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::AtomicU64;
@@ -338,6 +338,8 @@ async fn main() {
         std::fs::read(&config.public_key_path).expect("Missing Enterprise Public Key");
     let decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content).unwrap());
 
+    let (ui_tx, _) = broadcast::channel::<AgentState>(1000);
+
     let api_state = ApiState {
         config: config.clone(),
         aegis: aegis.clone(),
@@ -351,6 +353,8 @@ async fn main() {
         wal: wal.clone(),
         event_tx: event_tx.clone(),
         decoding_key,
+
+        ui_tx: ui_tx.clone(),
     };
 
     let axum_app = build_admin_router(api_state);
@@ -382,6 +386,7 @@ async fn main() {
         let task_tx_couter = tx_counter.clone();
         let task_event_tx = event_tx.clone();
         let task_aegis = aegis.clone();
+        let task_ui_tx = ui_tx.clone();
 
         tokio::spawn(async move {
             //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
@@ -432,6 +437,12 @@ async fn main() {
                 task_aegis.trigger_quarantine(&agent_hex, path_intent, "Cryptographic Spoofing");
                 return;
             }
+
+            let state_struct =
+                rkyv::deserialize::<AgentState, rkyv::rancor::Error>(&archived_ingress.state)
+                    .unwrap();
+
+            let _ = task_ui_tx.send(state_struct.clone());
 
             // --- The Raqim Cascade ---
             execute_raqim_cascade(
