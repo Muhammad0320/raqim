@@ -2,7 +2,7 @@ use axum::body::Bytes;
 use ed25519_dalek::{Signature, SigningKey, Verifier};
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use raqim_core::aegis::AegisGateKeeper;
-use raqim_core::api::{ApiState, EnterpriseClaim, build_admin_router};
+use raqim_core::api::{ApiState, EnterpriseClaim, UiThought, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
@@ -339,7 +339,7 @@ async fn main() {
         std::fs::read(&config.public_key_path).expect("Missing Enterprise Public Key");
     let decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content).unwrap());
 
-    let (ui_tx, _) = broadcast::Sender::<Bytes>(1000);
+    let (ui_tx, _) = broadcast::Sender::<UiThought>(1000);
 
     let api_state = ApiState {
         config: config.clone(),

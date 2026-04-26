@@ -483,9 +483,6 @@ pub async fn http_ingress_endpoint(
 ) -> Result<StatusCode, StatusCode> {
     let body_clone = body.clone();
 
-    // Fire the raw bytes to any listening web browser
-    let _ = state.ui_tx.send(body_clone.clone());
-
     // Zero copy access the IngressEnvelope
     let ingress_envelope =
         unsafe { rkyv::access_unchecked::<<IngressEnvelope as Archive>::Archived>(&body) };
