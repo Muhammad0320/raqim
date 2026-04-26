@@ -339,7 +339,7 @@ async fn main() {
         std::fs::read(&config.public_key_path).expect("Missing Enterprise Public Key");
     let decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content).unwrap());
 
-    let (ui_tx, _) = broadcast::Sender::<UiThought>(1000);
+    let ui_tx = broadcast::Sender::<UiThought>(1000);
 
     let api_state = ApiState {
         config: config.clone(),
@@ -413,7 +413,7 @@ async fn main() {
                 rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&payload_buf)
             };
 
-            let agent_hex = hex::encode(archived_ingress.state.agent_id);
+            let agent_hex = hex::encode(archived_ingress.state.agent_id.unwrap.as_slice());
             let path_intent = archived_ingress.intent_path.as_str();
 
             // 1. Checking aegis first before doing any expensive math or hitting the wal.
