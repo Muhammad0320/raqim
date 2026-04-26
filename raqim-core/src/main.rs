@@ -63,8 +63,13 @@ async fn main() {
     });
 
     // BOOT-TIME LICENSE_VERIFIICATION
-    let public_key = include_bytes!("../keys/raqim_cloud_public.pem"); // Hardcoded cloud key
-    let decoding_key = DecodingKey::from_rsa_pem(public_key).expect("FATAL: Corrupted OS pubKey");
+    let pem_content = std::fs::read(&config.public_key_path)
+        .expect("FATAL: Could not read public key for License Verification");
+    let decoding_key = Arc::new(
+        jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content)
+            .expect("FATAL: Invalid RSA PEM format"),
+    );
+
     let validation = Validation::new(jsonwebtoken::Algorithm::RS256);
 
     let mut allow_wan = false;
@@ -331,11 +336,6 @@ async fn main() {
             .listen_for_foreign_thoughts(global_brain, global_axon, global_tx)
             .await;
     });
-
-    // AXUM BOOT
-    let pem_content =
-        std::fs::read(&config.public_key_path).expect("Missing Enterprise Public Key");
-    let decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content).unwrap());
 
     let (ui_tx, _ui_rx) = broadcast::Sender::<UiThought>(1000);
 
