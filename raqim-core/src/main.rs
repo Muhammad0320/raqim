@@ -437,7 +437,7 @@ async fn main() {
             }
 
             // --- The Raqim Cascade ---
-            execute_raqim_cascade(
+            let tx_id = execute_raqim_cascade(
                 &archived_ingress.state,
                 task_brain,
                 task_axon,
@@ -451,6 +451,15 @@ async fn main() {
                 task_telemetry,
             )
             .await;
+
+            let ui_payload = UiThought {
+                agent_hex: agent_hex.clone(),
+                intent_path: enriched_state.clone().namespace,
+                text: enriched_state.clone().text,
+                tx_id,
+            };
+
+            let _ = task_ui_tx.send(ui_payload);
 
             println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
         });

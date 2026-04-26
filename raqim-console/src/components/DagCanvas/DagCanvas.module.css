@@ -1,18 +1,18 @@
 .canvasContainer {
   width: 100%;
   height: 100%;
-  background-color: var(--bg-obsidian);
+  background-color: transparent;
 }
 
 .customNode {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-dim);
+  background: theme('colors.surface-container');
+  border: 1px solid theme('colors.outline-variant');
   border-radius: 4px;
   padding: 16px;
   min-width: 220px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
   transition: opacity 0.2s, filter 0.2s;
-  color: var(--text-primary);
+  color: theme('colors.on-surface');
 }
 
 .futureGhost {
@@ -30,7 +30,7 @@
 
 .nodeAgentId {
   font-size: 11px;
-  color: var(--text-secondary);
+  color: theme('colors.on-surface-variant');
 }
 
 .statusDot {
@@ -42,34 +42,35 @@
 .nodeTxId {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: theme('colors.white');
   margin-bottom: 4px;
 }
 
 .nodeIntent {
   font-size: 11px;
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.05);
+  color: theme('colors.primary-fixed-dim');
+  background: rgba(0, 112, 243, 0.1);
   padding: 2px 6px;
   border-radius: 2px;
   display: inline-block;
+  border: 1px solid theme('colors.primary-container');
 }
 
 .handle {
   width: 6px;
   height: 12px;
-  background: var(--text-muted);
+  background: theme('colors.outline-variant');
   border-radius: 2px;
   border: none;
 }
 
-/* React Flow overrrides */
+/* React Flow overrides */
 .controls button {
-  background: var(--bg-surface);
-  border-color: var(--border-dim);
-  color: var(--text-primary);
+  background: theme('colors.surface-container');
+  border-color: theme('colors.outline-variant');
+  color: theme('colors.on-surface');
 }
 
 .controls button:hover {
-  background: var(--bg-panel);
+  background: theme('colors.surface-container-high');
 }

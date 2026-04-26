@@ -94,7 +94,7 @@ pub async fn execute_raqim_cascade(
     seeds: Vec<u64>,
     responses: Vec<String>,
     telemetry: Arc<TelemetryEngine>,
-) {
+) -> u64 {
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];
 
@@ -158,12 +158,7 @@ pub async fn execute_raqim_cascade(
         tx_id: enriched_state.clone().transaction_id,
     });
 
-    let ui_payload = UiThought {
-        agent_hex: agent_hex.clone(),
-        intent_path: enriched_state.clone().namespace,
-        text: enriched_state.clone().text,
-        tx_id: enriched_state.clone().transaction_id,
-    };
+    enriched_state.transaction_id
 }
 
 #[derive(Clone, Debug, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize)]
