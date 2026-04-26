@@ -442,7 +442,7 @@ async fn main() {
 
             // --- The Raqim Cascade ---
             let tx_id = execute_raqim_cascade(
-                &archived_ingress.state,
+                &archived_state,
                 task_brain,
                 task_axon,
                 task_wal,
@@ -459,7 +459,7 @@ async fn main() {
             let ui_payload = UiThought {
                 agent_hex: agent_hex.clone(),
                 intent_path: archived_ingress.intent_path.as_str().to_string(),
-                text: archived_ingress.state.text.as_str().to_string(),
+                text: archived_state.text.as_str().to_string(),
                 tx_id,
             };
 
