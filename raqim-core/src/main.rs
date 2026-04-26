@@ -104,7 +104,7 @@ async fn main() {
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain = Arc::new(SwarmState::new(&config.topic, event_tx.clone()));
     let axon = Arc::new(AxonGateKeeper::new());
-    let aegis = AegisGateKeeper::new("aegis.toml", event_tx);
+    let aegis = AegisGateKeeper::new("aegis.toml", event_tx.clone());
     let wal = Arc::new(WalEngine::start(config.wal_path.clone()).await);
     let global_net = Arc::new(
         GlobalNetworkBridge::new(&verified_tenat_id, &config.topic, aegis.clone(), allow_wan).await,
@@ -122,12 +122,13 @@ async fn main() {
     let tx_counter = Arc::new(AtomicU64::new(1));
 
     // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
+    let mut valut_rx = event_tx.subscribe();
     let lance_vault_clone = lance_engine.clone();
 
     tokio::spawn(async move {
         println!("[SYSTEM] Audit Valult Telemetry Sinker Active.");
 
-        while let Ok(event) = event_rx.recv().await {
+        while let Ok(event) = valut_rx.recv().await {
             lance_vault_clone.log_system_events(&event).await;
         }
     });
@@ -278,7 +279,7 @@ async fn main() {
                             });
 
                         // Get the exact current Transaction ID
-                        let current_tx = tx_counter.load(std::sync::atomic::Ordering::SeqCst);
+                        let current_tx = w_tx_couter.load(std::sync::atomic::Ordering::SeqCst);
 
                         // Execute the untrusted logic in the WASM cage
                         if let Err(e) = w_wasm_engine.execute_agent(
