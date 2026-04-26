@@ -51,11 +51,6 @@ export function Sidebar() {
               <span className="material-symbols-outlined text-lg">timeline</span>
               <span className={`font-mono text-xs uppercase tracking-widest mt-0.5 ${pathname === '/router' ? 'font-bold' : ''}`}>Router</span>
             </Link>
-            
-            <a href="#" className="text-zinc-500 px-4 py-3 flex items-center gap-3 hover:text-zinc-300 hover:bg-zinc-900/50 transition-colors duration-200 rounded-sm">
-              <span className="material-symbols-outlined text-lg">memory</span>
-              <span className="font-mono text-xs uppercase tracking-widest mt-0.5">Kernel</span>
-            </a>
           </nav>
         </div>
         

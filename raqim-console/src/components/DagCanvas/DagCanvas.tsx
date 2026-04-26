@@ -41,7 +41,7 @@ export function DagCanvas() {
       }
 
       newNodes.push({
-        id: txId,
+        id: txId.toString(),
         type: 'thought',
         position: { x: xOffset, y: yOffset },
         data: { thought, isFuture },
@@ -51,8 +51,8 @@ export function DagCanvas() {
       if (thought.parent_tx_id && thoughts[thought.parent_tx_id]) {
         newEdges.push({
           id: `e-${thought.parent_tx_id}-${txId}`,
-          source: thought.parent_tx_id,
-          target: txId,
+          source: thought.parent_tx_id.toString(),
+          target: txId.toString(),
           animated: thought.status === 'PENDING',
           style: { stroke: isFuture ? '#333' : 'var(--neon-cyan)', strokeWidth: 2 }
         });
@@ -61,8 +61,8 @@ export function DagCanvas() {
          const prevTxId = thoughtOrder[i - 1];
          newEdges.push({
           id: `e-seq-${prevTxId}-${txId}`,
-          source: prevTxId,
-          target: txId,
+          source: prevTxId.toString(),
+          target: txId.toString(),
           animated: false,
           style: { stroke: isFuture ? '#222' : 'var(--border-dim)', strokeWidth: 2, strokeDasharray: '4 4' }
         });

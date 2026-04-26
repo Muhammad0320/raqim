@@ -24,42 +24,60 @@ export function NLEScrubber() {
     : 'LIVE EDGE';
 
   return (
-    <div className="h-28 bg-surface-container-highest shrink-0 flex flex-col px-8 py-4 justify-center relative z-20 shadow-[0_-20px_40px_rgba(0,0,0,0.4)]">
-      <div className="flex justify-between items-end mb-3">
+    <div className="h-32 bg-surface-container-highest shrink-0 flex flex-col px-8 py-5 justify-center relative z-20 shadow-[0_-20px_40px_rgba(0,0,0,0.6)] border-t border-outline-variant/10">
+      <div className="flex justify-between items-end mb-4">
         <h3 className="text-xs font-label uppercase tracking-[0.05rem] text-on-surface-variant flex items-center gap-2">
-          <span className="material-symbols-outlined text-sm">history</span> Temporal Navigation
+          <span className="material-symbols-outlined text-sm text-secondary">history</span> Temporal Navigation
         </h3>
         <div className="font-mono text-sm text-white flex items-center gap-3">
-          <span className="text-on-surface-variant">CURRENT TX:</span> {displayId}
-          <div className="flex gap-1 ml-4">
-            <button className="bg-surface-container hover:bg-surface-container-low text-on-surface p-1 rounded transition-colors"><span className="material-symbols-outlined text-sm">skip_previous</span></button>
-            <button onClick={jumpToLive} className="bg-surface-container hover:bg-surface-container-low text-on-surface p-1 rounded transition-colors"><span className="material-symbols-outlined text-sm">play_arrow</span></button>
-            <button className="bg-surface-container hover:bg-surface-container-low text-on-surface p-1 rounded transition-colors"><span className="material-symbols-outlined text-sm">skip_next</span></button>
+          <span className="text-on-surface-variant">CURRENT TX:</span> 
+          <span className="bg-surface-container-low px-3 py-1 rounded text-primary-fixed-dim border border-outline-variant/15 font-bold shadow-inner">
+            {displayId}
+          </span>
+          <div className="flex gap-2 ml-4">
+            <button className="bg-surface-container-low hover:bg-surface-container hover:text-white text-on-surface-variant p-1.5 rounded transition-colors border border-outline-variant/10"><span className="material-symbols-outlined text-sm">skip_previous</span></button>
+            <button onClick={jumpToLive} className="bg-primary-container/20 text-primary-fixed-dim hover:bg-primary-container/40 p-1.5 rounded transition-colors border border-primary-container/50"><span className="material-symbols-outlined text-sm">play_arrow</span></button>
+            <button className="bg-surface-container-low hover:bg-surface-container hover:text-white text-on-surface-variant p-1.5 rounded transition-colors border border-outline-variant/10"><span className="material-symbols-outlined text-sm">skip_next</span></button>
           </div>
         </div>
       </div>
       
-      <div className="relative w-full py-2">
-        <div className="absolute w-full h-full flex justify-between px-1 pointer-events-none top-0 pt-3">
-          {Array.from({ length: 10 }).map((_, i) => (
-             <div key={i} className={`w-[1px] ${i === Math.floor(progressPercent / 10) ? 'h-3 bg-primary-container/50' : 'h-2 bg-outline-variant/30'}`}></div>
-          ))}
+      <div className="relative w-full h-8 mt-1 group">
+        {/* Background density graph track */}
+        <div className="absolute inset-0 flex items-end gap-[2px] opacity-40 px-1 pointer-events-none">
+          {Array.from({ length: 60 }).map((_, i) => {
+            const isActive = (i / 60) * 100 <= progressPercent;
+            const height = 20 + Math.sin(i * 0.5) * 15 + Math.cos(i * 2.1) * 10;
+            return (
+              <div 
+                key={i} 
+                className={`flex-1 rounded-t-sm transition-colors duration-300 ${isActive ? 'bg-secondary' : 'bg-outline-variant'}`}
+                style={{ height: `${Math.max(10, height)}%` }}
+              ></div>
+            );
+          })}
         </div>
         
-        {/* Custom slider using standard input range mapped to css variables in globals.css */}
+        {/* The glowing track fill behind the thumb */}
+        <div 
+          className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-secondary/30 pointer-events-none" 
+          style={{ width: `${progressPercent}%` }}
+        ></div>
+
+        {/* The invisible slider that provides the native interaction but uses our custom thumb */}
         <input 
-          className="w-full relative z-10" 
+          className="industrial-slider" 
           type="range" 
           min="0" 
           max={total > 0 ? total - 1 : 0} 
           value={currentIndex >= 0 ? currentIndex : 0}
           onChange={handleScrub}
         />
-        
-        <div className="flex justify-between mt-2 font-mono text-[9px] text-on-surface-variant opacity-50">
-          <span>Genesis (0x0000)</span>
-          <span>Future Extrapolation</span>
-        </div>
+      </div>
+      
+      <div className="flex justify-between mt-3 font-mono text-[10px] text-on-surface-variant opacity-70 uppercase tracking-widest font-bold">
+        <span>Genesis (0x0000)</span>
+        <span className="flex items-center gap-1 text-secondary"><span className="w-1.5 h-1.5 bg-secondary rounded-full animate-pulse"></span> Live Edge</span>
       </div>
     </div>
   );
