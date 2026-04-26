@@ -413,29 +413,38 @@ async fn main() {
                 rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&payload_buf)
             };
 
-            let agent_hex = hex::encode(archived_ingress.state.agent_id.unwrap.as_slice());
+            let agent_hex = hex::encode(archived_ingress.state.agent_id.unwrap().as_slice());
             let path_intent = archived_ingress.intent_path.as_str();
 
             // 1. Checking aegis first before doing any expensive math or hitting the wal.
             if !task_aegis.enforce_aegis_policy(&agent_hex, path_intent) {
                 eprintln!(
                     "[AEGIS] Dropped Unauthorized TCP packets from {}",
-                    agent_hex
+                    &agent_hex
                 );
                 return;
             }
 
             // 2. TRUE CRPTOGRAPHIC IDENTITY  VERIFICATION
-            let pub_key = PublicKey::from_bytes(&archived_ingress.public_key).unwrap();
-            let signature = Signature::from_bytes(&archived_ingress.signature).unwrap();
+            // let pub_key = PublicKey::from_bytes(&archived_ingress.public_key).unwrap();
+            // let signature = Signature::from_bytes(&archived_ingress.signature).unwrap();
 
-            // We verify signature against the actual raw bytes of the state
+            // // We verify signature against the actual raw bytes of the state
             let state_bytes =
                 rkyv::to_bytes::<rkyv::rancor::Error>(&archived_ingress.state).unwrap();
 
-            if pub_key.verify(&state_bytes, &signature).is_err() {
-                eprintln!("[SECURITY] Invalid Ed25519 signature. Dropping TCP packet. ");
-                task_aegis.trigger_quarantine(&agent_hex, path_intent, "Cryptographic Spoofing");
+            // if pub_key.verify(&state_bytes, &signature).is_err() {
+            //     eprintln!("[SECURITY] Invalid Ed25519 signature. Dropping TCP packet. ");
+            //     task_aegis.trigger_quarantine(&agent_hex, path_intent, "Cryptographic Spoofing");
+            //     return;
+            // }
+
+            if !task_aegis.verify_agent_signature(
+                &agent_hex,
+                state_bytes,
+                &archived_ingress.signature,
+            ) {
+                eprintln!(" [AEGIS INTERDICTION] Cryptographic Spoofing detected.");
                 return;
             }
 
