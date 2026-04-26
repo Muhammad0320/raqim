@@ -337,7 +337,7 @@ async fn main() {
             .await;
     });
 
-    let (ui_tx, _ui_rx) = broadcast::Sender::<UiThought>(1000);
+    let (ui_tx, _ui_rx) = broadcast::channel::<UiThought>(1000);
 
     let api_state = ApiState {
         config: config.clone(),
@@ -454,8 +454,8 @@ async fn main() {
 
             let ui_payload = UiThought {
                 agent_hex: agent_hex.clone(),
-                intent_path: enriched_state.clone().namespace,
-                text: enriched_state.clone().text,
+                intent_path: &archived_ingress.intent_path.as_str().to_string(),
+                text: &archived_ingress.state.text.as_str().to_string(),
                 tx_id,
             };
 
