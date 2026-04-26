@@ -21,6 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 use uuid::Uuid;
 
+use crate::api::UiThought;
 use crate::telemetry::TelemetryEngine;
 use crate::{
     axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine, state::SwarmState,
@@ -154,8 +155,15 @@ pub async fn execute_raqim_cascade(
 
     let _ = tx.send(SystemEvent::ThoughtCommited {
         agent_id: agent_hex.clone(),
-        tx_id: enriched_state.transaction_id,
+        tx_id: enriched_state.clone().transaction_id,
     });
+
+    let ui_payload = UiThought {
+        agent_hex: agent_hex.clone(),
+        intent_path: enriched_state.clone().namespace,
+        text: enriched_state.clone().text,
+        tx_id: enriched_state.clone().transaction_id,
+    };
 }
 
 #[derive(Clone, Debug, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize)]

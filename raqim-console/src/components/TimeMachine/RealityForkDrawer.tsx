@@ -2,11 +2,10 @@
 import { useState } from 'react';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import Editor from '@monaco-editor/react';
-import { GitBranch } from 'lucide-react';
 
 const DEFAULT_PAYLOAD = `{
   "instruction_set": "OVERRIDE",
-  "temporal_anchor": "AUTO",
+  "temporal_anchor": "0x8F9A",
   "parameters": {
     "entropy_bias": -0.15,
     "bypass_firewall": true
@@ -37,50 +36,64 @@ export function RealityForkDrawer() {
   };
 
   return (
-    <div className="w-[380px] bg-panel border-l border-white/5 flex flex-col h-full z-20 shrink-0 shadow-[-8px_0_24px_rgba(0,0,0,0.5)]">
-      <div className="p-4 px-6 flex items-center gap-3 text-sm font-semibold border-b border-white/5 tracking-wide text-white">
-        <GitBranch size={16} className="text-neon-cyan" />
-        <span>Reality Fork</span>
-        <div className="ml-auto text-[10px] bg-surface px-1.5 py-0.5 rounded border border-white/5 text-muted-DEFAULT font-mono tracking-widest">CTRL+F</div>
+    <div className="w-80 lg:w-96 bg-surface-container-highest rounded-lg flex flex-col shadow-2xl shadow-black/50 overflow-hidden relative backdrop-blur-md border border-outline-variant/10 shrink-0">
+      <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-primary-container/10 to-transparent pointer-events-none"></div>
+      
+      <div className="p-5 border-b border-outline-variant/10 relative z-10 flex items-center justify-between">
+        <h2 className="font-headline font-bold text-lg text-white flex items-center gap-2">
+          <span className="material-symbols-outlined text-primary">alt_route</span> Reality Fork
+        </h2>
+        <span className="bg-surface-container text-on-surface-variant px-2 py-1 rounded text-[10px] font-mono border border-outline-variant/20">CTRL+F</span>
       </div>
-
-      <div className="p-6 flex flex-col gap-3">
-        <label className="text-[10px] text-muted-DEFAULT tracking-widest">TARGET STATE URI</label>
-        <div className="bg-surface p-3 text-xs border border-white/5 text-white rounded font-mono break-all">
-          raqim://router/state/fork_01?tx=0x{activeTxId.toString().padStart(8, '0')}
+      
+      <div className="p-5 flex-1 flex flex-col gap-4 overflow-y-auto z-10">
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-label uppercase tracking-[0.05rem] text-on-surface-variant">Target State URI</label>
+          <div className="bg-surface-container-lowest rounded-lg p-1 ghost-glow transition-all">
+            <input 
+              className="w-full bg-transparent border-none text-sm font-mono text-white focus:ring-0 px-3 py-2 outline-none" 
+              spellCheck="false" 
+              type="text" 
+              readOnly
+              value={`raqim://router/state/fork_01?tx=0x${activeTxId.toString().padStart(8, '0')}`}
+            />
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 flex-1">
+          <label className="text-xs font-label uppercase tracking-[0.05rem] text-on-surface-variant flex justify-between">
+            JSON Payload Injection
+            <span className="text-primary-fixed-dim cursor-pointer hover:text-white">Format</span>
+          </label>
+          <div className="bg-surface-container-lowest rounded-lg p-1 ghost-glow transition-all flex-1 flex flex-col min-h-[250px]">
+            <Editor
+              height="100%"
+              defaultLanguage="json"
+              theme="vs-dark"
+              value={payload}
+              onChange={(val) => setPayload(val || '')}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 12,
+                fontFamily: "var(--font-mono)",
+                scrollBeyondLastLine: false,
+                lineNumbersMinChars: 3,
+                padding: { top: 12 },
+                overviewRulerBorder: false,
+                hideCursorInOverviewRuler: true
+              }}
+            />
+          </div>
         </div>
       </div>
-
-      <div className="p-6 pt-0 flex flex-col gap-3 flex-1">
-        <div className="flex justify-between items-center">
-          <label className="text-[10px] text-muted-DEFAULT tracking-widest">JSON PAYLOAD INJECTION</label>
-          <button className="text-[10px] text-neon-cyan tracking-wider hover:text-white transition-colors">FORMAT</button>
-        </div>
-        <div className="border border-white/5 rounded overflow-hidden flex-1 min-h-[200px]">
-          <Editor
-            height="100%"
-            defaultLanguage="json"
-            theme="vs-dark"
-            value={payload}
-            onChange={(val) => setPayload(val || '')}
-            options={{
-              minimap: { enabled: false },
-              fontSize: 12,
-              fontFamily: "var(--font-mono)",
-              scrollBeyondLastLine: false,
-              lineNumbersMinChars: 3,
-              padding: { top: 16 }
-            }}
-          />
-        </div>
+      
+      <div className="p-5 bg-surface-container/50 border-t border-outline-variant/10 z-10">
+        <button 
+          onClick={handleFork}
+          className="w-full bg-gradient-to-b from-primary-container to-on-primary-fixed-variant text-on-primary-container font-bold uppercase tracking-wide py-3 px-4 rounded text-sm transition-all active:scale-95 hover:brightness-110 flex items-center justify-center gap-2 shadow-lg shadow-primary-container/20"
+        >
+          <span className="material-symbols-outlined text-base">call_split</span> Fork Reality
+        </button>
       </div>
-
-      <button 
-        className="mx-6 mb-6 mt-auto p-4 bg-neon-cyan/10 text-neon-cyan border border-neon-cyan shadow-[inset_0_0_10px_rgba(102,252,241,0.1)] flex justify-center items-center gap-2 font-bold tracking-[1px] hover:bg-neon-cyan hover:text-obsidian hover:shadow-[0_0_20px_rgba(102,252,241,0.4)] transition-all" 
-        onClick={handleFork}
-      >
-        <GitBranch size={16} /> FORK REALITY
-      </button>
     </div>
   );
 }
