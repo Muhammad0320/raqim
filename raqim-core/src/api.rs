@@ -341,23 +341,8 @@ pub async fn sse_firehose_endpoint(
     // Convert the Tokio Receiver into a standard async Stream.
     let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
         match msg {
-            Ok(raw_bytes) => {
-                // We're off the hot-path. We safely read the zero-copy bytes here.
-                let envelope = unsafe {
-                    rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(
-                        &raw_bytes,
-                    )
-                };
-
-                // Map exactly what the UI needs into our Serializable struct.
-                let ui_payload = UiThought {
-                    agent_hex: hex::encode(envelope.state.agent_id.as_slice()),
-                    intent_path: envelope.intent_path.as_str().to_string(),
-                    text: envelope.state.text.as_str().to_string(),
-                    tx_id: 0,
-                };
-
-                let json_string = serde_json::to_string(&ui_payload).unwrap();
+            Ok(ui_thought) => {
+                let json_string = serde_json::to_string(&ui_thought).unwrap();
                 Some(Ok::<axum::response::sse::Event, Infallible>(
                     Event::default().data(json_string),
                 ))
