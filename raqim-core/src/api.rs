@@ -359,7 +359,9 @@ pub async fn sse_firehose_endpoint(
                 };
 
                 let json_string = serde_json::to_string(&ui_payload).unwrap();
-                Some(Ok(Event::default().data(json_string)))
+                Some(Ok::<axum::response::sse::Event, Infallible>(
+                    Event::default().data(json_string),
+                ))
             }
             Err(_) => {
                 // Lagging subscribers are skipped automatically by tokio broadcast

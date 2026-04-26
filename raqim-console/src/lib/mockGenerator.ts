@@ -1,40 +1,36 @@
-import { ThoughtCommitted } from '../store/useSwarmStore';
+import { UiThought } from '../store/useSwarmStore';
 
-const MOCK_AGENTS = ['AX-901-DELTA', 'KR-442-OMEGA', 'US-110-SIGMA', 'BR-771-ALPHA'];
-const STATUSES: ThoughtCommitted['status'][] = ['COMMITTED', 'COMMITTED', 'COMMITTED', 'PENDING', 'FORKED'];
+const MOCK_AGENTS = ['AX-901', 'KR-442', 'US-110', 'BR-771'];
 
 // Generates a mock Hex ID
 function genHex(length = 16) {
   return [...Array(length)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
 }
 
-export function generateMockThought(parent_tx: string | null = null): ThoughtCommitted {
+export function generateMockThought(tx_id: number, parent_tx: number | null = null): UiThought {
   const isA2A = Math.random() > 0.8;
   return {
-    tx_id: '0x' + genHex(16),
+    tx_id: tx_id,
     parent_tx_id: parent_tx,
-    agent_id: MOCK_AGENTS[Math.floor(Math.random() * MOCK_AGENTS.length)],
-    status: STATUSES[Math.floor(Math.random() * STATUSES.length)],
+    agent_hex: MOCK_AGENTS[Math.floor(Math.random() * MOCK_AGENTS.length)],
     intent_path: isA2A ? '/a2a/negotiation' : '/mem/retrieve',
-    entropy_seeds: [Math.random(), Math.random()],
-    cryptographic_hash: 'sha256:' + genHex(64),
-    timestamp: Date.now(),
-    payload: JSON.stringify({ action: "observe", target: "local_state", confidence: Math.random() }),
+    text: JSON.stringify({ action: "observe", target: "local_state", confidence: Math.random() }),
+    status: Math.random() > 0.9 ? 'FORKED' : 'COMMITTED',
     is_a2a_query: isA2A
   };
 }
 
 // Function to start streaming mock data to the buffer ref locally
-export function startMockStream(pushToBuffer: (t: ThoughtCommitted) => void) {
-  let lastTxId: string | null = null;
+export function startMockStream(pushToBuffer: (t: UiThought) => void) {
+  let currentTxId = 1;
   
   const genInterval = setInterval(() => {
     // sometimes fork reality
-    const parent = Math.random() > 0.3 ? lastTxId : null; 
-    const t = generateMockThought(parent);
-    lastTxId = t.tx_id;
+    const parent = Math.random() > 0.3 && currentTxId > 1 ? currentTxId - 1 : null; 
+    const t = generateMockThought(currentTxId, parent);
+    currentTxId++;
     pushToBuffer(t);
-  }, 300); // Emits every 300ms for visual density without immediately overwhelming visual tests
+  }, 150); // Emits fast for visual density
 
   return () => clearInterval(genInterval);
 }

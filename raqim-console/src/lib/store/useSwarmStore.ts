@@ -1,26 +1,22 @@
 import { create } from 'zustand';
 
-// Representing `SystemEvent::ThoughtCommitted` structure based on requirement hints
-export interface ThoughtCommitted {
-  tx_id: string; // The primary chronological/logical identifier
-  parent_tx_id: string | null; // For DAG branching
-  agent_id: string;
-  status: 'PENDING' | 'COMMITTED' | 'REJECTED' | 'FORKED';
+export interface UiThought {
+  agent_hex: string;
   intent_path: string;
-  entropy_seeds: number[];
-  cryptographic_hash: string;
-  timestamp: number;
-  payload: string; // the full text or thought content
+  text: string;
+  tx_id: number;
+  // Synthetic UI state added during ingest
+  status: 'PENDING' | 'COMMITTED' | 'REJECTED' | 'FORKED';
   is_a2a_query: boolean;
+  parent_tx_id: number | null;
 }
 
 interface SwarmState {
-  thoughts: Record<string, ThoughtCommitted>;
-  thoughtOrder: string[]; // Ordered list of tx_ids to render timeline
-  activeTxId: string | null; // The scrubber's current position
-  addThought: (thought: ThoughtCommitted) => void;
-  batchAddThoughts: (thoughts: ThoughtCommitted[]) => void;
-  setActiveTxId: (tx_id: string | null) => void;
+  thoughts: Record<number, UiThought>;
+  thoughtOrder: number[];
+  activeTxId: number | null;
+  batchAddThoughts: (thoughts: UiThought[]) => void;
+  setActiveTxId: (tx_id: number | null) => void;
   clear: () => void;
 }
 
@@ -28,17 +24,6 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   thoughts: {},
   thoughtOrder: [],
   activeTxId: null,
-
-  addThought: (thought) =>
-    set((state) => {
-      // Ignore if exists
-      if (state.thoughts[thought.tx_id]) return state;
-
-      return {
-        thoughts: { ...state.thoughts, [thought.tx_id]: thought },
-        thoughtOrder: [...state.thoughtOrder, thought.tx_id],
-      };
-    }),
 
   batchAddThoughts: (newThoughts) =>
     set((state) => {
@@ -51,6 +36,9 @@ export const useSwarmStore = create<SwarmState>((set) => ({
           newOrder.push(t.tx_id);
         }
       }
+
+      // Ensure thoughtOrder is sorted chronologically
+      newOrder.sort((a, b) => a - b);
 
       return {
         thoughts: updatedThoughts,

@@ -1,58 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;600;800&display=swap');
 
-:root {
-  --bg-obsidian: #050608;
-  --bg-surface: #0a0d13;
-  --bg-panel: #11151c;
-  --bg-header: #080a0f;
-  --border-dim: rgba(255, 255, 255, 0.05);
-  --border-cyan: rgba(102, 252, 241, 0.2);
-  --border-amber: rgba(255, 193, 7, 0.2);
+@layer base {
+  :root {
+    --bg-obsidian: #050608;
+    --bg-surface: #0a0d13;
+    --bg-panel: #11151c;
+    --bg-header: #080a0f;
+    --border-dim: rgba(255, 255, 255, 0.05);
+    
+    --text-primary: #e0e6ed;
+    --text-secondary: #8b9bb4;
+    --text-muted: #5e6c80;
   
-  --text-primary: #e0e6ed;
-  --text-secondary: #8b9bb4;
-  --text-muted: #5e6c80;
-
-  --neon-cyan: #66fcf1;
-  --muted-cyan: #45a29e;
-  --neon-amber: #ffc107;
-  --alert-red: #ff3b30;
-  --success-green: #34c759;
-
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, monospace;
-
-  --nav-width: 260px;
+    --neon-cyan: #66fcf1;
+    --muted-cyan: #45a29e;
+    --neon-amber: #ffc107;
+    --alert-red: #ff3b30;
+    --success-green: #34c759;
+  
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+  
+    --nav-width: 260px;
+  }
+  
+  body {
+    background-color: var(--bg-obsidian);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+  }
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-body {
-  background-color: var(--bg-obsidian);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow: hidden; /* App view is a bounded terminal */
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-button {
-  cursor: pointer;
-  border: none;
-  background: none;
-  font-family: inherit;
-}
-
-/* Custom Scrollbar for the panels */
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -68,20 +54,10 @@ button {
   background: var(--text-muted); 
 }
 
-/* Base utility classes since we don't use Tailwind */
-.text-cyan { color: var(--neon-cyan); }
-.text-amber { color: var(--neon-amber); }
-.text-red { color: var(--alert-red); }
-.text-green { color: var(--success-green); }
-.text-mono { font-family: var(--font-mono); }
-
+/* Utility glows for non-tailwind components */
 .glow-cyan {
   text-shadow: 0 0 10px rgba(102, 252, 241, 0.5);
 }
-.glow-amber {
-  text-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
-}
-
 .box-glow-cyan {
   box-shadow: 0 0 12px rgba(102, 252, 241, 0.15);
 }
