@@ -2,62 +2,74 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 
 @layer base {
-  :root {
-    --bg-obsidian: #050608;
-    --bg-surface: #0a0d13;
-    --bg-panel: #11151c;
-    --bg-header: #080a0f;
-    --border-dim: rgba(255, 255, 255, 0.05);
-    
-    --text-primary: #e0e6ed;
-    --text-secondary: #8b9bb4;
-    --text-muted: #5e6c80;
-  
-    --neon-cyan: #66fcf1;
-    --muted-cyan: #45a29e;
-    --neon-amber: #ffc107;
-    --alert-red: #ff3b30;
-    --success-green: #34c759;
-  
-    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-    --font-mono: 'Fira Code', ui-monospace, SFMono-Regular, monospace;
-  
-    --nav-width: 260px;
-  }
-  
   body {
-    background-color: var(--bg-obsidian);
-    color: var(--text-primary);
-    font-family: var(--font-sans);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    overflow: hidden;
+    font-family: 'Inter', sans-serif;
   }
 }
 
-/* Custom Scrollbar */
+.font-headline { font-family: 'Space Grotesk', sans-serif; }
+.font-mono-tech { font-family: 'JetBrains Mono', monospace; }
+.font-mono { font-family: 'Space Mono', monospace; }
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.agent-scan::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(to bottom, transparent, rgba(0, 112, 243, 0.2) 50%, transparent);
+  animation: scan 3s linear infinite;
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-obsidian); 
+  background: #131313;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-panel); 
-  border-radius: 3px;
+  background: #353534;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted); 
+  background: #414754;
 }
 
-/* Utility glows for non-tailwind components */
-.glow-cyan {
-  text-shadow: 0 0 10px rgba(102, 252, 241, 0.5);
+/* The Ghost Border utility */
+.ghost-border { 
+  outline: 1px solid rgba(65, 71, 84, 0.15); 
+  outline-offset: -1px; 
 }
-.box-glow-cyan {
-  box-shadow: 0 0 12px rgba(102, 252, 241, 0.15);
+
+/* Custom range slider styling to fit industrial theme */
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 16px;
+  width: 8px;
+  border-radius: 2px;
+  background: theme('colors.primary-container');
+  cursor: ew-resize;
+  margin-top: -6px;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: theme('colors.surface-container-lowest');
+  border-radius: 0px;
+}
+.ghost-glow:focus-within {
+  outline: 1px solid theme('colors.primary-container');
+  box-shadow: 0 0 0 2px rgba(0, 112, 243, 0.1);
 }

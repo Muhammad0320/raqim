@@ -1,56 +1,78 @@
 import Link from 'next/link';
-import { Network, Shield, Database, Route, Terminal } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 
 export function Sidebar() {
   const pathname = usePathname();
 
-  const navItems = [
-    { name: 'TOPOLOGY', path: '/topology', icon: Network },
-    { name: 'FIREWALL', path: '/firewall', icon: Shield },
-    { name: 'VAULT', path: '/vault', icon: Database },
-    { name: 'ROUTER', path: '/router', icon: Route },
-    { name: 'KERNEL', path: '/kernel', icon: Terminal },
-  ];
-
   return (
-    <aside className="w-[260px] bg-panel border-r border-white/5 flex flex-col h-full shrink-0">
-      <div className="p-6 flex items-center gap-4 border-b border-white/5">
-        <div className="w-10 h-10 bg-surface border border-white/5 flex items-center justify-center rounded">
-          <Shield size={18} className="text-neon-cyan drop-shadow-[0_0_10px_rgba(102,252,241,0.5)]" />
-        </div>
+    <aside className="fixed left-0 top-0 h-full flex flex-col pt-16 w-64 bg-zinc-950 z-40 border-r border-zinc-900 hidden md:flex">
+      <div className="flex flex-col h-full justify-between">
         <div>
-          <div className="text-[13px] text-white font-semibold tracking-wide font-mono">ROOT_USER</div>
-          <div className="text-[10px] text-muted tracking-[1px] mt-1 uppercase">Sovereign Node</div>
-        </div>
-      </div>
-
-      <nav className="flex-1 py-6 flex flex-col gap-1">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname === item.path || (pathname === '/' && item.path === '/router');
-          
-          return (
+          <div className="px-6 py-6 mb-4 border-b border-zinc-900/50">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-surface-container-highest rounded-sm flex items-center justify-center outline outline-1 outline-outline-variant/15 outline-offset-[-1px]">
+                <span className="material-symbols-outlined text-primary-fixed-dim">shield_person</span>
+              </div>
+              <div>
+                <h2 className="font-mono text-sm font-bold text-on-surface uppercase tracking-wider">ROOT_USER</h2>
+                <p className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest mt-0.5">Sovereign Node</p>
+              </div>
+            </div>
+          </div>
+          <nav className="flex flex-col gap-1 px-3">
             <Link 
-              key={item.path} 
-              href={item.path} 
-              className={`px-6 py-3 flex items-center gap-4 text-xs font-semibold tracking-[1.5px] transition-colors
-                ${isActive 
-                  ? 'bg-neon-cyan/5 text-neon-cyan border-l-2 border-neon-cyan' 
-                  : 'text-muted-DEFAULT hover:bg-white/5 hover:text-white border-l-2 border-transparent'
-                }
-              `}
+              href="/topology" 
+              className={`px-4 py-3 flex items-center gap-3 transition-colors duration-200 rounded-sm ${pathname === '/topology' || pathname === '/' ? 'bg-zinc-900 text-blue-400 border-l-4 border-blue-600' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'}`}
             >
-              <Icon size={16} /> <span>{item.name}</span>
+              <span className="material-symbols-outlined text-lg">hub</span>
+              <span className={`font-mono text-xs uppercase tracking-widest mt-0.5 ${pathname === '/topology' || pathname === '/' ? 'font-bold' : ''}`}>Topology</span>
             </Link>
-          );
-        })}
-      </nav>
-
-      <div className="p-6 border-t border-white/5">
-        <button className="w-full py-3 bg-transparent border border-white/5 text-white text-[11px] font-mono tracking-widest transition-all hover:bg-surface hover:border-neon-cyan hover:shadow-[0_0_10px_rgba(102,252,241,0.1)]">
-          + NEW INSTANCE
-        </button>
+            
+            <Link 
+              href="/firewall" 
+              className={`px-4 py-3 flex items-center gap-3 transition-colors duration-200 rounded-sm ${pathname === '/firewall' ? 'bg-zinc-900 text-blue-400 border-l-4 border-blue-600' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'}`}
+            >
+              <span className="material-symbols-outlined text-lg">security</span>
+              <span className={`font-mono text-xs uppercase tracking-widest mt-0.5 ${pathname === '/firewall' ? 'font-bold' : ''}`}>Firewall</span>
+            </Link>
+            
+            <Link 
+              href="/vault" 
+              className={`px-4 py-3 flex items-center gap-3 transition-colors duration-200 rounded-sm ${pathname === '/vault' ? 'bg-zinc-900 text-blue-400 border-l-4 border-blue-600' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'}`}
+            >
+              <span className="material-symbols-outlined text-lg">database</span>
+              <span className={`font-mono text-xs uppercase tracking-widest mt-0.5 ${pathname === '/vault' ? 'font-bold' : ''}`}>Vault</span>
+            </Link>
+            
+            <Link 
+              href="/router" 
+              className={`px-4 py-3 flex items-center gap-3 transition-colors duration-200 rounded-sm ${pathname === '/router' ? 'bg-zinc-900 text-blue-400 border-l-4 border-blue-600' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'}`}
+            >
+              <span className="material-symbols-outlined text-lg">timeline</span>
+              <span className={`font-mono text-xs uppercase tracking-widest mt-0.5 ${pathname === '/router' ? 'font-bold' : ''}`}>Router</span>
+            </Link>
+            
+            <a href="#" className="text-zinc-500 px-4 py-3 flex items-center gap-3 hover:text-zinc-300 hover:bg-zinc-900/50 transition-colors duration-200 rounded-sm">
+              <span className="material-symbols-outlined text-lg">memory</span>
+              <span className="font-mono text-xs uppercase tracking-widest mt-0.5">Kernel</span>
+            </a>
+          </nav>
+        </div>
+        
+        <div className="p-4 border-t border-zinc-900">
+          <button className="w-full bg-primary-container text-on-primary-container hover:bg-primary-container/90 rounded-sm py-2 px-4 font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all">
+            <span className="material-symbols-outlined text-[16px]">add</span>
+            New Instance
+          </button>
+          <div className="mt-4 flex justify-between px-2">
+            <a href="#" className="text-zinc-500 hover:text-zinc-300 transition-colors">
+              <span className="material-symbols-outlined text-sm">help</span>
+            </a>
+            <a href="#" className="text-zinc-500 hover:text-zinc-300 transition-colors">
+              <span className="material-symbols-outlined text-sm">contact_support</span>
+            </a>
+          </div>
+        </div>
       </div>
     </aside>
   );

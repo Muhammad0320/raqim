@@ -1,113 +1,184 @@
 'use client';
-import { useState } from 'react';
 import { MainLayout } from '../../components/Layout/MainLayout';
-import { AlertTriangle, ShieldOff, Server } from 'lucide-react';
-
-const mockAgents = [
-  { id: 'AX-901-DELTA', sector: 'Europ-West-1', status: 'SECURE_HANDSHAKE', uptime: '42d 11h 09m' },
-  { id: 'KR-442-OMEGA', sector: 'Asia-East-2', status: 'ISOLATED', uptime: '0d 00h 14m' },
-  { id: 'US-110-SIGMA', sector: 'US-Central-1', status: 'PAYLOAD_REJECT', uptime: '0d 02h 44m' },
-  { id: 'AX-902-DELTA', sector: 'Europ-West-1', status: 'SECURE_HANDSHAKE', uptime: '42d 11h 05m' },
-  { id: 'BR-771-ALPHA', sector: 'SA-East-1', status: 'SECURE_HANDSHAKE', uptime: '12d 04h 22m' }
-];
 
 export default function FirewallPage() {
-  const [agents, setAgents] = useState(mockAgents);
-
-  const liftQuarantine = async (agentId: string) => {
-    try {
-      await fetch('/api/admin/quarantine/lift', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId })
-      });
-      setAgents(prev => prev.map(a => a.id === agentId ? { ...a, status: 'SECURE_HANDSHAKE' } : a));
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   return (
-    <MainLayout title="AEGIS CONTROL">
-       <div className="p-8 flex flex-col gap-6 h-full overflow-y-auto">
-          
-          <div className="grid grid-cols-4 gap-4">
-             <div className="bg-surface p-6 border border-white/5 rounded">
-                 <div className="text-[10px] text-muted-DEFAULT tracking-widest mb-3 flex items-center justify-between">ACTIVE NODES <Server size={14}/></div>
-                 <div className="text-3xl font-bold text-white mb-2 font-mono">1,024</div>
-                 <div className="text-[10px] text-neon-cyan flex items-center gap-1 font-mono">
-                    ↗ +12 from last cycle
-                 </div>
-             </div>
-             <div className="bg-surface p-6 border border-red-500/20 rounded shadow-[inset_0_0_20px_rgba(255,59,48,0.05)]">
-                 <div className="text-[10px] text-muted-DEFAULT tracking-widest mb-3 flex items-center justify-between">QUARANTINED <ShieldOff size={14} className="text-red-500"/></div>
-                 <div className="text-3xl font-bold text-red-500 mb-2 font-mono">3</div>
-                 <div className="text-[10px] text-red-500 flex items-center gap-1">
-                    <AlertTriangle size={12}/> Critical action required
-                 </div>
-             </div>
-             <div className="bg-surface p-6 border border-white/5 rounded">
-                 <div className="text-[10px] text-muted-DEFAULT tracking-widest mb-3 flex items-center justify-between">INTERCEPT RATE</div>
-                 <div className="text-3xl font-bold text-white mb-2 font-mono">99.9%</div>
-                 <div className="text-[10px] text-muted-DEFAULT">Based on heuristics engine</div>
-             </div>
-             <div className="bg-surface p-6 border border-white/5 rounded">
-                 <div className="text-[10px] text-muted-DEFAULT tracking-widest mb-3 flex items-center justify-between">PACKET DROP</div>
-                 <div className="text-3xl font-bold text-white mb-2 font-mono">0.04%</div>
-                 <div className="text-[10px] text-green-500 flex items-center gap-1">
-                    ● Normal operational bounds
-                 </div>
-             </div>
+    <MainLayout title="Aegis Control">
+      <div className="flex-1 flex flex-col gap-6 px-8 pb-8 overflow-hidden mt-6">
+        {/* Bento Grid Top Row (Stats) */}
+        <div className="grid grid-cols-4 gap-4 flex-shrink-0">
+          <div className="bg-surface-container p-5 rounded-lg ghost-border relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-b from-primary-container/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <div className="flex justify-between items-start mb-4">
+              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Active Nodes</span>
+              <span className="material-symbols-outlined text-outline">dns</span>
+            </div>
+            <div className="font-headline text-4xl font-bold text-on-surface">1,024</div>
+            <div className="font-mono text-[10px] text-secondary mt-2 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[12px]">trending_up</span> +12 from last cycle
+            </div>
           </div>
-
-          <div className="bg-surface border border-white/5 rounded overflow-hidden mt-4 flex-1 flex flex-col">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-white/5 text-[10px] text-muted-DEFAULT tracking-[1.5px] bg-panel">
-                  <th className="py-4 px-6 font-semibold">AGENT ID</th>
-                  <th className="font-semibold">SECTOR</th>
-                  <th className="font-semibold">PROTOCOL STATUS</th>
-                  <th className="font-semibold">UPTIME</th>
-                  <th className="text-right pr-6 font-semibold">ACTION</th>
-                </tr>
-              </thead>
-              <tbody className="font-mono text-xs">
-                {agents.map((agent, i) => {
-                  const isIsolated = agent.status === 'ISOLATED' || agent.status === 'PAYLOAD_REJECT';
-                  
-                  return (
-                    <tr key={i} className={`border-b border-white/5 ${isIsolated ? 'bg-red-500/5' : 'hover:bg-white/[0.02]'}`}>
-                      <td className="py-4 px-6 flex items-center gap-4 text-white">
-                        <div className={`w-2 h-2 rounded-full ${isIsolated ? 'bg-red-500 shadow-[0_0_8px_rgba(255,59,48,0.8)]' : 'bg-green-500 shadow-[0_0_8px_rgba(52,199,89,0.8)]'}`} />
-                        {agent.id}
-                      </td>
-                      <td className="text-muted-DEFAULT">{agent.sector}</td>
-                      <td>
-                        <div className={`inline-block px-2 py-1 text-[10px] tracking-wider rounded-sm border ${isIsolated ? 'border-red-500/30 text-red-500 bg-red-500/10' : 'border-green-500/30 text-green-500 bg-green-500/10'}`}>
-                          {agent.status}
-                        </div>
-                      </td>
-                      <td className="text-muted-DEFAULT">{agent.uptime}</td>
-                      <td className="text-right pr-6">
-                        <button className="px-4 py-1.5 text-[10px] font-sans font-bold tracking-wider border border-white/10 text-white rounded hover:bg-white/10 transition-colors ml-2">
-                          INSPECT
-                        </button>
-                        {isIsolated && (
-                          <button 
-                            onClick={() => liftQuarantine(agent.id)}
-                            className="px-4 py-1.5 text-[10px] font-sans font-bold tracking-wider border border-red-500/50 text-red-500 rounded bg-red-500/10 hover:bg-red-500 hover:text-obsidian transition-colors ml-2 shadow-[0_0_10px_rgba(255,59,48,0.2)]">
-                            LIFT QUARANTINE
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="bg-surface-container p-5 rounded-lg ghost-border relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-b from-error/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+            <div className="flex justify-between items-start mb-4">
+              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Quarantined</span>
+              <span className="material-symbols-outlined text-error">gpp_bad</span>
+            </div>
+            <div className="font-headline text-4xl font-bold text-error">3</div>
+            <div className="font-mono text-[10px] text-error mt-2 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[12px]">warning</span> Critical action required
+            </div>
           </div>
+          <div className="bg-surface-container p-5 rounded-lg ghost-border relative overflow-hidden group">
+            <div className="flex justify-between items-start mb-4">
+              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Intercept Rate</span>
+              <span className="material-symbols-outlined text-outline">shield</span>
+            </div>
+            <div className="font-headline text-4xl font-bold text-on-surface">99.9%</div>
+            <div className="font-mono text-[10px] text-on-surface-variant mt-2 flex items-center gap-1">
+              Based on heuristics engine
+            </div>
+          </div>
+          <div className="bg-surface-container p-5 rounded-lg ghost-border relative overflow-hidden group">
+            <div className="flex justify-between items-start mb-4">
+              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Packet Drop</span>
+              <span className="material-symbols-outlined text-outline">call_missed_outgoing</span>
+            </div>
+            <div className="font-headline text-4xl font-bold text-on-surface">0.04%</div>
+            <div className="font-mono text-[10px] text-secondary mt-2 flex items-center gap-1">
+              <span className="material-symbols-outlined text-[12px]">check_circle</span> Normal operational bounds
+            </div>
+          </div>
+        </div>
 
-       </div>
+        {/* Agent Data Table (The Swarm Grid) */}
+        <div className="flex-1 bg-surface-container-lowest rounded-lg ghost-border flex flex-col overflow-hidden relative">
+          <div className="bg-surface-container-high px-6 py-4 border-b border-outline-variant/20 flex-shrink-0">
+            <div className="grid grid-cols-12 gap-4 items-center">
+              <div className="col-span-3 font-mono text-xs text-on-surface-variant uppercase tracking-widest">Agent ID</div>
+              <div className="col-span-2 font-mono text-xs text-on-surface-variant uppercase tracking-widest">Sector</div>
+              <div className="col-span-3 font-mono text-xs text-on-surface-variant uppercase tracking-widest">Protocol status</div>
+              <div className="col-span-2 font-mono text-xs text-on-surface-variant uppercase tracking-widest">Uptime</div>
+              <div className="col-span-2 font-mono text-xs text-on-surface-variant uppercase tracking-widest text-right">Action</div>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {/* Normal Row */}
+            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 hover:bg-surface-container-low transition-colors border-b border-outline-variant/10">
+              <div className="col-span-3 font-mono text-sm text-on-surface flex items-center gap-3">
+                <span className="material-symbols-outlined text-secondary text-[18px]">radio_button_checked</span>
+                AX-901-DELTA
+              </div>
+              <div className="col-span-2 font-body text-sm text-on-surface-variant">Europ-West-1</div>
+              <div className="col-span-3">
+                <span className="bg-surface-container px-2 py-1 rounded-sm font-mono text-[10px] text-secondary border border-secondary/20">SECURE_HANDSHAKE</span>
+              </div>
+              <div className="col-span-2 font-mono text-xs text-on-surface-variant">42d 11h 09m</div>
+              <div className="col-span-2 flex justify-end">
+                <button className="text-on-surface-variant hover:text-on-surface font-mono text-xs uppercase px-3 py-1 bg-surface-container rounded-sm border border-outline-variant/30 hover:border-outline-variant/60 transition-all">Inspect</button>
+              </div>
+            </div>
+
+            {/* Quarantined Row (Highlighted) */}
+            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 bg-error/5 hover:bg-error/10 transition-colors border-b border-error/20 relative">
+              <div className="absolute left-0 top-0 bottom-0 w-1 bg-error"></div>
+              <div className="col-span-3 font-mono text-sm text-error flex items-center gap-3 font-bold">
+                <span className="material-symbols-outlined text-error text-[18px]">warning</span>
+                KR-442-OMEGA
+              </div>
+              <div className="col-span-2 font-body text-sm text-on-surface-variant">Asia-East-2</div>
+              <div className="col-span-3">
+                <span className="bg-error/10 px-2 py-1 rounded-sm font-mono text-[10px] text-error border border-error/30 inline-flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[12px]">lock</span> ISOLATED
+                </span>
+              </div>
+              <div className="col-span-2 font-mono text-xs text-error/80">0d 00h 14m</div>
+              <div className="col-span-2 flex justify-end gap-2">
+                <button className="bg-surface-container-highest text-on-surface hover:text-primary font-mono text-xs uppercase px-3 py-1 rounded-sm border border-outline-variant/30 hover:border-primary/50 transition-all">Inspect</button>
+                <button className="bg-surface-container text-error hover:bg-error/20 font-mono text-xs uppercase px-3 py-1 rounded-sm border border-error/50 transition-all font-bold">Lift Quarantine</button>
+              </div>
+            </div>
+
+            {/* Quarantined Row (Highlighted) */}
+            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 bg-error/5 hover:bg-error/10 transition-colors border-b border-error/20 relative">
+              <div className="absolute left-0 top-0 bottom-0 w-1 bg-error"></div>
+              <div className="col-span-3 font-mono text-sm text-error flex items-center gap-3 font-bold">
+                <span className="material-symbols-outlined text-error text-[18px]">warning</span>
+                US-110-SIGMA
+              </div>
+              <div className="col-span-2 font-body text-sm text-on-surface-variant">US-Central-1</div>
+              <div className="col-span-3">
+                <span className="bg-error/10 px-2 py-1 rounded-sm font-mono text-[10px] text-error border border-error/30 inline-flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[12px]">block</span> PAYLOAD_REJECT
+                </span>
+              </div>
+              <div className="col-span-2 font-mono text-xs text-error/80">0d 02h 44m</div>
+              <div className="col-span-2 flex justify-end gap-2">
+                <button className="bg-surface-container-highest text-on-surface hover:text-primary font-mono text-xs uppercase px-3 py-1 rounded-sm border border-outline-variant/30 hover:border-primary/50 transition-all">Inspect</button>
+                <button className="bg-surface-container text-error hover:bg-error/20 font-mono text-xs uppercase px-3 py-1 rounded-sm border border-error/50 transition-all font-bold">Lift Quarantine</button>
+              </div>
+            </div>
+
+            {/* Normal Row */}
+            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 hover:bg-surface-container-low transition-colors border-b border-outline-variant/10">
+              <div className="col-span-3 font-mono text-sm text-on-surface flex items-center gap-3">
+                <span className="material-symbols-outlined text-secondary text-[18px]">radio_button_checked</span>
+                AX-902-DELTA
+              </div>
+              <div className="col-span-2 font-body text-sm text-on-surface-variant">Europ-West-1</div>
+              <div className="col-span-3">
+                <span className="bg-surface-container px-2 py-1 rounded-sm font-mono text-[10px] text-secondary border border-secondary/20">SECURE_HANDSHAKE</span>
+              </div>
+              <div className="col-span-2 font-mono text-xs text-on-surface-variant">42d 11h 05m</div>
+              <div className="col-span-2 flex justify-end">
+                <button className="text-on-surface-variant hover:text-on-surface font-mono text-xs uppercase px-3 py-1 bg-surface-container rounded-sm border border-outline-variant/30 hover:border-outline-variant/60 transition-all">Inspect</button>
+              </div>
+            </div>
+
+            {/* Normal Row */}
+            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 hover:bg-surface-container-low transition-colors border-b border-outline-variant/10">
+              <div className="col-span-3 font-mono text-sm text-on-surface flex items-center gap-3">
+                <span className="material-symbols-outlined text-secondary text-[18px]">radio_button_checked</span>
+                BR-771-ALPHA
+              </div>
+              <div className="col-span-2 font-body text-sm text-on-surface-variant">SA-East-1</div>
+              <div className="col-span-3">
+                <span className="bg-surface-container px-2 py-1 rounded-sm font-mono text-[10px] text-secondary border border-secondary/20">SECURE_HANDSHAKE</span>
+              </div>
+              <div className="col-span-2 font-mono text-xs text-on-surface-variant">12d 04h 22m</div>
+              <div className="col-span-2 flex justify-end">
+                <button className="text-on-surface-variant hover:text-on-surface font-mono text-xs uppercase px-3 py-1 bg-surface-container rounded-sm border border-outline-variant/30 hover:border-outline-variant/60 transition-all">Inspect</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Terminal / Cryptographic Stream */}
+        <div className="h-48 bg-surface-container-lowest rounded-lg ghost-border flex flex-col overflow-hidden relative flex-shrink-0">
+          <div className="bg-surface-container-high px-4 py-2 border-b border-outline-variant/20 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-on-surface-variant text-sm">terminal</span>
+              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Aegis Rejection Stream</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="w-2 h-2 rounded-full bg-outline-variant"></span>
+              <span className="w-2 h-2 rounded-full bg-outline-variant"></span>
+              <span className="w-2 h-2 rounded-full bg-outline-variant"></span>
+            </div>
+          </div>
+          <div className="flex-1 p-4 overflow-y-auto font-mono text-xs leading-relaxed space-y-1">
+            <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:44.102]</span> REJECT: Invalid cryptographic signature from source IP 192.168.1.44 (KR-442-OMEGA)</div>
+            <div className="text-on-surface-variant"><span class="text-tertiary">[14:02:44.105]</span> ACTION: Quarantine policy applied to KR-442-OMEGA. Connection severed.</div>
+            <div className="text-on-surface-variant"><span className="text-outline">[14:02:45.001]</span> INFO: Handshake successful AX-901-DELTA.</div>
+            <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:50.882]</span> REJECT: Payload anomaly detected. Malformed headers in packet stream from US-110-SIGMA.</div>
+            <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:50.884]</span> ACTION: Quarantine policy applied to US-110-SIGMA. Deep inspection queued.</div>
+            <div className="text-on-surface-variant"><span className="text-outline">[14:02:55.220]</span> INFO: Routine telemetry sync complete across Europ-West cluster.</div>
+            <div className="text-on-surface-variant"><span className="text-tertiary">[14:03:01.002]</span> REJECT: Key rotation mismatch attempt from untracked MAC 00:1A:2B:3C:4D:5E.</div>
+            <div className="text-on-surface-variant"><span className="text-outline">[14:03:05.110]</span> SYSTEM: Listening for incoming node registration requests...</div>
+          </div>
+        </div>
+
+      </div>
     </MainLayout>
   );
 }
