@@ -21,7 +21,7 @@ export function MainLayout({ children, title }: { children: React.ReactNode, tit
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
             <button className="text-zinc-400 hover:text-white p-2 rounded scale-95 transition-transform duration-150"><span className="material-symbols-outlined text-lg">notifications</span></button>
-            <button className="text-zinc-400 hover:text-white p-2 rounded scale-95 transition-transform duration-150"><span class="material-symbols-outlined text-lg">settings</span></button>
+            <button className="text-zinc-400 hover:text-white p-2 rounded scale-95 transition-transform duration-150"><span className="material-symbols-outlined text-lg">settings</span></button>
           </div>
           <button className="bg-primary-container text-on-primary-container px-4 py-1.5 rounded text-sm font-bold tracking-wide scale-95 transition-transform duration-150">Deploy Agent</button>
         </div>

@@ -1,13 +1,13 @@
 import { Handle, Position, NodeProps } from '@xyflow/react';
-import { ThoughtCommitted } from '../../lib/store/useSwarmStore';
+import { UiThought } from '../../lib/store/useSwarmStore';
 import styles from './DagCanvas.module.css';
 
 export function DagNode({ data }: NodeProps) {
-  const thought = data.thought as ThoughtCommitted;
+  const thought = data.thought as UiThought;
   const isFuture = data.isFuture as boolean;
 
-  // Truncate tx_id
-  const displayId = thought.tx_id.substring(0, 8) + '...' + thought.tx_id.substring(thought.tx_id.length - 4);
+  // Format tx_id as hex
+  const displayId = "0x" + thought.tx_id.toString().padStart(8, '0').toUpperCase();
   
   let statusColor = 'var(--neon-cyan)';
   if (thought.status === 'FORKED') statusColor = 'var(--neon-amber)';
@@ -22,7 +22,7 @@ export function DagNode({ data }: NodeProps) {
       <Handle type="target" position={Position.Left} className={styles.handle} />
       
       <div className={styles.nodeHeader}>
-        <div className={`${styles.nodeAgentId} text-mono`}>{thought.agent_id}</div>
+        <div className={`${styles.nodeAgentId} text-mono`}>{thought.agent_hex}</div>
         <div 
           className={styles.statusDot} 
           style={{ backgroundColor: statusColor, boxShadow: `0 0 8px ${statusColor}` }}

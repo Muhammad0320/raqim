@@ -168,7 +168,7 @@ export default function FirewallPage() {
           </div>
           <div className="flex-1 p-4 overflow-y-auto font-mono text-xs leading-relaxed space-y-1">
             <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:44.102]</span> REJECT: Invalid cryptographic signature from source IP 192.168.1.44 (KR-442-OMEGA)</div>
-            <div className="text-on-surface-variant"><span class="text-tertiary">[14:02:44.105]</span> ACTION: Quarantine policy applied to KR-442-OMEGA. Connection severed.</div>
+            <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:44.105]</span> ACTION: Quarantine policy applied to KR-442-OMEGA. Connection severed.</div>
             <div className="text-on-surface-variant"><span className="text-outline">[14:02:45.001]</span> INFO: Handshake successful AX-901-DELTA.</div>
             <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:50.882]</span> REJECT: Payload anomaly detected. Malformed headers in packet stream from US-110-SIGMA.</div>
             <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:50.884]</span> ACTION: Quarantine policy applied to US-110-SIGMA. Deep inspection queued.</div>
