@@ -1,5 +1,3 @@
-use axum::body::Bytes;
-use ed25519_dalek::{Signature, SigningKey, Verifier};
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use raqim_core::aegis::AegisGateKeeper;
 use raqim_core::api::{ApiState, EnterpriseClaim, UiThought, build_admin_router};
@@ -425,26 +423,16 @@ async fn main() {
                 return;
             }
 
-            // 2. TRUE CRPTOGRAPHIC IDENTITY  VERIFICATION
-            // let pub_key = PublicKey::from_bytes(&archived_ingress.public_key).unwrap();
-            // let signature = Signature::from_bytes(&archived_ingress.signature).unwrap();
-
             // // We verify signature against the actual raw bytes of the state
             let state_bytes =
                 rkyv::to_bytes::<rkyv::rancor::Error>(&archived_ingress.state).unwrap();
-
-            // if pub_key.verify(&state_bytes, &signature).is_err() {
-            //     eprintln!("[SECURITY] Invalid Ed25519 signature. Dropping TCP packet. ");
-            //     task_aegis.trigger_quarantine(&agent_hex, path_intent, "Cryptographic Spoofing");
-            //     return;
-            // }
 
             if !task_aegis.verify_agent_signature(
                 &agent_hex,
                 state_bytes,
                 &archived_ingress.signature,
             ) {
-                eprintln!(" [AEGIS INTERDICTION] Cryptographic Spoofing detected.");
+                eprintln!(" [SECURITY] Invalid Ed25519 signature. Dropping TCP packet.");
                 return;
             }
 
