@@ -1,3 +1,4 @@
+use anyhow::Ok;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Query};
 use axum::response::Response;
@@ -322,6 +323,14 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
     }
 }
 
+#[derive(Serialize)]
+pub struct UiThought {
+    pub agent_hex: String,
+    pub intent_path: String,
+    pub text: String,
+    pub tx_id: u64,
+}
+
 // The Firehose Route Handler
 pub async fn sse_firehose_endpoint(
     _auth: ValidatedIdentity,
@@ -333,11 +342,24 @@ pub async fn sse_firehose_endpoint(
     // Convert the Tokio Receiver into a standard async Stream.
     let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
         match msg {
-            Ok(agent_state) => {
-                // Convert high-speed rust struct into json for react DAG.
+            Ok(raw_bytes) => {
+                // We're off the hot-path. We safely read the zero-copy bytes here.
+                let envelope = unsafe {
+                    rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(
+                        &raw_bytes,
+                    )
+                };
 
-                let json_payload = serde_json::to_string(&agent_state).unwrap();
-                Some(Ok(Event::default().data(json_payload)))
+                // Map exactly what the UI needs into our Serializable struct.
+                let ui_payload = UiThought {
+                    agent_hex: hex::encode(envelope.state.agent_id.as_slice()),
+                    intent_path: envelope.intent_path.as_str().to_string(),
+                    text: envelope.state.text.as_str().to_string(),
+                    tx_id: 0,
+                };
+
+                let json_string = serde_json::to_string(&ui_payload).unwrap();
+                Some(Ok(Event::default().data(json_string)))
             }
             Err(_) => {
                 // Lagging subscribers are skipped automatically by tokio broadcast
