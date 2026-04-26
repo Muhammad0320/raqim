@@ -79,7 +79,7 @@ pub struct IngressEnvelope {
     pub intent_path: String,  // "raqim_finance/ledger" ( Checked by Aegis )
     pub public_key: [u8; 32], // The Ed25519 public key of the sender
     pub signature: [u8; 64],  // The mathematical signauture proving authenticity
-    pub state: AgentState,    // The actual thought
+    pub state_bytes: Vec<u8>, // The actual thought
 }
 
 pub async fn execute_raqim_cascade(
