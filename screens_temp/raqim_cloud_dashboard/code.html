@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Raqim OS - Deterministic Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@400;500;600;700;800;900&amp;family=JetBrains+Mono:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        /* Base typography setups to match Design System */
+        body { font-family: 'Inter', sans-serif; }
+        .font-headline { font-family: 'Space Grotesk', sans-serif; }
+        .font-mono-tech { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Agentic scanning line animation */
+        @keyframes scan {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+        .agent-scan::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(to bottom, transparent, rgba(0, 112, 243, 0.2) 50%, transparent);
+            animation: scan 3s linear infinite;
+            pointer-events: none;
+            opacity: 0.5;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "outline": "#8b90a0",
+                        "secondary-container": "#00a572",
+                        "secondary": "#4edea3",
+                        "on-primary-container": "#ffffff",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-primary": "#002e6b",
+                        "tertiary-fixed": "#ffddb8",
+                        "inverse-primary": "#0059c5",
+                        "primary": "#aec6ff",
+                        "primary-container": "#0070f3",
+                        "on-primary-fixed-variant": "#004397",
+                        "tertiary-container": "#a66900",
+                        "on-background": "#e5e2e1",
+                        "on-secondary-fixed-variant": "#005236",
+                        "surface-variant": "#353534",
+                        "inverse-on-surface": "#313030",
+                        "tertiary": "#ffb95f",
+                        "surface-container-low": "#1c1b1b",
+                        "secondary-fixed-dim": "#4edea3",
+                        "on-error": "#690005",
+                        "surface-container": "#201f1f",
+                        "on-primary-fixed": "#001a43",
+                        "on-secondary-container": "#00311f",
+                        "secondary-fixed": "#6ffbbe",
+                        "primary-fixed": "#d8e2ff",
+                        "surface-bright": "#3a3939",
+                        "on-tertiary": "#472a00",
+                        "tertiary-fixed-dim": "#ffb95f",
+                        "primary-fixed-dim": "#aec6ff",
+                        "surface-dim": "#131313",
+                        "on-surface": "#e5e2e1",
+                        "error": "#ffb4ab",
+                        "inverse-surface": "#e5e2e1",
+                        "background": "#131313",
+                        "on-tertiary-container": "#ffffff",
+                        "surface": "#131313",
+                        "surface-container-high": "#2a2a2a",
+                        "on-tertiary-fixed-variant": "#653e00",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#2a1700",
+                        "surface-tint": "#aec6ff",
+                        "surface-container-highest": "#353534",
+                        "on-surface-variant": "#c1c6d7",
+                        "outline-variant": "#414754",
+                        "on-secondary": "#003824",
+                        "error-container": "#93000a",
+                        "on-secondary-fixed": "#002113"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    fontFamily: {
+                        "headline": ["Space Grotesk", "sans-serif"],
+                        "body": ["Inter", "sans-serif"],
+                        "label": ["Inter", "sans-serif"]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-surface text-on-surface antialiased flex flex-col min-h-screen overflow-x-hidden selection:bg-primary-container selection:text-white">
+<!-- TopNavBar (Shared Component) -->
+<!-- Active Tab: Telemetry -->
+<header class="fixed w-full top-0 z-50 bg-zinc-950/80 backdrop-blur-xl border-none">
+<div class="flex justify-between items-center w-full px-6 py-3">
+<div class="flex items-center gap-8">
+<div class="text-xl font-black tracking-widest text-white font-headline">RAQIM OS</div>
+<nav class="hidden md:flex gap-6 font-['Space_Grotesk'] tracking-tight uppercase font-bold text-sm">
+<a class="text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out hover:bg-zinc-800/50 px-2 py-1 rounded" href="#">SDK</a>
+<a class="text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out hover:bg-zinc-800/50 px-2 py-1 rounded" href="#">Pricing</a>
+<a class="text-zinc-500 hover:text-zinc-300 transition-all duration-200 ease-in-out hover:bg-zinc-800/50 px-2 py-1 rounded" href="#">Docs</a>
+<a class="text-white border-b-2 border-blue-600 pb-1 px-2 py-1" href="#">Telemetry</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<!-- Search Bar Placeholder based on "on_right" -->
+<div class="relative hidden lg:block mr-4">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 text-sm">search</span>
+<input class="bg-surface-container-lowest border border-outline-variant/30 text-on-surface text-sm rounded-md pl-9 pr-4 py-1.5 focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container/50 font-mono-tech w-64 placeholder:text-zinc-600 transition-all" placeholder="Search commands..." type="text"/>
+</div>
+<button class="text-zinc-500 hover:text-white transition-colors">
+<span class="material-symbols-outlined scale-95 transition-transform duration-150">notifications</span>
+</button>
+<button class="text-zinc-500 hover:text-white transition-colors">
+<span class="material-symbols-outlined scale-95 transition-transform duration-150">settings</span>
+</button>
+<button class="bg-primary-container text-on-primary-container font-headline text-sm font-bold uppercase px-4 py-1.5 rounded hover:bg-blue-700 transition-colors scale-95 duration-150 ml-2">
+                    Deploy Agent
+                </button>
+</div>
+</div>
+</header>
+<div class="flex flex-1 pt-[3.5rem] h-[calc(100vh-3.5rem)]">
+<!-- SideNavBar (Shared Component) -->
+<!-- Active Tab: Topology (Closest fit for dashboard) -->
+<aside class="fixed left-0 top-[3.5rem] h-[calc(100vh-3.5rem)] w-64 bg-zinc-950 flex flex-col pt-8 z-40 border-r border-zinc-900/50">
+<!-- Header Area -->
+<div class="px-6 mb-8 flex flex-col gap-1">
+<div class="flex items-center gap-3 mb-4">
+<div class="w-10 h-10 rounded bg-surface-container-highest border border-outline-variant/30 overflow-hidden">
+<img alt="System Administrator" class="w-full h-full object-cover opacity-80 mix-blend-luminosity" data-alt="close up of server racks with blinking blue lights in dark data center" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAsLda_k8d515nBhgrEzjAn7GFA3PzfF24z0VKzyPo3GLFvhOWz0mw2zvif40Y3_Rd5PHT8T0NP5984Lq1FghrsSYlh8Dp8DkgmNkSaEeqApLtnflL7dyykzGANDG0JIUNiKybQ6O0hX3o300s3drwbTc6nFGdUXAPsqSnDk5QupUcwkXdCxE8-YtTwPfBnvOayqoB6WEsS7MeKM-coLQRtaCtQM6ybF8ZCRshQE32PHI5ZyfALZZ3ACS9KQ8VCh-ELwLR-wK3GGIE"/>
+</div>
+<div>
+<div class="font-headline font-bold text-white text-sm">ROOT_USER</div>
+<div class="font-mono-tech text-[10px] text-zinc-500 uppercase tracking-widest">Sovereign Node</div>
+</div>
+</div>
+<button class="w-full bg-surface-container-high border border-outline-variant/20 text-on-surface hover:bg-surface-container-highest transition-colors duration-200 font-mono-tech text-xs uppercase tracking-widest py-2 rounded flex justify-center items-center gap-2">
+<span class="material-symbols-outlined text-sm">add</span> New Instance
+                </button>
+</div>
+<nav class="flex-1 flex flex-col gap-1 font-mono text-xs uppercase tracking-widest mt-4">
+<a class="bg-zinc-900 text-blue-400 border-l-4 border-blue-600 px-4 py-3 flex items-center gap-3 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-lg">hub</span> Topology
+                </a>
+<a class="text-zinc-500 px-4 py-3 flex items-center gap-3 hover:text-zinc-300 hover:bg-zinc-900/50 transition-colors duration-200 border-l-4 border-transparent" href="#">
+<span class="material-symbols-outlined text-lg">security</span> Firewall
+                </a>
+<a class="text-zinc-500 px-4 py-3 flex items-center gap-3 hover:text-zinc-300 hover:bg-zinc-900/50 transition-colors duration-200 border-l-4 border-transparent" href="#">
+<span class="material-symbols-outlined text-lg">database</span> Vault
+                </a>
+<a class="text-zinc-500 px-4 py-3 flex items-center gap-3 hover:text-zinc-300 hover:bg-zinc-900/50 transition-colors duration-200 border-l-4 border-transparent" href="#">
+<span class="material-symbols-outlined text-lg">timeline</span> Router
+                </a>
+<a class="text-zinc-500 px-4 py-3 flex items-center gap-3 hover:text-zinc-300 hover:bg-zinc-900/50 transition-colors duration-200 border-l-4 border-transparent" href="#">
+<span class="material-symbols-outlined text-lg">memory</span> Kernel
+                </a>
+</nav>
+<div class="mt-auto mb-4 flex flex-col gap-1 font-mono text-xs uppercase tracking-widest">
+<a class="text-zinc-500 px-4 py-2 flex items-center gap-3 hover:text-zinc-300 hover:bg-zinc-900/50 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-lg">help</span> Docs
+                </a>
+<a class="text-zinc-500 px-4 py-2 flex items-center gap-3 hover:text-zinc-300 hover:bg-zinc-900/50 transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-lg">contact_support</span> Support
+                </a>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 ml-64 p-8 overflow-y-auto bg-surface relative">
+<!-- Dashboard Header -->
+<div class="flex justify-between items-end mb-10 pb-6 border-b border-outline-variant/10">
+<div>
+<div class="flex items-center gap-3 mb-2">
+<span class="bg-secondary/20 text-secondary px-2 py-0.5 rounded-sm text-[10px] font-mono-tech uppercase tracking-widest flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+                            System Healthy
+                        </span>
+<span class="text-on-surface-variant font-mono-tech text-xs tracking-widest">US-EAST-1</span>
+</div>
+<h1 class="text-5xl font-headline font-bold tracking-tighter text-white">Cloud Orchestration</h1>
+</div>
+<div class="text-right">
+<div class="text-on-surface-variant text-xs font-mono-tech uppercase tracking-widest mb-1">Active Tenant ID</div>
+<div class="text-primary-fixed-dim font-mono-tech text-xl bg-surface-container-lowest px-4 py-2 rounded border border-outline-variant/20 shadow-inner">
+                        TN-88A9-FX24-PRD
+                    </div>
+</div>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-6 auto-rows-min">
+<!-- Action Card: Generate JWT (Span 5) -->
+<div class="col-span-12 xl:col-span-5 bg-gradient-to-b from-primary-container to-on-primary-fixed-variant rounded-lg p-[1px] relative overflow-hidden group shadow-[0_20px_40px_rgba(0,0,0,0.4)]">
+<div class="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&amp;w=600&amp;auto=format&amp;fit=crop')] opacity-10 mix-blend-overlay bg-cover bg-center" data-alt="abstract digital binary data stream falling matrix style dark background"></div>
+<div class="bg-surface-container-high/90 backdrop-blur-xl w-full h-full rounded-lg p-6 flex flex-col relative z-10 agent-scan">
+<div class="flex items-center gap-3 mb-4 text-primary-fixed-dim">
+<span class="material-symbols-outlined text-3xl">key</span>
+<h2 class="font-headline text-xl font-bold tracking-tight text-white">License Authority</h2>
+</div>
+<p class="text-on-surface-variant text-sm mb-8 max-w-sm">
+                            Generate ephemeral JSON Web Tokens for agent nodes. Keys expire in 24 hours by default.
+                        </p>
+<div class="mt-auto space-y-4">
+<div class="bg-surface-container-lowest rounded p-3 border border-outline-variant/20 flex justify-between items-center group-hover:border-primary-container/50 transition-colors">
+<span class="font-mono-tech text-xs text-zinc-500">PAYLOAD_ENV:</span>
+<span class="font-mono-tech text-sm text-white">PRODUCTION</span>
+</div>
+<button class="w-full bg-primary-container text-on-primary-container hover:bg-blue-600 transition-colors duration-300 font-headline font-bold uppercase tracking-widest py-3 rounded text-sm shadow-[0_0_15px_rgba(0,112,243,0.3)]">
+                                Generate JWT License Key
+                            </button>
+</div>
+</div>
+</div>
+<!-- Billing Management (Span 7) -->
+<div class="col-span-12 xl:col-span-7 bg-surface-container rounded-lg p-6 border border-outline-variant/15 flex flex-col shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
+<div class="flex justify-between items-start mb-6">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-zinc-400">account_balance_wallet</span>
+<h2 class="font-headline text-lg font-bold tracking-tight text-white">Billing &amp; Usage</h2>
+</div>
+<span class="bg-surface-container-highest px-3 py-1 rounded text-xs font-mono-tech text-on-surface-variant border border-outline-variant/20">
+                            ENTERPRISE TIER
+                        </span>
+</div>
+<div class="grid grid-cols-2 gap-8 mb-8">
+<div>
+<div class="text-xs font-mono-tech text-zinc-500 mb-1 uppercase tracking-widest">Current Cycle</div>
+<div class="font-headline text-3xl text-white font-bold">$4,290.<span class="text-zinc-500 text-lg">00</span></div>
+</div>
+<div>
+<div class="text-xs font-mono-tech text-zinc-500 mb-1 uppercase tracking-widest">Forecast</div>
+<div class="font-headline text-3xl text-zinc-400 font-bold">$5,100.<span class="text-zinc-600 text-lg">00</span></div>
+</div>
+</div>
+<div class="mt-auto">
+<div class="flex justify-between text-xs font-mono-tech mb-2">
+<span class="text-zinc-400">Compute Allocation</span>
+<span class="text-primary-fixed-dim">78%</span>
+</div>
+<div class="w-full h-2 bg-surface-container-lowest rounded-full overflow-hidden">
+<div class="h-full bg-gradient-to-r from-primary-container to-secondary-container w-[78%] rounded-full shadow-[0_0_10px_rgba(0,165,114,0.5)]"></div>
+</div>
+<div class="mt-4 flex justify-end">
+<button class="text-xs font-headline font-bold text-on-surface uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1">
+                                Manage Subscription <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Telemetry: A2A Messages (Span 6) -->
+<div class="col-span-12 md:col-span-6 bg-surface-container-low rounded-lg p-6 border border-outline-variant/10 hover:bg-surface-container transition-colors duration-300">
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-headline text-sm font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">cell_tower</span>
+                            A2A Message Throughput
+                        </h3>
+<span class="text-secondary text-xs font-mono-tech flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">trending_up</span> 12.4%
+                        </span>
+</div>
+<div class="font-mono-tech text-4xl text-white font-medium mb-1 tracking-tight">
+                        842,901,114
+                    </div>
+<div class="text-xs font-mono-tech text-zinc-600 uppercase tracking-widest">Global Events / 24h</div>
+<!-- Faux Sparkline -->
+<div class="mt-6 h-12 flex items-end gap-1 opacity-50">
+<div class="w-full bg-zinc-800 h-[30%]"></div>
+<div class="w-full bg-zinc-800 h-[45%]"></div>
+<div class="w-full bg-zinc-800 h-[20%]"></div>
+<div class="w-full bg-zinc-800 h-[60%]"></div>
+<div class="w-full bg-zinc-800 h-[80%]"></div>
+<div class="w-full bg-zinc-800 h-[50%]"></div>
+<div class="w-full bg-zinc-800 h-[90%]"></div>
+<div class="w-full bg-primary-container h-[100%] shadow-[0_0_8px_rgba(0,112,243,0.8)]"></div>
+</div>
+</div>
+<!-- Telemetry: Time Travel (Span 6) -->
+<div class="col-span-12 md:col-span-6 bg-surface-container-low rounded-lg p-6 border border-outline-variant/10 hover:bg-surface-container transition-colors duration-300">
+<div class="flex justify-between items-start mb-4">
+<h3 class="font-headline text-sm font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">history</span>
+                            Time Travel Operations
+                        </h3>
+<span class="text-tertiary text-xs font-mono-tech flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">warning</span> High Load
+                        </span>
+</div>
+<div class="font-mono-tech text-4xl text-white font-medium mb-1 tracking-tight">
+                        4,209<span class="text-zinc-600 text-2xl">.ms</span>
+</div>
+<div class="text-xs font-mono-tech text-zinc-600 uppercase tracking-widest">Avg Query Latency</div>
+<!-- Faux Data Density Graphic -->
+<div class="mt-6 grid grid-cols-8 gap-1 opacity-60">
+<div class="h-2 bg-surface-container-highest"></div><div class="h-2 bg-tertiary/50"></div><div class="h-2 bg-surface-container-highest"></div><div class="h-2 bg-surface-container-highest"></div>
+<div class="h-2 bg-surface-container-highest"></div><div class="h-2 bg-surface-container-highest"></div><div class="h-2 bg-tertiary"></div><div class="h-2 bg-surface-container-highest"></div>
+<div class="h-2 bg-surface-container-highest"></div><div class="h-2 bg-surface-container-highest"></div><div class="h-2 bg-surface-container-highest"></div><div class="h-2 bg-tertiary/30"></div>
+<div class="h-2 bg-tertiary/80"></div><div class="h-2 bg-surface-container-highest"></div><div class="h-2 bg-surface-container-highest"></div><div class="h-2 bg-surface-container-highest"></div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Footer (Shared Component) -->
+<footer class="w-full flex justify-between items-center px-8 py-4 bg-zinc-950 border-t border-zinc-900 z-50 relative">
+<div class="font-bold text-white font-headline text-sm">RAQIM OS</div>
+<div class="font-mono text-[10px] tracking-tighter uppercase text-zinc-600">
+            © 2024 RAQIM OS. DETERMINISTIC INDUSTRIAL INTERFACE.
+        </div>
+<div class="flex gap-4 font-mono text-[10px] tracking-tighter uppercase">
+<a class="text-zinc-600 hover:text-zinc-300 opacity-80 hover:opacity-100 transition-opacity" href="#">Security</a>
+<a class="text-zinc-600 hover:text-zinc-300 opacity-80 hover:opacity-100 transition-opacity" href="#">Privacy</a>
+<a class="text-zinc-600 hover:text-zinc-300 opacity-80 hover:opacity-100 transition-opacity" href="#">Terms</a>
+<a class="text-zinc-600 hover:text-zinc-300 opacity-80 hover:opacity-100 transition-opacity flex items-center gap-1" href="#">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span> API Status
+            </a>
+</div>
+</footer>
+</body></html>

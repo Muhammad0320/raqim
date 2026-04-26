@@ -96,7 +96,7 @@ pub struct ApiState {
     pub global_tx_counter: Arc<AtomicU64>,
 
     pub event_tx: Sender<SystemEvent>,
-    pub ui_tx: Sender<AgentState>,
+    pub ui_tx: Sender<Bytes>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -335,6 +335,7 @@ pub async fn sse_firehose_endpoint(
         match msg {
             Ok(agent_state) => {
                 // Convert high-speed rust struct into json for react DAG.
+
                 let json_payload = serde_json::to_string(&agent_state).unwrap();
                 Some(Ok(Event::default().data(json_payload)))
             }
@@ -472,6 +473,11 @@ pub async fn http_ingress_endpoint(
     State(state): State<ApiState>,
     body: Bytes,
 ) -> Result<StatusCode, StatusCode> {
+    let body_clone = body.clone();
+
+    // Fire the raw bytes to any listening web browser
+    let _ = state.ui_tx.send(body_clone.clone());
+
     // Zero copy access the IngressEnvelope
     let ingress_envelope =
         unsafe { rkyv::access_unchecked::<<IngressEnvelope as Archive>::Archived>(&body) };
