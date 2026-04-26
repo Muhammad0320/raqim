@@ -26,7 +26,9 @@ export function DagCanvas() {
     const activeIndex = activeTxId ? thoughtOrder.indexOf(activeTxId) : thoughtOrder.length - 1;
     const isScrubbing = activeTxId !== null && activeIndex < thoughtOrder.length - 1;
 
-    let xOffset = 50;
+    let colIndex = 0;
+    let rowIndex = 0;
+    const NODES_PER_ROW = 4; // Wrap every 4 nodes
 
     thoughtOrder.forEach((txId, i) => {
       const thought = thoughts[txId];
@@ -34,10 +36,16 @@ export function DagCanvas() {
 
       const isFuture = isScrubbing && i > activeIndex;
       
-      let yOffset = 250;
+      // Calculate grid position
+      colIndex = i % NODES_PER_ROW;
+      rowIndex = Math.floor(i / NODES_PER_ROW);
+
+      const xOffset = colIndex * 280 + 50;
+      let yOffset = rowIndex * 180 + 100;
+      
+      // Offset forks slightly vertically
       if (thought.parent_tx_id) {
-        // If it's a fork, push it vertically
-         yOffset = thought.is_a2a_query ? 100 : 400;
+         yOffset += thought.is_a2a_query ? -40 : 40;
       }
 
       newNodes.push({
@@ -67,8 +75,6 @@ export function DagCanvas() {
           style: { stroke: isFuture ? '#222' : 'var(--border-dim)', strokeWidth: 2, strokeDasharray: '4 4' }
         });
       }
-
-      xOffset += 250;
     });
 
     setNodes(newNodes);

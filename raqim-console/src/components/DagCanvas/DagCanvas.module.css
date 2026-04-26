@@ -8,8 +8,8 @@
   background: theme('colors.surface-container');
   border: 1px solid theme('colors.outline-variant');
   border-radius: 4px;
-  padding: 16px;
-  min-width: 220px;
+  padding: 10px 14px;
+  min-width: 180px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
   transition: opacity 0.2s, filter 0.2s;
   color: theme('colors.on-surface');

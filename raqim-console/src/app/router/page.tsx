@@ -15,10 +15,6 @@ export default function RouterPage() {
           {/* State Inspector (Main Panel) */}
           <div className="flex-1 flex flex-col gap-4 overflow-y-auto pr-2 relative">
             <div className="flex items-center justify-between mb-2">
-              <h1 className="font-headline text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-                <span className="material-symbols-outlined text-primary">memory_alt</span>
-                State Inspector
-              </h1>
               <div className="flex items-center gap-2">
                 <span className="bg-secondary/20 text-secondary px-2 py-0.5 rounded-sm text-[10px] font-mono uppercase tracking-widest flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
