@@ -1,3 +1,4 @@
+use axum::body::Bytes;
 use ed25519_dalek::{Signature, SigningKey, Verifier};
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use raqim_core::aegis::AegisGateKeeper;
@@ -338,7 +339,7 @@ async fn main() {
         std::fs::read(&config.public_key_path).expect("Missing Enterprise Public Key");
     let decoding_key = Arc::new(jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content).unwrap());
 
-    let (ui_tx, _) = broadcast::channel::<AgentState>(1000);
+    let (ui_tx, _) = broadcast::Sender::<Bytes>(1000);
 
     let api_state = ApiState {
         config: config.clone(),
@@ -437,12 +438,6 @@ async fn main() {
                 task_aegis.trigger_quarantine(&agent_hex, path_intent, "Cryptographic Spoofing");
                 return;
             }
-
-            let state_struct =
-                rkyv::deserialize::<AgentState, rkyv::rancor::Error>(&archived_ingress.state)
-                    .unwrap();
-
-            let _ = task_ui_tx.send(state_struct.clone());
 
             // --- The Raqim Cascade ---
             execute_raqim_cascade(
