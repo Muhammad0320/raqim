@@ -6,42 +6,49 @@ import { RealityForkDrawer } from '../../components/TimeMachine/RealityForkDrawe
 import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
 
 export default function RouterPage() {
-  // Initialize the stream hook to start filling the Zustand store
   useSwarmStream();
 
   return (
     <MainLayout title="State Inspector">
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-          {/* Main DAG Area */}
-          <div style={{ flex: 1, position: 'relative' }}>
-             {/* We can place stats overlays here */}
-             <div style={{ position: 'absolute', top: 24, left: 24, zIndex: 10, display: 'flex', gap: 24 }}>
-                <div style={{ background: 'var(--bg-surface)', padding: 16, border: '1px solid var(--border-dim)', borderRadius: 4 }}>
-                   <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 8 }}>SYSTEM ENTROPY</div>
-                   <div style={{ fontSize: 24, fontWeight: 600, color: 'var(--text-primary)' }}>
-                     8.442 <span style={{ fontSize: 12, color: 'var(--neon-amber)' }}>nats/symbol</span>
+      <div className="flex flex-col h-full w-full">
+        <div className="flex flex-1 overflow-hidden w-full relative">
+          
+          <div className="flex-1 relative w-full h-full">
+             {/* Stats Overlays */}
+             <div className="absolute top-6 left-6 z-10 flex gap-6 pointer-events-none">
+                <div className="bg-surface/80 backdrop-blur p-4 border border-white/5 rounded min-w-[160px]">
+                   <div className="text-[10px] text-muted-DEFAULT tracking-widest mb-2 flex items-center justify-between">
+                     SYSTEM ENTROPY <span className="text-neon-amber">▲</span>
+                   </div>
+                   <div className="text-3xl font-bold tracking-tight">
+                     8.442 <span className="text-[11px] font-normal text-neon-amber font-mono tracking-wider ml-1">nats/symbol</span>
                    </div>
                 </div>
-                <div style={{ background: 'var(--bg-surface)', padding: 16, border: '1px solid var(--border-dim)', borderRadius: 4, minWidth: 200 }}>
-                   <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 8 }}>NETWORK MESH</div>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                     <span className="text-muted">Peers</span> <span className="text-mono">1,024</span>
+                <div className="bg-surface/80 backdrop-blur p-4 border border-white/5 rounded min-w-[200px]">
+                   <div className="text-[10px] text-muted-DEFAULT tracking-widest mb-3 flex items-center justify-between">
+                     NETWORK MESH <span className="text-white">Active</span>
                    </div>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
-                     <span className="text-muted">Latency</span> <span className="text-mono text-green">12ms</span>
+                   <div className="flex justify-between text-xs mb-1">
+                     <span className="text-muted-DEFAULT font-semibold">Peers</span> <span className="font-mono text-white">1,024</span>
+                   </div>
+                   <div className="flex justify-between text-xs mb-1">
+                     <span className="text-muted-DEFAULT font-semibold">Throughput</span> <span className="font-mono text-white">4.2 GB/s</span>
+                   </div>
+                   <div className="flex justify-between text-xs">
+                     <span className="text-muted-DEFAULT font-semibold">Latency</span> <span className="font-mono text-green-500">12ms</span>
                    </div>
                 </div>
              </div>
              
-             <DagCanvas />
+             {/* The React Flow Canvas requires the parent to have strict dimensions */}
+             <div className="absolute inset-0 pointer-events-auto">
+               <DagCanvas />
+             </div>
           </div>
 
-          {/* Drawer (only appears or holds space if activeTxId is not live) */}
           <RealityForkDrawer />
         </div>
 
-        {/* Bottom Scrubber */}
         <NLEScrubber />
       </div>
     </MainLayout>

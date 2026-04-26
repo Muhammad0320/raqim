@@ -1,4 +1,3 @@
-use anyhow::Ok;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Query};
 use axum::response::Response;
