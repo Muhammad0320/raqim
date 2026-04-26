@@ -36,7 +36,7 @@ use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge, telemetry::TelemetryEngine,
 };
-use crate::{IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
+use crate::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")] // Enables brilliant json parsing {"type": "AskQuestion", }
@@ -485,19 +485,21 @@ pub async fn http_ingress_endpoint(
     let ingress_envelope =
         unsafe { rkyv::access_unchecked::<<IngressEnvelope as Archive>::Archived>(&body) };
 
-    let state_slice = unsafe {
+    let archived_state = unsafe {
         rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(
-            &ingress_envelope.state_bytes,
+            ingress_envelope.state_bytes.as_slice(),
         )
     };
 
-    let agent_hex = hex::encode(state_slice.agent_id.unwrap().as_slice());
+    let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
     let path_intent = ingress_envelope.intent_path.as_str();
 
     // O(1) Aegis Policy Check.
     if !state.aegis.enforce_aegis_policy(&agent_hex, path_intent) {
         return Err(StatusCode::FORBIDDEN);
     }
+
+    let mut sig_bytes = [0u8; 64];
 
     // O(1) Zero-Copy memory mapping:
     let state_ptr = &ingress_envelope.state as *const _ as *const u8;

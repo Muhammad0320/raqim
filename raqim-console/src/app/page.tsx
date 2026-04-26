@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import TopologyPage from './topology/page';
 
 export default function RootPage() {
-  redirect('/topology');
+  return <TopologyPage />;
 }
