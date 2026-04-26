@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 
 export function MainLayout({ children, title }: { children: React.ReactNode, title: string }) {
   const pathname = usePathname();
-  const isTopology = pathname === '/topology' || pathname === '/';
+  const isTopology = pathname === '/topology';
 
   return (
     <div className="bg-surface text-on-surface antialiased h-screen w-screen overflow-hidden flex flex-col selection:bg-primary-container/30">
@@ -40,7 +40,7 @@ export function MainLayout({ children, title }: { children: React.ReactNode, tit
         
         {/* Render different container background logic based on page to match original HTML logic */}
         {isTopology ? (
-           <main className="flex-1 ml-64 p-8 overflow-y-auto bg-surface relative">
+           <main className="flex-1 ml-64 flex flex-col bg-surface relative overflow-hidden">
               {children}
            </main>
         ) : (

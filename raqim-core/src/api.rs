@@ -13,6 +13,7 @@ use axum::response::sse::{Event, Sse};
 use dashmap::DashMap;
 use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
+use std::arch;
 use std::convert::Infallible;
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -485,11 +486,10 @@ pub async fn http_ingress_endpoint(
     let ingress_envelope =
         unsafe { rkyv::access_unchecked::<<IngressEnvelope as Archive>::Archived>(&body) };
 
-    let archived_state = unsafe {
-        rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(
-            ingress_envelope.state_bytes.as_slice(),
-        )
-    };
+    let state_bytes = ingress_envelope.state_bytes.as_slice();
+
+    let archived_state =
+        unsafe { rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(state_bytes) };
 
     let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
     let path_intent = ingress_envelope.intent_path.as_str();
@@ -500,19 +500,11 @@ pub async fn http_ingress_endpoint(
     }
 
     let mut sig_bytes = [0u8; 64];
-
-    // O(1) Zero-Copy memory mapping:
-    let state_ptr = &ingress_envelope.state as *const _ as *const u8;
-    let state_len = std::mem::size_of_val(&ingress_envelope.state);
-    let state_bytes = unsafe { std::slice::from_raw_parts(state_ptr, state_len) };
-
-    let mut sig_bytes = [0u8; 64];
-    sig_bytes.copy_from_slice(ingress_envelope.signature.as_slice());
-
+    sig_bytes.clone_from_slice(ingress_envelope.signature.as_slice());
     // Crytographic Perimeter
     if !state
         .aegis
-        .verify_agent_signature(&agent_hex, &state_bytes, &sig_bytes)
+        .verify_agent_signature(&agent_hex, state_bytes, &sig_bytes)
     {
         return Err(StatusCode::UNAUTHORIZED);
     }
@@ -535,9 +527,13 @@ pub async fn http_ingress_endpoint(
             rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&body_clone)
         };
 
+        let state = unsafe {
+            rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(&envelope.state_bytes)
+        };
+
         // Pass
         execute_raqim_cascade(
-            &envelope.state,
+            &state,
             task_brain,
             task_axon,
             task_wal,

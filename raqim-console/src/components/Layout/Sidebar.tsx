@@ -21,11 +21,19 @@ export function Sidebar() {
           </div>
           <nav className="flex flex-col gap-1 px-3">
             <Link 
+              href="/" 
+              className={`px-4 py-3 flex items-center gap-3 transition-colors duration-200 rounded-sm ${pathname === '/' ? 'bg-zinc-900 text-blue-400 border-l-4 border-blue-600' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'}`}
+            >
+              <span className="material-symbols-outlined text-lg">dashboard</span>
+              <span className={`font-mono text-xs uppercase tracking-widest mt-0.5 ${pathname === '/' ? 'font-bold' : ''}`}>Dashboard</span>
+            </Link>
+
+            <Link 
               href="/topology" 
-              className={`px-4 py-3 flex items-center gap-3 transition-colors duration-200 rounded-sm ${pathname === '/topology' || pathname === '/' ? 'bg-zinc-900 text-blue-400 border-l-4 border-blue-600' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'}`}
+              className={`px-4 py-3 flex items-center gap-3 transition-colors duration-200 rounded-sm ${pathname === '/topology' ? 'bg-zinc-900 text-blue-400 border-l-4 border-blue-600' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/50'}`}
             >
               <span className="material-symbols-outlined text-lg">hub</span>
-              <span className={`font-mono text-xs uppercase tracking-widest mt-0.5 ${pathname === '/topology' || pathname === '/' ? 'font-bold' : ''}`}>Topology</span>
+              <span className={`font-mono text-xs uppercase tracking-widest mt-0.5 ${pathname === '/topology' ? 'font-bold' : ''}`}>Topology</span>
             </Link>
             
             <Link 
