@@ -49,4 +49,4 @@ dashmap = "6.1.0"
 
 axum = { version = "0.7.9", features = ["ws", "macros", "multipart"] }
 futures-util = "0.3"
-tokio-stream = "0.1.18"
+tokio-stream = { version = "0.1.18", features = ["sync"] }
