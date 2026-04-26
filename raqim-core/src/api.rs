@@ -322,7 +322,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct UiThought {
     pub agent_hex: String,
     pub intent_path: String,
