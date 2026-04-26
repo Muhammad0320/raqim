@@ -36,7 +36,7 @@ use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge, telemetry::TelemetryEngine,
 };
-use crate::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
+use crate::{IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")] // Enables brilliant json parsing {"type": "AskQuestion", }
@@ -96,7 +96,7 @@ pub struct ApiState {
     pub global_tx_counter: Arc<AtomicU64>,
 
     pub event_tx: Sender<SystemEvent>,
-    pub ui_tx: Sender<Bytes>,
+    pub ui_tx: Sender<UiThought>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
