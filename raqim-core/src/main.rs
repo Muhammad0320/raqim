@@ -411,9 +411,17 @@ async fn main() {
                 rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&payload_buf)
             };
 
-            let agent_hex = hex::encode(archived_ingress.state.agent_id.unwrap().as_slice());
             let path_intent = archived_ingress.intent_path.as_str();
 
+            // ZERO-COPY SLICE EXTRACTION
+            let state_slice = archived_ingress.state_bytes.as_slice();
+
+            // ZERO COPY CAST
+            let archived_state = unsafe {
+                rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(&state_slice)
+            };
+
+            let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
             // 1. Checking aegis first before doing any expensive math or hitting the wal.
             if !task_aegis.enforce_aegis_policy(&agent_hex, path_intent) {
                 eprintln!(
@@ -423,15 +431,11 @@ async fn main() {
                 return;
             }
 
-            // // We verify signature against the actual raw bytes of the state
-            let state_bytes =
-                rkyv::to_bytes::<rkyv::rancor::Error>(&archived_ingress.state).unwrap();
+            // TRUE CRYPTOGRAPHIC VERIFIICATION (using the exact slice)
+            let mut sig_bytes = [0u8; 64];
+            sig_bytes.copy_from_slice(archived_ingress.signature.as_slice());
 
-            if !task_aegis.verify_agent_signature(
-                &agent_hex,
-                state_bytes,
-                &archived_ingress.signature,
-            ) {
+            if !task_aegis.verify_agent_signature(&agent_hex, state_slice, &sig_bytes) {
                 eprintln!(" [SECURITY] Invalid Ed25519 signature. Dropping TCP packet.");
                 return;
             }

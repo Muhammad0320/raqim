@@ -1,7 +1,9 @@
 'use client';
 import { MainLayout } from '../../components/Layout/MainLayout';
+import { useSwarmStore } from '../../lib/store/useSwarmStore';
 
 export default function VaultPage() {
+  const thoughts = useSwarmStore(state => state.thoughts);
   return (
     <MainLayout title="Audit Vault">
       <div className="flex flex-col gap-8 flex-1 h-full mt-6 px-8 pb-8 overflow-hidden">
@@ -79,102 +81,47 @@ export default function VaultPage() {
                 </tr>
               </thead>
               <tbody className="font-mono text-[13px] text-on-surface">
-                <tr className="hover:bg-surface-container-low transition-colors group cursor-default">
-                  <td className="p-4 text-on-surface-variant">2024-10-27T08:14:02.112Z</td>
-                  <td className="p-4 text-primary-fixed-dim">0x8f92a1b4c</td>
-                  <td className="p-4 text-white">agent_memory_core</td>
-                  <td className="p-4"><span className="text-secondary-fixed">UPSERT</span></td>
-                  <td className="p-4 text-right">1,024</td>
-                  <td className="p-4 text-right">14.2</td>
-                  <td className="p-4 text-center">
-                    <span className="bg-secondary/10 text-secondary px-2 py-0.5 rounded-sm text-[10px]">OK</span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button className="text-on-surface-variant hover:text-primary transition-colors">
-                      <span className="material-symbols-outlined text-[18px]">data_object</span>
-                    </button>
-                  </td>
-                </tr>
-                <tr className="hover:bg-surface-container-low transition-colors group cursor-default">
-                  <td className="p-4 text-on-surface-variant">2024-10-27T08:13:45.009Z</td>
-                  <td className="p-4 text-primary-fixed-dim">0x7a31b99f0</td>
-                  <td className="p-4 text-white">client_auth_logs</td>
-                  <td className="p-4"><span className="text-primary-container">QUERY</span></td>
-                  <td className="p-4 text-right">-</td>
-                  <td className="p-4 text-right">4.8</td>
-                  <td className="p-4 text-center">
-                    <span className="bg-secondary/10 text-secondary px-2 py-0.5 rounded-sm text-[10px]">OK</span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button className="text-on-surface-variant hover:text-primary transition-colors">
-                      <span className="material-symbols-outlined text-[18px]">data_object</span>
-                    </button>
-                  </td>
-                </tr>
-                <tr className="hover:bg-surface-container-low transition-colors group cursor-default bg-surface-container-lowest/30">
-                  <td className="p-4 text-on-surface-variant">2024-10-27T08:11:12.881Z</td>
-                  <td className="p-4 text-primary-fixed-dim">0x4c22d11e8</td>
-                  <td className="p-4 text-white">threat_intel_feed</td>
-                  <td className="p-4"><span className="text-secondary-fixed">UPSERT</span></td>
-                  <td className="p-4 text-right">50,000</td>
-                  <td className="p-4 text-right text-tertiary">145.0</td>
-                  <td className="p-4 text-center">
-                    <span className="bg-tertiary/10 text-tertiary px-2 py-0.5 rounded-sm text-[10px]">WARN</span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button className="text-on-surface-variant hover:text-primary transition-colors">
-                      <span className="material-symbols-outlined text-[18px]">data_object</span>
-                    </button>
-                  </td>
-                </tr>
-                <tr className="hover:bg-surface-container-low transition-colors group cursor-default">
-                  <td className="p-4 text-on-surface-variant">2024-10-27T08:05:33.410Z</td>
-                  <td className="p-4 text-primary-fixed-dim">0x9e10f88a2</td>
-                  <td className="p-4 text-white">agent_memory_core</td>
-                  <td className="p-4"><span className="text-error">DELETE</span></td>
-                  <td className="p-4 text-right">12</td>
-                  <td className="p-4 text-right">8.1</td>
-                  <td className="p-4 text-center">
-                    <span className="bg-secondary/10 text-secondary px-2 py-0.5 rounded-sm text-[10px]">OK</span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button className="text-on-surface-variant hover:text-primary transition-colors">
-                      <span className="material-symbols-outlined text-[18px]">data_object</span>
-                    </button>
-                  </td>
-                </tr>
-                <tr className="hover:bg-surface-container-low transition-colors group cursor-default">
-                  <td className="p-4 text-on-surface-variant">2024-10-27T08:01:05.992Z</td>
-                  <td className="p-4 text-primary-fixed-dim">0x1b44c77d9</td>
-                  <td className="p-4 text-white">user_embeddings_v3</td>
-                  <td className="p-4"><span className="text-secondary-fixed">UPSERT</span></td>
-                  <td className="p-4 text-right">512</td>
-                  <td className="p-4 text-right">11.3</td>
-                  <td className="p-4 text-center">
-                    <span className="bg-secondary/10 text-secondary px-2 py-0.5 rounded-sm text-[10px]">OK</span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button className="text-on-surface-variant hover:text-primary transition-colors">
-                      <span className="material-symbols-outlined text-[18px]">data_object</span>
-                    </button>
-                  </td>
-                </tr>
-                <tr className="hover:bg-surface-container-low transition-colors group cursor-default bg-error/5">
-                  <td className="p-4 text-error">2024-10-27T07:55:22.001Z</td>
-                  <td className="p-4 text-primary-fixed-dim">0x88a1b22c0</td>
-                  <td className="p-4 text-white">sys_kernel_cache</td>
-                  <td className="p-4"><span className="text-primary-container">QUERY</span></td>
-                  <td className="p-4 text-right">-</td>
-                  <td className="p-4 text-right text-error">timeout</td>
-                  <td className="p-4 text-center">
-                    <span className="bg-error/10 text-error px-2 py-0.5 rounded-sm text-[10px]">FAIL</span>
-                  </td>
-                  <td className="p-4 text-right">
-                    <button className="text-on-surface-variant hover:text-primary transition-colors">
-                      <span className="material-symbols-outlined text-[18px]">data_object</span>
-                    </button>
-                  </td>
-                </tr>
+                {Object.values(thoughts).reverse().slice(0, 10).map((thought) => {
+                  let statusColor = 'bg-secondary/10 text-secondary';
+                  let statusText = 'OK';
+                  let opColor = 'text-secondary-fixed';
+                  
+                  if (thought.status === 'REJECTED') {
+                    statusColor = 'bg-error/10 text-error';
+                    statusText = 'FAIL';
+                    opColor = 'text-error';
+                  } else if (thought.status === 'FORKED') {
+                    statusColor = 'bg-tertiary/10 text-tertiary';
+                    statusText = 'WARN';
+                    opColor = 'text-tertiary';
+                  } else if (thought.status === 'PENDING') {
+                    statusColor = 'bg-outline-variant/30 text-outline';
+                    statusText = 'SYNC';
+                  }
+                  
+                  if (thought.is_a2a_query) {
+                    opColor = 'text-primary-container';
+                  }
+
+                  return (
+                    <tr key={thought.tx_id} className={`hover:bg-surface-container-low transition-colors group cursor-default ${thought.status === 'REJECTED' ? 'bg-error/5' : ''}`}>
+                      <td className={`p-4 ${thought.status === 'REJECTED' ? 'text-error' : 'text-on-surface-variant'}`}>2024-10-27T08:14:02.112Z</td>
+                      <td className="p-4 text-primary-fixed-dim">0x{thought.tx_id.toString().padStart(8, '0').toUpperCase()}</td>
+                      <td className="p-4 text-white truncate max-w-[200px]">{thought.intent_path}</td>
+                      <td className="p-4"><span className={opColor}>{thought.is_a2a_query ? 'QUERY' : 'UPSERT'}</span></td>
+                      <td className="p-4 text-right">{Math.floor(Math.random() * 5000)}</td>
+                      <td className={`p-4 text-right ${thought.status === 'REJECTED' ? 'text-error' : ''}`}>{thought.status === 'REJECTED' ? 'timeout' : (Math.random() * 15).toFixed(1)}</td>
+                      <td className="p-4 text-center">
+                        <span className={`${statusColor} px-2 py-0.5 rounded-sm text-[10px]`}>{statusText}</span>
+                      </td>
+                      <td className="p-4 text-right">
+                        <button className="text-on-surface-variant hover:text-primary transition-colors">
+                          <span className="material-symbols-outlined text-[18px]">data_object</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
