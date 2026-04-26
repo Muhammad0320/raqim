@@ -485,7 +485,13 @@ pub async fn http_ingress_endpoint(
     let ingress_envelope =
         unsafe { rkyv::access_unchecked::<<IngressEnvelope as Archive>::Archived>(&body) };
 
-    let agent_hex = hex::encode(ingress_envelope.state.agent_id.unwrap().as_slice());
+    let state_slice = unsafe {
+        rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(
+            &ingress_envelope.state_bytes,
+        )
+    };
+
+    let agent_hex = hex::encode(state_slice.agent_id.unwrap().as_slice());
     let path_intent = ingress_envelope.intent_path.as_str();
 
     // O(1) Aegis Policy Check.
