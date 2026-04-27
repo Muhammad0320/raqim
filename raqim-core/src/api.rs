@@ -13,7 +13,6 @@ use axum::response::sse::{Event, Sse};
 use dashmap::DashMap;
 use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
-use std::arch;
 use std::convert::Infallible;
 use tokio_stream::wrappers::BroadcastStream;
 

@@ -1,5 +1,5 @@
 use ed25519_dalek::{Signer, SigningKey};
-use future_utils::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
@@ -189,7 +189,7 @@ impl ServerHandler for RaqimHandler {
                         intent_path,
                         public_key: self.pub_key_bytes,
                         signature,
-                        state_bytes: state_bytes.to_vec(),
+                        state_bytes: state_bytes.into_vec(),
                     };
 
                     // Zero-copy serialize the state
@@ -233,7 +233,8 @@ impl ServerHandler for RaqimHandler {
                         .map_err(|e| mcp_rust_sdk::Error::Other(e.to_string()))?;
 
                     if response.status().is_success() {
-                        let memories: Vec<String> = response.json().await.unwrap_or_default();
+                        let memories: Vec<String> =
+                            response.json::<Vec<String>>().await.unwrap_or_default();
                         return Ok(
                             json!({"content": [{"type": "text", "text": format!("Retrieved:\n{}", memories.join("\n"))}]}),
                         );
