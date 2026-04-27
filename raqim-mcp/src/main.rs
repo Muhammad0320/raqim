@@ -262,14 +262,7 @@ impl ServerHandler for RaqimHandler {
                         signature: signature.to_vec(),
                     };
 
-                    // SEND THE REQUEST
-                    let json_payload = serde_json::to_string(&ask_msg).unwrap();
-                    ws_stream
-                        .send(tokio_tungstenite::tungstenite::Message::Text(json_payload))
-                        .await
-                        .map_error(|e| mcp_rust_sdk::Error::Other(e.to_string()))?;
-
-                    // 3. Connect to RQM Daemon Websocket.
+                    // 2. Connect to RQM Daemon Websocket.
                     let ws_url = self.daemon_http_url.replace("http", "ws") + "/v1/mcp/ws";
 
                     let (mut ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
@@ -277,6 +270,13 @@ impl ServerHandler for RaqimHandler {
                         .map_err(|e| {
                             mcp_rust_sdk::Error::Other(format!("WS Connect Failed: {}", e))
                         })?;
+
+                    // 3. SEND THE REQUEST
+                    let json_payload = serde_json::to_string(&ask_msg).unwrap();
+                    ws_stream
+                        .send(tokio_tungstenite::tungstenite::Message::Text(json_payload))
+                        .await
+                        .map_error(|e| mcp_rust_sdk::Error::Other(e.to_string()))?;
 
                     // 4. AWAIT THE RESPONSE (With Timeout)
                     let response = tokio::time::timeout(Duration::from_secs(15), async {
