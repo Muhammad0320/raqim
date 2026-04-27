@@ -274,9 +274,11 @@ impl ServerHandler for RaqimHandler {
                     // 3. SEND THE REQUEST
                     let json_payload = serde_json::to_string(&ask_msg).unwrap();
                     ws_stream
-                        .send(tokio_tungstenite::tungstenite::Message::Text(json_payload))
+                        .send(tokio_tungstenite::tungstenite::Message::Text(
+                            json_payload.into(),
+                        ))
                         .await
-                        .map_error(|e| mcp_rust_sdk::Error::Other(e.to_string()))?;
+                        .map_err(|e| mcp_rust_sdk::Error::Other(e.to_string()))?;
 
                     // 4. AWAIT THE RESPONSE (With Timeout)
                     let response = tokio::time::timeout(Duration::from_secs(15), async {
