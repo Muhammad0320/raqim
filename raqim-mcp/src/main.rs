@@ -121,8 +121,6 @@ impl ServerHandler for RaqimHandler {
 
             // LLM says: "Execute this tool!"
             "tools/call" => {
-                let config = RaqimConfig::load_or_bootstrap();
-
                 let p = params.ok_or_else(|| {
                     mcp_rust_sdk::Error::protocol(ErrorCode::InvalidParams, "Missing params")
                 })?;
@@ -275,7 +273,7 @@ impl ServerHandler for RaqimHandler {
 
                     // 4. AWAIT THE RESPONSE (With Timeout)
                     let response = tokio::time::timeout(Duration::from_secs(15), async {
-                        while let Some(msg) = ws_stream.next().await {
+                        while let Some(Ok(msg)) = ws_stream.next().await {
                             if let tokio_tungstenite::tungstenite::Message::Text(text) = msg {
                                 if let Ok(WsMessage::QuestionAnswered {
                                     request_id: incoming_id,
