@@ -8,7 +8,6 @@ use rand::rngs::OsRng;
 use raqim_core::api::WsMessage;
 use raqim_core::config::RaqimConfig;
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 
@@ -191,7 +190,7 @@ impl ServerHandler for RaqimHandler {
                         intent_path,
                         public_key: self.pub_key_bytes,
                         signature,
-                        state,
+                        state_bytes,
                     };
 
                     // Zero-copy serialize the state
