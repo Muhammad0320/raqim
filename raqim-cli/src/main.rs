@@ -1,10 +1,9 @@
 use clap::{Parser, Subcommand};
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use reqwest::Client;
 use serde_json::json;
 use std::fs;
-use std::path::Path;
 
 #[derive(Parser)]
 #[command(name = "raqim", about = "Raqim OS Adminstration CLI", version = "1.0")]
@@ -135,7 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .send()
                 .await?;
 
-            if res.status().is_success {
+            if res.status().is_success() {
                 println!("🔓 Quarantine lifted for agent: {}", agent_id)
             } else {
                 eprintln!("❌ Failed to lift quarantine: {}", res.status())
@@ -149,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             fork_config,
         } => {
             let mut payload =
-                json!({ "agent_id": agent_id, "target_tx_id": tx_id, fork_config: null });
+                json!({ "agent_id": agent_id, "target_tx_id": tx_id, "fork_config": null });
 
             // Override is the admin provides a JSON file with overrides
             if let Some(config_path) = fork_config {
