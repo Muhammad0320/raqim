@@ -1,4 +1,3 @@
-use rkyv::rancor::Error;
 use raqim_core::AgentState;
 
 #[link(wasm_import_module = "raqim_env")]
@@ -8,7 +7,7 @@ unsafe extern "C" {
     fn host_get_time() -> i64;
     fn host_request_entropy() -> u64;
     
-    fn host_fetch_url(url_ptr: *const u8, url_len: usize, out_ptr: *mut u8, out_len: usize ) -> i32;
+    fn host_fetch_url(url_ptr: *const u8, url_len: usize ) -> i32;
     
     fn host_ask_agent(
         cap_ptr: *const u8, cap_len: usize, 
@@ -91,7 +90,8 @@ impl Raqim {
 
     /// Commits a fact to the permanent Loro CRDT
     pub fn emit_thought(state: &AgentState) {
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(state);
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(state).expect("FATAL: Failed to serialize AgentState");
+        
         unsafe {
             host_emit_thought(bytes.as_ptr(), bytes.len());
         }
@@ -100,7 +100,7 @@ impl Raqim {
     /// Exposes a capability to the global swarm. 
     /// This enters an infinite Zero-cpu listening loop
     pub fn server_capability<F>(capability: &str, mut handler: F)
-    where f: FnMut(&[u8]) -> Vec<u8> {
+    where F: FnMut(&[u8]) -> Vec<u8> {
 
         unsafe { host_register_capability(capability.as_ptr(), capability.len() ); }
 
