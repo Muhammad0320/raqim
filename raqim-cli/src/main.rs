@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use reqwest::Client;
 use serde_json::json;
 use std::fs;

@@ -1,5 +1,5 @@
 use ed25519_dalek::{Signer, SigningKey};
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
@@ -262,7 +262,14 @@ impl ServerHandler for RaqimHandler {
                         signature: signature.to_vec(),
                     };
 
-                    // 2. Connect to RQM Daemon Websocket.
+                    // SEND THE REQUEST
+                    let json_payload = serde_json::to_string(&ask_msg).unwrap();
+                    ws_stream
+                        .send(tokio_tungstenite::tungstenite::Message::Text(json_payload))
+                        .await
+                        .map_error(|e| mcp_rust_sdk::Error::Other(e.to_string()))?;
+
+                    // 3. Connect to RQM Daemon Websocket.
                     let ws_url = self.daemon_http_url.replace("http", "ws") + "/v1/mcp/ws";
 
                     let (mut ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
