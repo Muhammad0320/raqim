@@ -4,7 +4,6 @@ use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
-use rand::rngs::OsRng;
 use raqim_core::api::WsMessage;
 use raqim_core::config::RaqimConfig;
 use serde_json::{Value, json};
@@ -190,7 +189,7 @@ impl ServerHandler for RaqimHandler {
                         intent_path,
                         public_key: self.pub_key_bytes,
                         signature,
-                        state_bytes,
+                        state_bytes: state_bytes.to_vec(),
                     };
 
                     // Zero-copy serialize the state
