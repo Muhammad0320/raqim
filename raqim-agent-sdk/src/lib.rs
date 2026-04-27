@@ -2,10 +2,9 @@ use rkyv::rancor::Error;
 use raqim_core::AgentState;
 
 #[link(wasm_import_module = "raqim_env")]
-extern "C" {
+unsafe extern "C" {
 
     fn host_emit_thought(ptr: *const u8, len: usize);
-    fn host_register_capability(ptr: *const u8, len: usize);
     fn host_get_time() -> i64;
     fn host_request_entropy() -> u64;
     
@@ -21,7 +20,7 @@ extern "C" {
 
         // The A2A Listener Suite
         fn host_register_capability(cap_ptr: *const u8, cap_len: usize); 
-        fn host_await_a2a_question((out_ptr: *const u8, max_len: i32)) -> 132;
+        fn host_await_a2a_question((out_ptr: *const u8, max_len: i32)) -> i32;
         fn host_reply_a2a(ptr: *const u8, len: usize);
     
 }
