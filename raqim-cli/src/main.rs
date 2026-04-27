@@ -65,7 +65,7 @@ enum AegisAction {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    http_client = Client::builder().build()?;
+    let http_client = Client::builder().build()?;
 
     // Helper Closure to inject the Enterprise JWT.
     let get_auth = || -> String {
@@ -131,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let res = http_client
                 .post(&url)
                 .header("Authorization", format!("Bearer {}", get_auth()))
-                .json(&json!("agent_id:", agent_id))
+                .json(&json!({"agent_id": agent_id}))
                 .send()
                 .await?;
 
