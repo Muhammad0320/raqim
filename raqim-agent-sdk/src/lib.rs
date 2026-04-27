@@ -1,3 +1,4 @@
+use rkyv::rancor::Error;
 use raqim_core::AgentState;
 
 #[link(wasm_import_module = "raqim_env")]
