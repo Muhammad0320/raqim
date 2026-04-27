@@ -1,5 +1,5 @@
-use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
-use futures_util::{SinkExt, StreamExt};
+use ed25519_dalek::{Signer, SigningKey};
+use future_utils::{SinkExt, StreamExt};
 use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
