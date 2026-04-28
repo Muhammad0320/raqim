@@ -3,6 +3,7 @@ use crossterm::{
     event::{self, Event, KeyCode},
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use raqim_core::{OpLog, SystemEvent, config::RaqimConfig};
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, List, ListItem, Paragraph},
@@ -11,7 +12,6 @@ use std::{
     io::{Result, stdout},
     time::Duration,
 };
-use raqim_core::{OpLog, SystemEvent, config::RaqimConfig};
 use tokio::sync::mpsc::channel;
 
 // 1. The State machine
@@ -98,6 +98,15 @@ async fn main() -> Result<()> {
                         archived_count
                     ));
                 }
+
+                SystemEvent::AegisInterdiction {
+                    agent_id,
+                    attempted_path,
+                    rule_broken,
+                    payload,
+                } => {}
+
+                SystemEvent::SystemBoot { message } => {}
             }
 
             if app.ledger_stream.len() > 100 {

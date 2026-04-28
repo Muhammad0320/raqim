@@ -83,7 +83,9 @@ pub fn listen_for_local_thoughts(
 
                 // The Circuit Breaker
                 if axon.verify_foreign_thoughts(&archived_log) {
-                    brain.assimilate_foreign_thought(&archived_log.delta.as_slice());
+                    brain
+                        .assimilate_foreign_thought(&archived_log.delta.as_slice())
+                        .expect("FATAL: failed to assimilate thought");
                     println!(
                         "Cortex: Assimilated thought from Agent: {:?}",
                         archived_log.agent_id.as_slice()

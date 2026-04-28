@@ -21,7 +21,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 use uuid::Uuid;
 
-use crate::api::UiThought;
 use crate::telemetry::TelemetryEngine;
 use crate::{
     axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine, state::SwarmState,
