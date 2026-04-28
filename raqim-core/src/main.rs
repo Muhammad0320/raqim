@@ -266,6 +266,7 @@ async fn main() {
                             telemetry: tele_clone,
                             a2a_response_cache: Vec::new(),
                             http_response_cache: Vec::new(),
+                            a2a_incoming_cache: Vec::new(),
 
                             a2a_receiver: None,
                             a2a_reply_channel: None,

@@ -546,6 +546,7 @@ impl MemoryRouter {
             a2a_reply_channel: None,
             a2a_response_cache: Vec::new(),
             http_response_cache: Vec::new(),
+            a2a_incoming_cache: Vec::new(),
         };
 
         // 7. Boot the Forked reality into the OS thread.
