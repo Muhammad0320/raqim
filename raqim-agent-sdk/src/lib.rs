@@ -117,7 +117,7 @@ impl Raqim {
                 // Pass 2: Allocate perfectly sized memory and pull the data
                 let mut question_buffer = vec![0u8; exact_len as usize];
                 unsafe {
-                    host_pull_a2a_response(question_buffer.as_mut_ptr());
+                    host_pull_a2a_question(question_buffer.as_mut_ptr());
                 }
 
                 // Developer's AI logic executes here!

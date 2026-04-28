@@ -1,3 +1,4 @@
+use ::raqim_core::{AgentState, AgentStatus, IngressEnvelope};
 use ed25519_dalek::{Signer, SigningKey};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -11,13 +12,16 @@ struct RaqimCryptoCore {
     pub_key_bytes: [u8; 32],
 }
 
-#[pymethod]
+#[pymethods]
 impl RaqimCryptoCore {
     #[new]
     fn new(pem_path: &str) -> PyResult<Self> {
+        // PyO3 automatically translate std::io::Error from fs::read into python IOError!
         let key_bytes = std::fs::read(pem_path)?;
         let signing_key = SigningKey::from_bytes(key_bytes.as_slice().try_into().unwrap());
-        let pub_key_bytes = signing_key.verifying_key.to_bytes();
+
+        let pub_key_bytes = signing_key.verifying_key().to_bytes();
+
         Ok(Self {
             signing_key,
             pub_key_bytes,
@@ -56,11 +60,11 @@ impl RaqimCryptoCore {
         let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&state).unwrap();
         let signature = self.signing_key.sign(&state_bytes).to_bytes();
 
-        let envelope = raqim_core::IngressEnvelope {
+        let envelope = IngressEnvelope {
             intent_path: intent_path.to_string(),
             public_key: self.pub_key_bytes,
             signature,
-            state,
+            state_bytes: state_bytes.into_vec(),
         };
 
         let serialized_envelope = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope).unwrap();
@@ -74,6 +78,6 @@ impl RaqimCryptoCore {
 
 #[pymodule]
 fn raqim_core(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_clas::<RaqimCryptoCore>()?;
+    m.add_class::<RaqimCryptoCore>()?;
     Ok(())
 }
