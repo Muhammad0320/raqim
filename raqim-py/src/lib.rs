@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[pyclass]
 struct RaqimCryptoCore {
     signing_key: SigningKey,
+
+    #[pyo3(get)]
     pub_key_bytes: [u8; 32],
 }
 
@@ -29,9 +31,9 @@ impl RaqimCryptoCore {
     }
 
     /// Mathematically signs any raw byte array and returns the 64-byte signature
-    fn sign_payload<'py>(&self, py: Python<'py>, payload: &[u8]) -> PyResult<Bound<&'py PyBytes>> {
+    fn sign_payload<'py>(&self, py: Python<'py>, payload: &[u8]) -> PyResult<Bound<'py, PyBytes>> {
         let signature = self.signing_key.sign(payload).to_bytes();
-        Ok(PyBytes::new_bound(py, &signature))
+        Ok(PyBytes::new(py, &signature))
     }
 
     /// Converts Python strings directly into zero-copy TCP payload!
@@ -41,7 +43,7 @@ impl RaqimCryptoCore {
         agent_hex: &str,
         intent_path: &str,
         text: &str,
-    ) -> PyResult<Bound<&'py PyBytes>> {
+    ) -> PyResult<Bound<'py, PyBytes>> {
         let agent_id_bytes = hex::decode(agent_hex).unwrap();
 
         let agent_id_array: [u8; 16] = agent_id_bytes
@@ -76,7 +78,7 @@ impl RaqimCryptoCore {
         final_payload.extend_from_slice(&(serialized_envelope.len() as u32).to_le_bytes());
         final_payload.extend_from_slice(&serialized_envelope);
 
-        Ok(PyBytes::new_bound(py, &final_payload))
+        Ok(PyBytes::new(py, &final_payload))
     }
 }
 
