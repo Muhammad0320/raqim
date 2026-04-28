@@ -305,7 +305,7 @@ impl WasmEngine {
             move |mut caller: Caller<'_, SandboxContent>, out_ptr: i32| {
                 let cached_response = caller.data_mut().http_response_cache.clone();
                 let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
-                mem.write(&mut caller, out_ptr as usize, &cached_response);
+                let _ = mem.write(&mut caller, out_ptr as usize, &cached_response);
                 caller.data_mut().http_response_cache.clear();
             },
         )?;
