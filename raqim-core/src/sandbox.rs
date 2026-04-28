@@ -46,6 +46,7 @@ pub struct SandboxContent {
     pub replay_timestamps: Vec<i64>,
 
     // Temporary Cache
+    pub a2a_incoming_cache: Vec<u8>,
     pub a2a_response_cache: Vec<u8>,
     pub http_response_cache: Vec<u8>,
 
@@ -460,11 +461,11 @@ impl WasmEngine {
             },
         )?;
 
-        // The Async Yield (Zero CPU while waiting)
+        // Pass 1: The Async Yield (Zero CPU, Returns exact length)
         linker.func_wrap_async(
             "raqim_env",
             "host_await_a2a_question",
-            |mut caller: Caller<'_, SandboxContent>, (out_ptr, max_len): (i32, i32)| {
+            |mut caller: Caller<'_, SandboxContent>, (): ()| {
                 Box::new(async move {
                     // Pull the receiver out. If it didn't exist, they didn't register a capability.
                     let mut rx = caller
@@ -479,19 +480,31 @@ impl WasmEngine {
                         caller.data_mut().a2a_reply_channel = Some(reply_tx);
                         caller.data_mut().a2a_receiver = Some(rx); // put the receiver back
 
-                        let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
-                        let bytes_to_write = std::cmp::min(question_bytes.len(), max_len as usize);
-                        mem.write(
-                            &mut caller,
-                            out_ptr as usize,
-                            &question_bytes[..bytes_to_write],
-                        )
-                        .unwrap();
+                        let len = question_bytes.len() as i32;
 
-                        return bytes_to_write as i32;
+                        // Cache the bytes in the host memory for pass 2
+                        caller.data_mut().a2a_incoming_cache = question_bytes;
+
+                        return len;
                     }
                     -1 // channel closed
                 })
+            },
+        )?;
+
+        // PASS 2: Pull the exact question bytes into WASM RAM
+        linker.func_wrap(
+            "raqim_env",
+            "host_pull_a2a_question",
+            |mut caller: Caller<'_, SandboxContent>, ptr: i32| {
+                let cached_question = caller.data_mut().a2a_incoming_cache.clone();
+                let mem = caller.get_export("memory").unwrap().into_memory().unwrap();
+
+                // Write exactly the cached bytes.
+                let _ = mem.write(&mut caller, ptr as usize, &cached_question);
+
+                // Free the host memory
+                caller.data_mut().a2a_incoming_cache.clear();
             },
         )?;
 
