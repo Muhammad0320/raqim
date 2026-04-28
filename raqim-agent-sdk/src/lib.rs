@@ -108,28 +108,28 @@ impl Raqim {
             host_register_capability(capability.as_ptr(), capability.len());
         }
 
-        let mut question_buffer = vec![0u8; 2 * 1024 * 1024];
-
         // The eternal server loop
         loop {
-            // This function yields to the os. It consumes ZERO CPU while waiting.
-            let bytes_read = unsafe {
-                host_await_a2a_question((
-                    question_buffer.as_mut_ptr(),
-                    question_buffer.len() as i32,
-                ))
-            };
+            // Pass 1: Yield to OS. Wakes up with the exact length
+            let exact_len = unsafe { host_await_a2a_question() };
 
-            if bytes_read > 0 {
-                let question = &question_buffer[..bytes_read as usize];
+            if exact_len > 0 {
+                // Pass 2: Allocate perfectly sized memory and pull the data
+                let mut question_buffer = vec![0u8; exact_len as usize];
+                unsafe {
+                    host_pull_a2a_response(question_buffer.as_mut_ptr());
+                }
 
                 // Developer's AI logic executes here!
-                let answer = handler(question);
+                let answer = handler(&question_buffer);
 
                 // Fire the answer back through the OS
                 unsafe {
                     host_reply_a2a(answer.as_ptr(), answer.len());
                 }
+            } else if exact_len < 0 {
+                // Host OS signaled a fatal breakdown or channel closure.
+                break;
             }
         }
     }
