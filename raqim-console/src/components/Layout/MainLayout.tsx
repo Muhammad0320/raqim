@@ -75,12 +75,12 @@ export function MainLayout({ children, title }: { children: React.ReactNode, tit
 
       {!isTopology && (
         <footer className="docked full-width bottom-0 w-full flex justify-between items-center px-8 py-3 bg-zinc-950 border-t border-zinc-900 shrink-0 z-30 relative">
-          <span className="font-mono text-[10px] tracking-tighter uppercase font-bold text-white opacity-80 hover:opacity-100 transition-opacity">© 2024 RAQIM OS. DETERMINISTIC INDUSTRIAL INTERFACE.</span>
-          <div className="flex gap-4">
-            <a className="text-zinc-600 font-mono text-[10px] tracking-tighter uppercase hover:text-zinc-300 opacity-80 hover:opacity-100 transition-opacity" href="#">Security</a>
-            <a className="text-zinc-600 font-mono text-[10px] tracking-tighter uppercase hover:text-zinc-300 opacity-80 hover:opacity-100 transition-opacity" href="#">Privacy</a>
-            <a className="text-zinc-600 font-mono text-[10px] tracking-tighter uppercase hover:text-zinc-300 opacity-80 hover:opacity-100 transition-opacity" href="#">Terms</a>
-            <a className="text-zinc-600 font-mono text-[10px] tracking-tighter uppercase hover:text-zinc-300 opacity-80 hover:opacity-100 transition-opacity" href="#">API Status</a>
+          <div className="flex items-center gap-6">
+            <span className="font-mono text-[10px] tracking-widest uppercase font-bold text-outline-variant">RAQIM OS v1.0.0-rc.1</span>
+            <span className="font-mono text-[10px] tracking-widest uppercase text-secondary">UPTIME: 14h 22m</span>
+          </div>
+          <div className="flex gap-4 items-center">
+            <span className="font-mono text-[10px] tracking-widest uppercase text-primary-fixed-dim bg-primary-container/10 px-2 py-0.5 border border-primary-container/20 rounded-sm">TENANT: ROOT_NODE_0x1</span>
           </div>
         </footer>
       )}
