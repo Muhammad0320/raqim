@@ -5,7 +5,7 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 h-full flex flex-col pt-16 w-64 bg-zinc-950 z-40 border-r border-zinc-900 hidden md:flex">
+    <aside className="w-64 flex-shrink-0 flex flex-col bg-zinc-950 z-40 border-r border-zinc-900 hidden md:flex">
       <div className="flex flex-col h-full justify-between">
         <div>
           <div className="px-6 py-6 mb-4 border-b border-zinc-900/50">

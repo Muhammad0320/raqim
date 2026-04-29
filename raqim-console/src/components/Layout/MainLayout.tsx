@@ -8,7 +8,9 @@ export function MainLayout({ children, title }: { children: React.ReactNode, tit
 
   return (
     <div className="bg-surface text-on-surface antialiased h-screen w-screen overflow-hidden flex flex-col selection:bg-primary-container/30">
-      <nav className="docked full-width top-0 z-50 bg-zinc-950/80 backdrop-blur-xl flex justify-between items-center w-full px-6 py-3 h-16 shrink-0 border-b border-zinc-900/50">
+
+      {/* ── Global Top Nav ── */}
+      <nav className="z-50 bg-zinc-950/80 backdrop-blur-xl flex justify-between items-center w-full px-6 py-3 h-16 shrink-0 border-b border-zinc-900/50">
         <div className="flex items-center gap-4">
           <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-[0_0_8px_rgba(78,222,163,0.4)]">
             <path d="M16 2L2 16L16 30L30 16L16 2Z" fill="url(#paint0_linear)" fillOpacity="0.2"/>
@@ -28,62 +30,100 @@ export function MainLayout({ children, title }: { children: React.ReactNode, tit
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <button className="text-zinc-400 hover:text-white p-2 rounded scale-95 transition-transform duration-150"><span className="material-symbols-outlined text-lg">notifications</span></button>
-            <button className="text-zinc-400 hover:text-white p-2 rounded scale-95 transition-transform duration-150"><span className="material-symbols-outlined text-lg">settings</span></button>
+            <button className="text-zinc-400 hover:text-white p-2 rounded transition-colors"><span className="material-symbols-outlined text-lg">notifications</span></button>
+            <button className="text-zinc-400 hover:text-white p-2 rounded transition-colors"><span className="material-symbols-outlined text-lg">settings</span></button>
           </div>
-          <button className="bg-primary-container text-on-primary-container px-4 py-1.5 rounded text-sm font-bold tracking-wide scale-95 transition-transform duration-150">Deploy Agent</button>
+          <button className="bg-primary-container text-on-primary-container px-4 py-1.5 rounded text-sm font-bold tracking-wide transition-opacity hover:opacity-90">Deploy Agent</button>
         </div>
       </nav>
 
-      <div className="flex flex-1 overflow-hidden relative">
+      {/* ── Body row: Sidebar is a fixed-width flex child, main takes the rest ── */}
+      <div className="flex flex-1 overflow-hidden min-h-0">
+
+        {/* Sidebar: flex child, not fixed — so it participates in normal flow */}
         <Sidebar />
-        
-        {/* Render different container background logic based on page to match original HTML logic */}
+
+        {/* Main column: flex col so footer stacks at the very bottom of THIS column only */}
         {isTopology ? (
-           <main className="flex-1 ml-64 flex flex-col bg-surface relative overflow-hidden">
-              {children}
-           </main>
+          <main className="flex-1 flex flex-col bg-surface relative overflow-hidden min-h-0">
+            {children}
+          </main>
         ) : (
-           <main className="ml-64 flex-1 flex flex-col bg-surface-container-low h-full overflow-hidden relative">
-             {/* If not topology, top app bar is inside main */}
-             <header className="flex justify-between items-center w-full px-8 py-6 bg-surface z-30">
-                <div className="flex items-center gap-4">
-                   <h1 className="font-headline text-3xl font-black tracking-tight text-on-surface uppercase">{title}</h1>
-                   <div className="bg-surface-container-high px-3 py-1 rounded-sm outline outline-1 outline-outline-variant/15 outline-offset-[-1px] flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
-                      <span className="font-mono text-[10px] text-secondary uppercase tracking-widest">Global Sec Active</span>
-                   </div>
+          <main className="flex-1 flex flex-col bg-surface-container-low overflow-hidden relative min-h-0">
+
+            {/* Per-page app bar */}
+            <header className="flex justify-between items-center w-full px-8 py-6 bg-surface z-30 shrink-0">
+              <div className="flex items-center gap-4">
+                <h1 className="font-headline text-3xl font-black tracking-tight text-on-surface uppercase">{title}</h1>
+                <div className="bg-surface-container-high px-3 py-1 rounded-sm outline outline-1 outline-outline-variant/15 outline-offset-[-1px] flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+                  <span className="font-mono text-[10px] text-secondary uppercase tracking-widest">Global Sec Active</span>
                 </div>
-                <div className="flex items-center gap-4">
-                   {pathname === '/firewall' && (
-                     <>
-                      <div className="relative">
-                        <input className="bg-surface-container-lowest border border-outline-variant/30 text-on-surface font-mono text-xs px-4 py-2 rounded-sm focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container/20 w-64 transition-all" placeholder="QUERY AGENT ID..." type="text"/>
-                        <span className="material-symbols-outlined absolute right-3 top-2 text-on-surface-variant text-sm">search</span>
-                      </div>
-                      <button className="text-on-surface-variant hover:text-on-surface transition-colors p-2 bg-surface-container-low rounded-sm outline outline-1 outline-outline-variant/15 outline-offset-[-1px]">
-                         <span className="material-symbols-outlined">tune</span>
-                      </button>
-                     </>
-                   )}
+              </div>
+              <div className="flex items-center gap-4">
+                {pathname === '/firewall' && (
+                  <>
+                    <div className="relative">
+                      <input
+                        className="bg-surface-container-lowest border border-outline-variant/30 text-on-surface font-mono text-xs px-4 py-2 rounded-sm focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container/20 w-64 transition-all"
+                        placeholder="QUERY AGENT ID..."
+                        type="text"
+                      />
+                      <span className="material-symbols-outlined absolute right-3 top-2 text-on-surface-variant text-sm">search</span>
+                    </div>
+                    <button className="text-on-surface-variant hover:text-on-surface transition-colors p-2 bg-surface-container-low rounded-sm outline outline-1 outline-outline-variant/15 outline-offset-[-1px]">
+                      <span className="material-symbols-outlined">tune</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </header>
+
+            {/* Scrollable page content */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {children}
+            </div>
+
+            {/* ── Footer: scoped to the content column, never overlaps the sidebar ── */}
+            <footer className="shrink-0 border-t border-zinc-800 bg-zinc-950 z-30">
+              <div className="flex items-center justify-between px-8 py-3">
+
+                {/* Left: OS Identity */}
+                <div className="flex items-center gap-5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse shrink-0"></span>
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-300">RAQIM OS</span>
+                    <span className="font-mono text-[10px] text-zinc-600">v1.0.0-rc.1</span>
+                  </div>
+                  <div className="h-3 w-px bg-zinc-800 shrink-0"></div>
+                  <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-secondary">
+                    UPTIME:&nbsp;14h 22m
+                  </span>
                 </div>
-             </header>
-             {children}
-           </main>
+
+                {/* Center: Node status */}
+                <div className="flex items-center gap-2.5">
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-600">NODE STATUS</span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-[#00f3ff] flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00f3ff] shadow-[0_0_6px_rgba(0,243,255,0.8)]"></span>
+                    OPERATIONAL
+                  </span>
+                </div>
+
+                {/* Right: Tenant badge */}
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-600">TENANT</span>
+                  <span className="font-mono text-[10px] text-primary-fixed-dim bg-primary-container/10 px-2.5 py-1 border border-primary-container/25 uppercase tracking-widest">
+                    ROOT_NODE_0x1
+                  </span>
+                </div>
+
+              </div>
+            </footer>
+
+          </main>
         )}
       </div>
-
-      {!isTopology && (
-        <footer className="docked full-width bottom-0 w-full flex justify-between items-center px-8 py-3 bg-zinc-950 border-t border-zinc-900 shrink-0 z-30 relative">
-          <div className="flex items-center gap-6">
-            <span className="font-mono text-[10px] tracking-widest uppercase font-bold text-outline-variant">RAQIM OS v1.0.0-rc.1</span>
-            <span className="font-mono text-[10px] tracking-widest uppercase text-secondary">UPTIME: 14h 22m</span>
-          </div>
-          <div className="flex gap-4 items-center">
-            <span className="font-mono text-[10px] tracking-widest uppercase text-primary-fixed-dim bg-primary-container/10 px-2 py-0.5 border border-primary-container/20 rounded-sm">TENANT: ROOT_NODE_0x1</span>
-          </div>
-        </footer>
-      )}
     </div>
   );
 }
