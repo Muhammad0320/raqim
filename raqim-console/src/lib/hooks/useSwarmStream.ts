@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useSwarmStore, UiThought } from '../store/useSwarmStore';
+import { useSwarmStore, UiThought, UiEvent } from '../store/useSwarmStore';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { startMockStream } from '../mockGenerator';
 
@@ -7,10 +7,11 @@ const SSE_URL = 'http://127.0.0.1:8081/v1/swarm/live';
 const JWT_TOKEN = 'mock_license_key_123'; // Replace with real auth token logic
 
 export function useSwarmStream() {
-  const { batchAddThoughts } = useSwarmStore();
-  const bufferRef = useRef<UiThought[]>([]);
+  const { batchAddThoughts, processUiEvents } = useSwarmStore();
+  const thoughtsBufferRef = useRef<UiThought[]>([]);
+  const eventsBufferRef = useRef<UiEvent[]>([]);
   const isMock = true; // Use mock for local dev until Rust backend is up
-  const rAF_Ref = useRef<number>();
+  const rAF_Ref = useRef<number>(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -18,9 +19,13 @@ export function useSwarmStream() {
     // Use requestAnimationFrame to flush the buffer synchronously with browser repaints
     // This protects the DOM from thousands of React state updates per second.
     const flushBuffer = () => {
-      if (bufferRef.current.length > 0) {
-        batchAddThoughts([...bufferRef.current]);
-        bufferRef.current = []; // Clear local buffer
+      if (thoughtsBufferRef.current.length > 0) {
+        batchAddThoughts([...thoughtsBufferRef.current]);
+        thoughtsBufferRef.current = []; // Clear local buffer
+      }
+      if (eventsBufferRef.current.length > 0) {
+        processUiEvents([...eventsBufferRef.current]);
+        eventsBufferRef.current = [];
       }
       rAF_Ref.current = requestAnimationFrame(flushBuffer);
     };
@@ -54,7 +59,15 @@ export function useSwarmStream() {
               is_a2a_query: rawData.intent_path.includes('/a2a/'),
               parent_tx_id: rawData.tx_id > 0 ? rawData.tx_id - 1 : null // Naive synthetic parent
             };
-            bufferRef.current.push(data);
+            thoughtsBufferRef.current.push(data);
+            
+            // Generate synthetic UiEvent since actual backend payload is missing it
+            eventsBufferRef.current.push({
+              event_type: "ThoughtCommitted",
+              agent_hex: data.agent_hex,
+              intent_path: data.intent_path,
+              tx_id: data.tx_id
+            });
           } catch (e) {
             console.error('Failed to parse SSE swarm frame', e);
           }
@@ -69,7 +82,10 @@ export function useSwarmStream() {
       });
     } else {
       // Mock mode
-      const stopMock = startMockStream((t) => bufferRef.current.push(t as unknown as UiThought));
+      const stopMock = startMockStream((t, evs) => {
+        thoughtsBufferRef.current.push(t);
+        eventsBufferRef.current.push(...evs);
+      });
       controller.signal.addEventListener('abort', stopMock);
     }
 
