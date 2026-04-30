@@ -1,10 +1,11 @@
 use std::{
     collections::BTreeMap,
+    io::Read,
     sync::{Arc, RwLock},
     thread,
 };
 
-use crate::{OpLog, memory_router::MemoryRouter};
+use crate::OpLog;
 use rkyv::to_bytes;
 use tokio::sync::mpsc;
 use tokio_uring::fs::OpenOptions;
@@ -106,13 +107,42 @@ impl WalEngine {
     }
 
     /// Scans the raw WAL file to find the highest TxID it contains.
+    /// Executes syncronously during the OS Bootstrap phase.
     pub fn get_highest_tx_id(&self, file_path: &str) -> u64 {
-        let mut highest = 0;
-        let file = match std::fs::File::open(file_path) {
+        let mut file = match std::fs::File::open(file_path) {
             Ok(f) => f,
-            Err(_) => return 0,
+            Err(_) => {
+                println!(
+                    "[WAL] No existing WAL found at {}. Starting fresh. ",
+                    file_path
+                );
+                return 0;
+            }
         };
 
-        0
+        let mut highest_tx = 0;
+        let mut len_buf = [0u8; 16];
+
+        // PHYSICS: Iterate throught the append-only binary log.
+        while file.read_exact(&mut len_buf).is_ok() {
+            let payload_len = u32::from_le_bytes(len_buf) as usize;
+            let mut payload = vec![0u8; payload_len];
+
+            if file.read_exact(&mut payload).is_err() {
+                eprintln!("[WAL WARNING] Corrupted trailing bytes detected. Truncation required. ");
+                break;
+            }
+
+            // Zero-copy pointer cast to extract tx_id
+            let archived_log =
+                unsafe { rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(&payload) };
+
+            let tx_id = archived_log.state.transaction_id.into();
+            if tx_id > highest_tx {
+                highest_tx = tx_id;
+            }
+        }
+
+        highest_tx
     }
 }
