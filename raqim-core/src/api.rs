@@ -98,7 +98,7 @@ pub struct ApiState {
 
     pub event_tx: Sender<SystemEvent>,
     pub ui_tx: Sender<UiThought>,
-    pub health_tx: Sender<SystemHealth>
+    pub health_tx: Sender<SystemHealth>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -584,26 +584,25 @@ pub async fn semantic_search_endpoint(
     }
 }
 
-pub async fn sse_health_endpoint(_auth: crate::api::ValidatedIdentity, State(state): State<ApiState> ) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+pub async fn sse_health_endpoint(
+    _auth: crate::api::ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    let receiver = state.health_tx.subscribe();
 
-    let receiver  = state.health_tx.subscribe();
-
-    let stream = BroadcastStream::new(receiver).filter_map(|msg| async move -> Option<Result<Event, std::convert::Infallible>> {
-
+    let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
         match msg {
             Ok(health_payload) => {
                 let json_string = serde_json::to_string(&health_payload).unwrap();
 
                 Some(Ok(Event::default().data(json_string)))
             }
-            Err(_) => None, 
+            Err(_) => None,
         }
-
-    } );
+    });
 
     Sse::new(stream).keep_alive(KeepAlive::new())
 }
-
 
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
@@ -625,5 +624,3 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/swarm/memory", get(semantic_search_endpoint))
         .with_state(state)
 }
-
-

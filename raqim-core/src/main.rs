@@ -5,7 +5,7 @@ use raqim_core::axon::AxonGateKeeper;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
-use raqim_core::health::SystemHealth;
+use raqim_core::health::{HealthMonitor, SystemHealth};
 use raqim_core::lancedb_store::LanceEngine;
 use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
@@ -357,6 +357,9 @@ async fn main() {
 
     let (ui_tx, _ui_rx) = broadcast::channel::<UiThought>(1000);
     let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
+
+    // Spawn the hardware interrupt loop
+    HealthMonitor::spawn_telemetry_loop(health_tx.clone());
 
     let api_state = ApiState {
         config: config.clone(),
