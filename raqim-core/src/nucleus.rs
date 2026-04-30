@@ -121,7 +121,7 @@ impl WalEngine {
         };
 
         let mut highest_tx = 0;
-        let mut len_buf = [0u8; 16];
+        let mut len_buf = [0u8; 4];
 
         // PHYSICS: Iterate throught the append-only binary log.
         while file.read_exact(&mut len_buf).is_ok() {
