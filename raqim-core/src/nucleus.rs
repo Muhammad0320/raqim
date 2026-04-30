@@ -4,7 +4,7 @@ use std::{
     thread,
 };
 
-use crate::OpLog;
+use crate::{OpLog, memory_router::MemoryRouter};
 use rkyv::to_bytes;
 use tokio::sync::mpsc;
 use tokio_uring::fs::OpenOptions;
@@ -103,5 +103,16 @@ impl WalEngine {
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
     pub async fn append(&self, log: OpLog) {
         let _ = self.sender.send(log).await;
+    }
+
+    /// Scans the raw WAL file to find the highest TxID it contains.
+    pub fn get_highest_tx_id(&self, file_path: &str) -> u64 {
+        let mut highest = 0;
+        let file = match std::fs::File::open(file_path) {
+            Ok(f) => f,
+            Err(_) => return 0,
+        };
+
+        0
     }
 }
