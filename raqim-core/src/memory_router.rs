@@ -78,7 +78,7 @@ impl MemoryRouter {
     }
 
     /// PRIVATE DRY HELPER: Scans the WAL and executes a closure on the Zero-Copy Archived data
-    fn scan_wal_zero_copy<F>(&self, mut callback: F)
+    pub fn scan_wal_zero_copy<F>(&self, mut callback: F)
     where
         F: FnMut(&Archived<OpLog>),
     {
