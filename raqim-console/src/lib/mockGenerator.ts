@@ -60,10 +60,12 @@ export function startMockStream(pushToBuffer: (t: UiThought, evs: UiEvent[]) => 
       const targetAgent = MOCK_AGENTS[Math.floor(Math.random() * MOCK_AGENTS.length)];
       events.push({
         event_type: "A2aMessageRouted",
-        source_agent_hex: t.agent_hex,
-        target_agent_hex: targetAgent,
-        target_capability: MOCK_NAMESPACES[Math.floor(Math.random() * MOCK_NAMESPACES.length)],
-        latency_ms: Math.floor(200 + Math.random() * 600)
+        source_hex: t.agent_hex,
+        target_hex: targetAgent,
+        namespace: MOCK_NAMESPACES[Math.floor(Math.random() * MOCK_NAMESPACES.length)],
+        latency_ms: Math.floor(200 + Math.random() * 600),
+        question_payload: JSON.stringify({ req: "get_state", ref: genHex(8) }),
+        answer_payload: JSON.stringify({ res: "ok" })
       });
     }
 

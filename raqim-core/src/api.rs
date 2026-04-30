@@ -81,6 +81,26 @@ pub enum WsMessage {
     },
 }
 
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(tag = "event_type")]
+pub enum UiEvent {
+    ThoughtCommited {
+        agent_hex: String,
+        intent_path: String,
+        tx_id: u64,
+        text: String,
+    },
+
+    A2aMessageRouted {
+        source_hex: String,
+        target_hex: String,
+        namespace: String,
+        question_payload: String,
+        answer_payload: String,
+        latence_ms: u32,
+    },
+}
+
 #[derive(Clone)]
 pub struct ApiState {
     pub config: Arc<RaqimConfig>,

@@ -3,7 +3,7 @@ import { Node, Edge } from '@xyflow/react';
 
 export type UiEvent = 
   | { event_type: "ThoughtCommitted"; agent_hex: string; intent_path: string; tx_id: number; text: string; }
-  | { event_type: "A2aMessageRouted"; source_agent_hex: string; target_agent_hex: string; target_capability: string; latency_ms: number; };
+  | { event_type: "A2aMessageRouted"; source_hex: string; target_hex: string; namespace: string; question_payload: string; answer_payload: string; latency_ms: number; };
 
 export interface UiThought {
   agent_hex: string;
@@ -77,15 +77,27 @@ export const useSwarmStore = create<SwarmState>((set) => ({
         });
       });
 
-      // Render children
+      // Render children with deterministic grid placement
+      const agentCounts: Record<string, number> = {};
       snapshot.agents.forEach((agent) => {
+        const ns = agent.namespace;
+        agentCounts[ns] = (agentCounts[ns] || 0);
+        const i = agentCounts[ns];
+        agentCounts[ns]++;
+
+        // Grid of 3 columns
+        const col = i % 3;
+        const row = Math.floor(i / 3);
+        const x = 40 + col * 100;
+        const y = 70 + row * 100;
+
         newNodes.push({
           id: `agent-${agent.agent_hex}`,
           type: 'agent',
           parentId: `cluster-${agent.namespace}`,
           extent: 'parent',
-          position: { x: 20 + Math.random() * 250, y: 40 + Math.random() * 200 }, 
-          data: { agent_hex: agent.agent_hex, intent_path: agent.namespace, pulseTimestamp: null, lastTx: 0 },
+          position: { x, y }, 
+          data: { agent_hex: agent.agent_hex, intent_path: agent.namespace, pulseTimestamp: null, lastTx: 0, lastText: "" },
         });
       });
 
@@ -159,20 +171,24 @@ export const useSwarmStore = create<SwarmState>((set) => ({
           const existingNodeIndex = newNodes.findIndex(n => n.id === agentNodeId);
           
           if (existingNodeIndex >= 0) {
-            // Update pulse state
+            // Update pulse state and save the text for the tooltip
             newNodes[existingNodeIndex] = {
               ...newNodes[existingNodeIndex],
-              data: { ...newNodes[existingNodeIndex].data, pulseTimestamp: now, lastTx: ev.tx_id }
+              data: { ...newNodes[existingNodeIndex].data, pulseTimestamp: now, lastTx: ev.tx_id, lastText: ev.text }
             };
           } else {
-            // Create new agent node
+            // Should not happen frequently if bootstrap worked, but fallback to grid logic
+            const siblingsCount = newNodes.filter(n => n.parentId === `cluster-${ev.intent_path}`).length;
+            const col = siblingsCount % 3;
+            const row = Math.floor(siblingsCount / 3);
+            
             newNodes.push({
               id: agentNodeId,
               type: 'agent',
               parentId: `cluster-${ev.intent_path}`,
               extent: 'parent',
-              position: { x: 20 + Math.random() * 250, y: 40 + Math.random() * 200 }, // Relative to parent
-              data: { agent_hex: ev.agent_hex, intent_path: ev.intent_path, pulseTimestamp: now, lastTx: ev.tx_id },
+              position: { x: 40 + col * 100, y: 70 + row * 100 },
+              data: { agent_hex: ev.agent_hex, intent_path: ev.intent_path, pulseTimestamp: now, lastTx: ev.tx_id, lastText: ev.text },
             });
           }
         } else if (ev.event_type === 'A2aMessageRouted') {
@@ -180,13 +196,13 @@ export const useSwarmStore = create<SwarmState>((set) => ({
           // React flow handles missing targets gracefully (it just doesn't render the edge, or renders it to 0,0, but usually ignores it).
           // We will create the edge if the target agent node exists.
           
-          if (newNodes.some(n => n.id === `agent-${ev.target_agent_hex}`)) {
+          if (newNodes.some(n => n.id === `agent-${ev.target_hex}`)) {
             newEdges.push({
               id: `edge-${now}-${Math.random()}`,
-              source: `agent-${ev.source_agent_hex}`,
-              target: `agent-${ev.target_agent_hex}`,
+              source: `agent-${ev.source_hex}`,
+              target: `agent-${ev.target_hex}`,
               type: 'a2a',
-              data: { timestamp: now, latency: ev.latency_ms },
+              data: { timestamp: now, latency: ev.latency_ms, question_payload: ev.question_payload },
               animated: true,
             });
           }
@@ -203,13 +219,13 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   pruneEphemeralEdges: () =>
     set((state) => {
       const now = Date.now();
-      // Keep edges created within the last 800ms
-      const activeEdges = state.topologyEdges.filter(e => now - (e.data?.timestamp || 0) < 800);
+      // Keep edges created within the last 2000ms so popup can live
+      const activeEdges = state.topologyEdges.filter(e => now - (e.data?.timestamp || 0) < 2000);
       
       // Also turn off pulse for old nodes
       let nodesChanged = false;
       const updatedNodes = state.topologyNodes.map(n => {
-        if (n.type === 'agent' && n.data?.pulseTimestamp && now - n.data.pulseTimestamp > 500) {
+        if (n.type === 'agent' && n.data?.pulseTimestamp && now - n.data.pulseTimestamp > 3000) {
           nodesChanged = true;
           return { ...n, data: { ...n.data, pulseTimestamp: null } };
         }

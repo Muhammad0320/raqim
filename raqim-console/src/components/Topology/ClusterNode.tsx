@@ -7,7 +7,13 @@ export function ClusterNode({ id, data }: { id: string; data: any }) {
   );
 
   return (
-    <div className="w-full h-full relative group">
+    <div className="w-full h-full relative group overflow-hidden">
+      {/* Grid Background */}
+      <div 
+        className="absolute inset-0 opacity-20 pointer-events-none" 
+        style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '20px 20px' }}
+      ></div>
+
       {/* 4 Corner Accents */}
       <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-outline-variant/30 rounded-tl-lg"></div>
       <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-outline-variant/30 rounded-tr-lg"></div>

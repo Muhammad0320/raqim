@@ -25,15 +25,36 @@ export function AgentNode({ data }: { data: any }) {
             0% { box-shadow: 0 0 5px #00f3ff, 0 0 10px #00f3ff; opacity: 1; transform: scale(1); }
             100% { box-shadow: 0 0 30px #00f3ff, 0 0 60px #00f3ff; opacity: 0; transform: scale(1.5); }
           }
+          @keyframes tooltipFade {
+            0% { opacity: 0; transform: translateY(10px) translateX(-50%); }
+            10% { opacity: 1; transform: translateY(0) translateX(-50%); }
+            80% { opacity: 1; transform: translateY(0) translateX(-50%); }
+            100% { opacity: 0; transform: translateY(-10px) translateX(-50%); }
+          }
         `}
       </style>
 
-      {/* Pulse effect (unclipped) */}
+      {/* Pulse effect (unclipped) and Tooltip */}
       {isPulsing && (
-        <div 
-          className="absolute inset-0 rounded-full z-0"
-          style={{ animation: 'cyanPulse 0.5s ease-out forwards' }}
-        />
+        <>
+          <div 
+            key={`pulse-${data.pulseTimestamp}`}
+            className="absolute inset-0 rounded-full z-0"
+            style={{ animation: 'cyanPulse 1s ease-out forwards' }}
+          />
+          {data.lastText && (
+            <div 
+              key={`text-${data.pulseTimestamp}`}
+              className="absolute -top-12 left-1/2 bg-zinc-950/90 border border-[#00f3ff]/50 rounded px-3 py-1.5 whitespace-nowrap z-50 shadow-[0_0_15px_rgba(0,243,255,0.3)] backdrop-blur-sm pointer-events-none"
+              style={{ animation: 'tooltipFade 3s ease-out forwards', transform: 'translateX(-50%)' }}
+            >
+              <div className="font-mono text-[9px] text-white">
+                <span className="text-[#00f3ff] font-bold mr-2">TX {data.lastTx}</span>
+                {data.lastText.length > 40 ? data.lastText.substring(0, 40) + '...' : data.lastText}
+              </div>
+            </div>
+          )}
+        </>
       )}
       
       {/* Core Hexagon */}
