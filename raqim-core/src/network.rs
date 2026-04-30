@@ -180,7 +180,7 @@ impl GlobalNetworkBridge {
         envelope: A2AEnvelope,
         aegis: Arc<AegisGateKeeper>,
         telemetry: Arc<TelemetryEngine>,
-    ) -> Result<Vec<u8>, anyhow::Error> {
+    ) -> Result<(Vec<u8>, String), anyhow::Error> {
         let sender_hex = hex::encode(envelope.sender_id.clone());
 
         // 1. AEGIS INTERCEPTION: Does this agent have clearance this question?
@@ -224,7 +224,7 @@ impl GlobalNetworkBridge {
                 // Return the answer bytes back to the caller
                 let res_bytes = sample.payload().to_bytes().to_vec();
                 telemetry.record_a2a_bytes(res_bytes.len() as u64);
-                return Ok(res_bytes);
+                return Ok((res_bytes, sender_hex.clone()));
             }
         }
 

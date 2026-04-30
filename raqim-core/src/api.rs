@@ -69,6 +69,7 @@ pub enum WsMessage {
     ReplyToQuestion {
         request_id: String,
         answer: Vec<u8>,
+        responder_hex: String,
     },
 
     // Deamon -> Python: "Here's the answer for the AskQueustion you sent earlier"
