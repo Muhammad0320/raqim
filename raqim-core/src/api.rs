@@ -32,6 +32,7 @@ use uuid::Uuid;
 use crate::axon::AxonGateKeeper;
 use crate::health::SystemHealth;
 use crate::nucleus::WalEngine;
+use crate::registry::SwarmRegistry;
 use crate::state::SwarmState;
 use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
@@ -101,6 +102,12 @@ pub enum UiEvent {
     },
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct ActiveAgentNode {
+    pub namespace: String,
+    pub status: String, // Active, Quarantined, Idle
+}
+
 #[derive(Clone)]
 pub struct ApiState {
     pub config: Arc<RaqimConfig>,
@@ -119,6 +126,7 @@ pub struct ApiState {
     pub event_tx: Sender<SystemEvent>,
     pub ui_tx: Sender<UiEvent>,
     pub health_tx: Sender<SystemHealth>,
+    pub swarm_registry: Arc<SwarmRegistry>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -363,8 +371,8 @@ pub async fn sse_firehose_endpoint(
     // Convert the Tokio Receiver into a standard async Stream.
     let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
         match msg {
-            Ok(ui_thought) => {
-                let json_string = serde_json::to_string(&ui_thought).unwrap();
+            Ok(ui_event) => {
+                let json_string = serde_json::to_string(&ui_event).unwrap();
                 Some(Ok::<axum::response::sse::Event, Infallible>(
                     Event::default().data(json_string),
                 ))
