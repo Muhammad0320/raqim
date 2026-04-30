@@ -9,6 +9,7 @@ pub mod lancedb_store;
 pub mod memory_router;
 pub mod network;
 pub mod nucleus;
+pub mod registry;
 pub mod sandbox;
 pub mod state;
 pub mod telemetry;

@@ -117,7 +117,7 @@ pub struct ApiState {
     pub global_tx_counter: Arc<AtomicU64>,
 
     pub event_tx: Sender<SystemEvent>,
-    pub ui_tx: Sender<UiThought>,
+    pub ui_tx: Sender<UiEvent>,
     pub health_tx: Sender<SystemHealth>,
 }
 
