@@ -1,6 +1,11 @@
 import { Handle, Position } from '@xyflow/react';
+import { useSwarmStore } from '../../lib/store/useSwarmStore';
 
-export function ClusterNode({ data }: { data: any }) {
+export function ClusterNode({ id, data }: { id: string; data: any }) {
+  const childrenCount = useSwarmStore(state => 
+    state.topologyNodes.filter(n => n.parentId === id).length
+  );
+
   return (
     <div className="w-full h-full relative group">
       {/* 4 Corner Accents */}
@@ -16,6 +21,15 @@ export function ClusterNode({ data }: { data: any }) {
          </div>
       </div>
       
+      {/* Empty State Placeholder */}
+      {childrenCount === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span className="font-mono text-[10px] text-zinc-700 uppercase tracking-[0.2em] animate-pulse">
+            0 Nodes Active
+          </span>
+        </div>
+      )}
+
       {/* Invisible handles for routing */}
       <Handle type="target" position={Position.Top} className="opacity-0 pointer-events-none w-full h-full !top-0 !left-0 !transform-none !rounded-none" />
       <Handle type="source" position={Position.Bottom} className="opacity-0 pointer-events-none w-full h-full !top-0 !left-0 !transform-none !rounded-none" />

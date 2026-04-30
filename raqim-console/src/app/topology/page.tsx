@@ -8,7 +8,7 @@ import '@xyflow/react/dist/style.css';
 import { AgentNode } from '../../components/Topology/AgentNode';
 import { ClusterNode } from '../../components/Topology/ClusterNode';
 import { A2aEdge } from '../../components/Topology/A2aEdge';
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 
 const nodeTypes = {
   agent: AgentNode,
@@ -26,13 +26,19 @@ function TopologyCanvas() {
   const namespaces = useSwarmStore(state => state.namespaces);
   const currentTps = useSwarmStore(state => state.currentTps);
 
-  const { setCenter } = useReactFlow();
+  const { fitBounds } = useReactFlow();
+
+  useEffect(() => {
+    useSwarmStore.getState().fetchInitialTopology();
+  }, []);
 
   const handleNamespaceClick = (ns: string) => {
     const node = topologyNodes.find(n => n.id === `cluster-${ns}`);
     if (node) {
-      // cluster node is 300x300, so center is x+150, y+150
-      setCenter(node.position.x + 150, node.position.y + 150, { duration: 1000, zoom: 1.5 });
+      fitBounds(
+        { x: node.position.x, y: node.position.y, width: 350, height: 300 }, 
+        { duration: 800, padding: { top: 100, right: 100, bottom: 100, left: 100 } }
+      );
     }
   };
 

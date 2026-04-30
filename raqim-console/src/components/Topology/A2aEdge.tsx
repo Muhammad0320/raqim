@@ -21,30 +21,33 @@ export function A2aEdge({
   });
 
   return (
-    <g style={{ animation: 'fadeOut 0.8s ease-out forwards' }}>
+    <g style={{ animation: 'fadeOut 0.8s ease-in forwards' }}>
       <style>
         {`
           @keyframes fadeOut {
-            0% { opacity: 1; stroke-width: 3; }
-            100% { opacity: 0; stroke-width: 1; }
+            0% { opacity: 1; }
+            80% { opacity: 0.8; }
+            100% { opacity: 0; }
           }
-          @keyframes dash {
-            to { stroke-dashoffset: 0; }
+          @keyframes laserShoot {
+            0% { stroke-dashoffset: 1000; }
+            100% { stroke-dashoffset: 0; }
           }
         `}
       </style>
       
-      {/* Outer Glow Line */}
+      {/* Outer Glow Line - Amber */}
       <BaseEdge 
         path={edgePath} 
         markerEnd={markerEnd} 
         style={{
           ...style,
-          stroke: '#00f3ff', // Neon cyan
+          stroke: '#ffb300', // Amber
           strokeWidth: 4,
-          filter: 'drop-shadow(0 0 8px rgba(0,243,255,0.8))',
-          strokeDasharray: '5, 5',
-          animation: 'dash 1s linear infinite, fadeOut 0.8s ease-out forwards'
+          filter: 'drop-shadow(0 0 10px rgba(255,179,0,1))',
+          strokeDasharray: '1000',
+          strokeDashoffset: '1000',
+          animation: 'laserShoot 0.3s ease-out forwards'
         }} 
       />
       
@@ -56,14 +59,11 @@ export function A2aEdge({
           ...style,
           stroke: '#ffffff',
           strokeWidth: 1.5,
-          animation: 'fadeOut 0.8s ease-out forwards'
+          strokeDasharray: '1000',
+          strokeDashoffset: '1000',
+          animation: 'laserShoot 0.3s ease-out forwards'
         }} 
       />
-      
-      {/* Traveling Particle */}
-      <circle r="3" fill="#fff" style={{ filter: 'drop-shadow(0 0 10px #fff)' }}>
-        <animateMotion dur={`${data?.latency || 400}ms`} repeatCount="1" path={edgePath} />
-      </circle>
     </g>
   );
 }

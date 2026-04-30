@@ -2,8 +2,8 @@ import { create } from 'zustand';
 import { Node, Edge } from '@xyflow/react';
 
 export type UiEvent = 
-  | { event_type: "ThoughtCommitted"; agent_hex: string; intent_path: string; tx_id: number; }
-  | { event_type: "A2aMessageRouted"; source_agent_hex: string; target_capability: string; latency_ms: number; };
+  | { event_type: "ThoughtCommitted"; agent_hex: string; intent_path: string; tx_id: number; text: string; }
+  | { event_type: "A2aMessageRouted"; source_agent_hex: string; target_agent_hex: string; target_capability: string; latency_ms: number; };
 
 export interface UiThought {
   agent_hex: string;
@@ -30,6 +30,7 @@ interface SwarmState {
   topologyEdges: Edge[];
   namespaces: string[];
 
+  fetchInitialTopology: () => Promise<void>;
   batchAddThoughts: (thoughts: UiThought[]) => void;
   processUiEvents: (events: UiEvent[]) => void;
   pruneEphemeralEdges: () => void;
@@ -51,6 +52,49 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   topologyNodes: [],
   topologyEdges: [],
   namespaces: [],
+
+  fetchInitialTopology: async () => {
+    // In a real app, this would be a fetch to /v1/swarm/topology/snapshot
+    // For now we mock it with the imported mock function
+    const { fetchMockTopologySnapshot } = await import('../mockGenerator');
+    const snapshot = await fetchMockTopologySnapshot();
+    
+    set((state) => {
+      const newNodes: Node[] = [];
+      const newNamespaces = new Set<string>();
+
+      // Render Parent Nodes for active namespaces
+      snapshot.active_namespaces.forEach((ns, index) => {
+        newNamespaces.add(ns);
+        const radius = 500;
+        const angle = index * (Math.PI * 2 / snapshot.active_namespaces.length); 
+        newNodes.push({
+          id: `cluster-${ns}`,
+          type: 'cluster',
+          position: { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius },
+          data: { label: ns },
+          style: { width: 350, height: 300, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px' },
+        });
+      });
+
+      // Render children
+      snapshot.agents.forEach((agent) => {
+        newNodes.push({
+          id: `agent-${agent.agent_hex}`,
+          type: 'agent',
+          parentId: `cluster-${agent.namespace}`,
+          extent: 'parent',
+          position: { x: 20 + Math.random() * 250, y: 40 + Math.random() * 200 }, 
+          data: { agent_hex: agent.agent_hex, intent_path: agent.namespace, pulseTimestamp: null, lastTx: 0 },
+        });
+      });
+
+      return {
+        topologyNodes: newNodes,
+        namespaces: Array.from(newNamespaces)
+      };
+    });
+  },
 
   batchAddThoughts: (newThoughts) =>
     set((state) => {
@@ -102,7 +146,7 @@ export const useSwarmStore = create<SwarmState>((set) => ({
             type: 'cluster',
             position: { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius },
             data: { label: ns },
-            style: { width: 300, height: 300, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px' },
+            style: { width: 350, height: 300, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px' },
           });
         }
       };
@@ -126,21 +170,26 @@ export const useSwarmStore = create<SwarmState>((set) => ({
               id: agentNodeId,
               type: 'agent',
               parentId: `cluster-${ev.intent_path}`,
-              position: { x: 50 + Math.random() * 200, y: 50 + Math.random() * 200 }, // Relative to parent
+              extent: 'parent',
+              position: { x: 20 + Math.random() * 250, y: 40 + Math.random() * 200 }, // Relative to parent
               data: { agent_hex: ev.agent_hex, intent_path: ev.intent_path, pulseTimestamp: now, lastTx: ev.tx_id },
             });
           }
         } else if (ev.event_type === 'A2aMessageRouted') {
-          ensureNamespaceNode(ev.target_capability);
+          // Edge to target agent! If agent doesn't exist yet, we still create the edge to the presumed id.
+          // React flow handles missing targets gracefully (it just doesn't render the edge, or renders it to 0,0, but usually ignores it).
+          // We will create the edge if the target agent node exists.
           
-          newEdges.push({
-            id: `edge-${now}-${Math.random()}`,
-            source: `agent-${ev.source_agent_hex}`,
-            target: `cluster-${ev.target_capability}`,
-            type: 'a2a',
-            data: { timestamp: now, latency: ev.latency_ms },
-            animated: true,
-          });
+          if (newNodes.some(n => n.id === `agent-${ev.target_agent_hex}`)) {
+            newEdges.push({
+              id: `edge-${now}-${Math.random()}`,
+              source: `agent-${ev.source_agent_hex}`,
+              target: `agent-${ev.target_agent_hex}`,
+              type: 'a2a',
+              data: { timestamp: now, latency: ev.latency_ms },
+              animated: true,
+            });
+          }
         }
       }
 
