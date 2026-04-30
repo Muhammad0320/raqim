@@ -493,4 +493,37 @@ impl LanceEngine {
             agent_hex
         ))
     }
+
+    /// Return (max_tx_id, total_vector_count) 
+    pub async fn get_vault_metrics(&self) -> Result<(u64, u64), anyhow::Error> {
+
+        let table_res = self.db.open_table(&self.history_table).execute().await?;
+
+        let table = match table_name {
+            Ok(t) => t, 
+            Err(_) => return Ok((0, 0))
+        }
+
+        let total_rows = table.count_rows(None).await? as u64;
+
+        if total_rows == 0 {
+            return Ok((0, 0)) 
+        }
+
+        // Query the absolute highest tx_id
+        let mut stream = table.query().order_by(vec![lancedb::query::ExecutableQuery::order_by("tx_id").desc()]).limit(1).execute().await?;
+
+        if let Some(Ok(batch)) = stream.next().await {
+
+            let tx_col = batch.column_by_name("tx_id").unwrap().as_any().downcast_ref::<arrow_array::Int64Array>().unwrap();
+            if tx_col.len() > 0 {
+
+                return Ok((tx_col.value(0), total_rows ))
+
+            }
+        } 
+
+        Ok((0, total_rows))
+    }
 }
+
