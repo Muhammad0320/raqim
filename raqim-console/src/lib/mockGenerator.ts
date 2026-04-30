@@ -1,4 +1,4 @@
-import { UiThought, UiEvent } from '../store/useSwarmStore';
+import { UiThought, UiEvent } from './store/useSwarmStore';
 
 const MOCK_AGENTS = ['AX-901', 'KR-442', 'US-110', 'BR-771'];
 

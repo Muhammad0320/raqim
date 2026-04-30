@@ -47,6 +47,11 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   thoughtsThisSecond: 0,
   highestTxId: 0,
 
+  // Topology State
+  topologyNodes: [],
+  topologyEdges: [],
+  namespaces: [],
+
   batchAddThoughts: (newThoughts) =>
     set((state) => {
       const updatedThoughts = { ...state.thoughts };
