@@ -1,6 +1,6 @@
 use jsonwebtoken::{DecodingKey, Validation, decode};
 use raqim_core::aegis::AegisGateKeeper;
-use raqim_core::api::{ApiState, EnterpriseClaim, UiThought, build_admin_router};
+use raqim_core::api::{ApiState, EnterpriseClaim, UiEvent, UiThought, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
@@ -10,6 +10,7 @@ use raqim_core::lancedb_store::LanceEngine;
 use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
 use raqim_core::nucleus::WalEngine;
+use raqim_core::registry::SwarmRegistry;
 use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmState;
 use raqim_core::telemetry::TelemetryEngine;
@@ -355,7 +356,8 @@ async fn main() {
             .await;
     });
 
-    let (ui_tx, _ui_rx) = broadcast::channel::<UiThought>(1000);
+    let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(5000);
+    let registry = Arc::new(SwarmRegistry::new());
     let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
 
     // Spawn the hardware interrupt loop
@@ -377,6 +379,7 @@ async fn main() {
 
         ui_tx: ui_tx.clone(),
         health_tx: health_tx.clone(),
+        swarm_registry: registry.clone(),
     };
 
     let axum_app = build_admin_router(api_state);
@@ -409,6 +412,7 @@ async fn main() {
         let task_event_tx = event_tx.clone();
         let task_aegis = aegis.clone();
         let task_ui_tx = ui_tx.clone();
+        let task_registry = registry.clone();
 
         tokio::spawn(async move {
             //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
@@ -479,11 +483,18 @@ async fn main() {
             )
             .await;
 
-            let ui_payload = UiThought {
+            // Update RAM process Table (O(1) nanoseconds lock)
+            task_registry.touch_agent(
+                agent_hex.clone().as_str(),
+                archived_ingress.intent_path.as_str(),
+                "Active",
+            );
+
+            let ui_payload = UiEvent::ThoughtCommited {
                 agent_hex: agent_hex.clone(),
                 intent_path: archived_ingress.intent_path.as_str().to_string(),
-                text: archived_state.text.as_str().to_string(),
                 tx_id,
+                text: archived_state.text.as_str().to_string(),
             };
 
             let _ = task_ui_tx.send(ui_payload);
