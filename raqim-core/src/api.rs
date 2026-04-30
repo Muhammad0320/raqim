@@ -30,6 +30,7 @@ use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 use crate::axon::AxonGateKeeper;
+use crate::health::SystemHealth;
 use crate::nucleus::WalEngine;
 use crate::state::SwarmState;
 use crate::{
@@ -97,6 +98,7 @@ pub struct ApiState {
 
     pub event_tx: Sender<SystemEvent>,
     pub ui_tx: Sender<UiThought>,
+    pub health_tx: Sender<SystemHealth>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -582,6 +584,27 @@ pub async fn semantic_search_endpoint(
     }
 }
 
+pub async fn sse_health_endpoint(_auth: crate::api::ValidatedIdentity, State(state): State<ApiState> ) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+
+    let receiver  = state.health_tx.subscribe();
+
+    let stream = BroadcastStream::new(receiver).filter_msg(|msg| async move -> Option<Result<Event, std::convert::Infallible>> {
+
+        match msg {
+            Ok(health_payload) => {
+                let json_string = serde_json::to_string(&health_payload).unwrap();
+
+                Some(Ok(Event::default().data(json_string)))
+            }
+            Err(_) => None, 
+        }
+
+    } );
+
+    Sse::new(stream).keep_alive(KeepAlive::new())
+}
+
+
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
@@ -594,6 +617,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/admin/time_travel", post(time_travel))
         // System / Deployment endpoints
         .route("/v1/system_boot_agent", post(upload_wasm_endpoint))
+        .route("v1/system/health/live", post(sse_health_endpoint))
         // Agent Swarm endpoints
         .route("/v1/mcp/ws", post(mcp_ws_handler))
         .route("/v1/swarm/ingress", post(http_ingress_endpoint))
@@ -601,3 +625,5 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/swarm/memory", get(semantic_search_endpoint))
         .with_state(state)
 }
+
+
