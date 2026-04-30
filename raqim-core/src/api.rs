@@ -183,7 +183,7 @@ where
 // The shared state for this speciific ws connection
 struct WsConnectionstate {
     // Maps req_id -> the pipe that wakes up the waiting zenoh thread
-    pending_a2a_requests: DashMap<String, oneshot::Sender<Vec<u8>>>,
+    pending_a2a_requests: DashMap<String, oneshot::Sender<(Vec<u8>, String)>>,
     // Channel to send mesages DOWN to the Python client
     downstream_tx: mpsc::Sender<Message>,
 }
@@ -268,7 +268,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                         match tokio::runtime::Handle::current()
                             .block_on(timeout(Duration::from_secs(15), reply_rx))
                         {
-                            Ok(Ok(answer)) => answer, // Python replied in time.
+                            Ok(Ok(answer)) => answer.0,
                             _ => {
                                 // Python crashed or too long. Clean up the DashMap to prevent memory leaks.
                                 conn_clone.pending_a2a_requests.remove(&request_id);
@@ -280,10 +280,14 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
             });
         }
 
-        WsMessage::ReplyToQuestion { request_id, answer } => {
+        WsMessage::ReplyToQuestion {
+            request_id,
+            answer,
+            responder_hex,
+        } => {
             // Remove the wakeup ppipe from dashmap and fire the answer into it!
             if let Some((_, reply_tx)) = conn.pending_a2a_requests.remove(&request_id) {
-                let _ = reply_tx.send(answer);
+                let _ = reply_tx.send((answer, responder_hex));
             }
         }
 
@@ -319,6 +323,9 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     signature: sig_bytes,
                 };
 
+                // Start the stopwatch
+                let start_time = std::time::Instant::now();
+
                 match os_state_clone
                     .global_net
                     .execute_a2a_rpc(
@@ -328,12 +335,28 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     )
                     .await
                 {
-                    Ok(answer) => {
+                    Ok((answer, responder_hex)) => {
+                        // stop the stopwatch
+                        let latency_ms = start_time.elapsed().as_millis() as u32;
+
+                        // Send the answer back to the requesting agentn
                         let res = WsMessage::QuestionAnswered { request_id, answer };
                         let _ = conn_clone
                             .downstream_tx
                             .send(Message::Text(serde_json::to_string(&res).unwrap()))
                             .await;
+
+                        // Fire the laser beam to the UI
+                        let ui_event = UiEvent::A2aMessageRouted {
+                            source_hex: sender_hex,
+                            target_hex: responder_hex,
+                            namespace: capability,
+                            question_payload: String::from_utf8_lossy(&question).into_owned(),
+                            answer_payload: String::from_utf8_lossy(&answer).into_owned(),
+                            latence_ms,
+                        };
+
+                        let _ = os_state_clone.ui_tx.send(ui_event);
                     }
 
                     Err(e) => {
