@@ -5,6 +5,7 @@ use raqim_core::axon::AxonGateKeeper;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
+use raqim_core::health::SystemHealth;
 use raqim_core::lancedb_store::LanceEngine;
 use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
@@ -34,7 +35,7 @@ async fn main() {
     TelemetryEngine::start_sinker_daemon(telemetry.clone());
 
     // THE INTERNAL EVENT BUS
-    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(1000);
+    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(5000);
 
     let telemetry_topic = format!("{}_telemetry", config.topic);
 
@@ -355,6 +356,7 @@ async fn main() {
     });
 
     let (ui_tx, _ui_rx) = broadcast::channel::<UiThought>(1000);
+    let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
 
     let api_state = ApiState {
         config: config.clone(),
@@ -371,6 +373,7 @@ async fn main() {
         decoding_key,
 
         ui_tx: ui_tx.clone(),
+        health_tx: health_tx.clone(),
     };
 
     let axum_app = build_admin_router(api_state);
