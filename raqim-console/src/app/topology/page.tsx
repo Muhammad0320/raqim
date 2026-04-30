@@ -37,7 +37,7 @@ function TopologyCanvas() {
     if (node) {
       fitBounds(
         { x: node.position.x, y: node.position.y, width: 350, height: 300 }, 
-        { duration: 800, padding: { top: 100, right: 100, bottom: 100, left: 100 } }
+        { duration: 800, padding: 0.5 }
       );
     }
   };
