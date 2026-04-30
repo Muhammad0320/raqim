@@ -588,7 +588,7 @@ pub async fn sse_health_endpoint(_auth: crate::api::ValidatedIdentity, State(sta
 
     let receiver  = state.health_tx.subscribe();
 
-    let stream = BroadcastStream::new(receiver).filter_msg(|msg| async move -> Option<Result<Event, std::convert::Infallible>> {
+    let stream = BroadcastStream::new(receiver).filter_map(|msg| async move -> Option<Result<Event, std::convert::Infallible>> {
 
         match msg {
             Ok(health_payload) => {
