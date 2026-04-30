@@ -119,6 +119,21 @@ async fn main() {
         .await,
     );
     let wasm_engine = Arc::new(WasmEngine::new());
+
+    // THE BOOTSTRAP PROTOCOL
+    let (lance_highest_tx, valut_capacity) =
+        lance_engine.get_vault_metrics().await.unwrap_or((0, 0));
+    let wal_highest_tx = wal.get_highest_tx_id(&config.wal_path);
+
+    // The abs truth is the highest number found in either store.
+    let starting_tx_id = std::cmp::max(lance_highest_tx, wal_highest_tx);
+    let tx_counter = Arc::new(AtomicU64::new(starting_tx_id + 1));
+
+    println!(
+        "[SYSTEM] Bootstrapped Tx Counter at TxID: {} ",
+        starting_tx_id + 1
+    );
+
     let tx_counter = Arc::new(AtomicU64::new(1));
 
     // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
