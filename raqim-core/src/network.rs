@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmState;
@@ -251,5 +252,31 @@ impl GlobalNetworkBridge {
             "A2A Timeout: No agent responded to capability {}",
             envelope.target_capability
         ))
+    }
+
+    /// Dispatches a highly privileged system command directly to an agent's Python SDK
+    pub async fn dispatch_control_override(&self, target_agent_hex: &str, system_prompt: &str) {
+        let control_topic = format!("{}control/{}", self.workspace_prefix, target_agent_hex);
+
+        // We use json here because the python sdk cintrol listeners needs to parse it easily
+        let payload = serde_json::json!({
+            "command": "FORCE_CONTEXT_EVICTION",
+            "new_system_prompt": system_prompt,
+            "timestamp": SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+        });
+
+        // Fire the command across the Zenoh mesh
+        if let Err(e) = self
+            .session
+            .put(&control_topic, payload.to_string())
+            .res()
+            .await
+        {
+            eprintln!(
+                "[ZENOH FATAL] Failed to dispath control overide to: {}: {}",
+                target_agent_hex.to_string(),
+                e
+            )
+        }
     }
 }
