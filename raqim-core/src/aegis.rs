@@ -245,17 +245,6 @@ impl AegisGateKeeper {
         false
     }
 
-    /// Unfreezes an agent.
-    pub fn lift_quarantine(&self, agent_hex: &str) {
-        let mut blocklist = self.quarantine_blocklist.write().unwrap();
-        if blocklist.remove(agent_hex) {
-            println!(
-                "[AEGIS ADMIN] Quarantine lifted for agent {}. Ready for resurrection. ",
-                agent_hex
-            );
-        }
-    }
-
     /// Universally verifies any crytographic payload at the network edge
     pub fn verify_agent_signature(
         &self,
