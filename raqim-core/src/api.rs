@@ -472,7 +472,7 @@ async fn lift_qurantine_and_resurrect(
 
     match state
         .mem_router
-        .boot_historical_agent(&payload.agent_id, None, None, false)
+        .boot_historical_agent(&payload.agent_hex, None, None, false)
         .await
     {
         Ok(()) => Ok(StatusCode::OK),

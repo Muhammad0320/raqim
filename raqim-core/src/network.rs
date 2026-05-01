@@ -266,12 +266,7 @@ impl GlobalNetworkBridge {
         });
 
         // Fire the command across the Zenoh mesh
-        if let Err(e) = self
-            .session
-            .put(&control_topic, payload.to_string())
-            .res()
-            .await
-        {
+        if let Err(e) = self.session.put(&control_topic, payload.to_string()).await {
             eprintln!(
                 "[ZENOH FATAL] Failed to dispath control overide to: {}: {}",
                 target_agent_hex.to_string(),
