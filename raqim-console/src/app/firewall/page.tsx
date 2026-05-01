@@ -3,8 +3,10 @@ import { MainLayout } from '../../components/Layout/MainLayout';
 import { useSwarmStore, AegisRecord } from '../../lib/store/useSwarmStore';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { LiftQuarantineModal } from '../../components/Firewall/LiftQuarantineModal';
+import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
 
 export default function FirewallPage() {
+  useSwarmStream();
   const aegisAlerts = useSwarmStore(state => state.aegisAlerts);
   const quarantinedAgents = useSwarmStore(state => state.quarantinedAgents);
   const liftQuarantine = useSwarmStore(state => state.liftQuarantine);
