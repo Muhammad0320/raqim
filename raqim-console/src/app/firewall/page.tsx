@@ -1,207 +1,281 @@
 'use client';
 import { MainLayout } from '../../components/Layout/MainLayout';
-import { useSwarmStore } from '../../lib/store/useSwarmStore';
-import { useMemo } from 'react';
+import { useSwarmStore, AegisRecord } from '../../lib/store/useSwarmStore';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { LiftQuarantineModal } from '../../components/Firewall/LiftQuarantineModal';
 
 export default function FirewallPage() {
-  const thoughts = useSwarmStore(state => state.thoughts);
+  const aegisAlerts = useSwarmStore(state => state.aegisAlerts);
+  const quarantinedAgents = useSwarmStore(state => state.quarantinedAgents);
+  const liftQuarantine = useSwarmStore(state => state.liftQuarantine);
 
+  const [selectedAgentHex, setSelectedAgentHex] = useState<string | null>(null);
+  const [modalAgent, setModalAgent] = useState<string | null>(null);
+  const [radarPing, setRadarPing] = useState(false);
+
+  const terminalEndRef = useRef<HTMLDivElement>(null);
+
+  // Derived metrics
+  const now = Date.now();
+  const totalQuarantined = quarantinedAgents.length;
+  const recentInterdictions = aegisAlerts.filter(a => now - a.timestamp < 3600000).length;
+  const signatureSpoofs = aegisAlerts.filter(a => a.violation_type === 'CRYPTO_SPOOF').length;
+  const namespaceViolations = aegisAlerts.filter(a => a.violation_type === 'NAMESPACE_BREACH').length;
+
+  // Selected Record
+  const selectedRecord = useMemo(() => {
+    if (!selectedAgentHex) return null;
+    // Find latest alert for this agent
+    return [...aegisAlerts].reverse().find(a => a.agent_hex === selectedAgentHex) || null;
+  }, [selectedAgentHex, aegisAlerts]);
+
+  // Unique Blocklist from quarantined agents
   const blocklist = useMemo(() => {
-    return Object.values(thoughts)
-      .filter(t => t.status === 'REJECTED')
-      .slice(-10)
-      .reverse();
-  }, [thoughts]);
+    return quarantinedAgents.map(hex => {
+      const latestAlert = [...aegisAlerts].reverse().find(a => a.agent_hex === hex);
+      return latestAlert;
+    }).filter(Boolean) as AegisRecord[];
+  }, [quarantinedAgents, aegisAlerts]);
+
+  // Terminal Auto-scroll
+  useEffect(() => {
+    if (terminalEndRef.current) {
+      terminalEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [aegisAlerts]);
+
+  // Radar Ping Effect
+  useEffect(() => {
+    if (aegisAlerts.length > 0) {
+      setRadarPing(true);
+      const timer = setTimeout(() => setRadarPing(false), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [aegisAlerts]);
+
+  const formatTimestamp = (ts: number) => {
+    const d = new Date(ts);
+    return `[${d.toTimeString().split(' ')[0]}.${d.getMilliseconds().toString().padStart(3, '0')}]`;
+  };
+
+  const getViolationColor = (type: string) => {
+    if (type === 'CRYPTO_SPOOF') return 'text-error bg-error/10 border-error/30';
+    if (type === 'NAMESPACE_BREACH') return 'text-[#ffb300] bg-[#ffb300]/10 border-[#ffb300]/30';
+    return 'text-secondary bg-secondary/10 border-secondary/30';
+  };
 
   return (
-    <MainLayout title="Aegis Control">
-      {/* Content Canvas */}
-      <div className="flex-1 flex flex-col gap-6 px-8 pb-8 overflow-hidden">
-
-        {/* ── Bento Grid Top Row (Stats) ── from raqim_console_aegis_firewall ── */}
-        <div className="grid grid-cols-4 gap-4 flex-shrink-0">
-          <div className="bg-surface-container p-5 rounded-lg ghost-border relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-b from-primary-container/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="flex justify-between items-start mb-4">
-              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Active Nodes</span>
-              <span className="material-symbols-outlined text-outline">dns</span>
-            </div>
-            <div className="font-headline text-4xl font-bold text-on-surface">1,024</div>
-            <div className="font-mono text-[10px] text-secondary mt-2 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[12px]">trending_up</span> +12 from last cycle
-            </div>
-          </div>
-
-          <div className="bg-surface-container p-5 rounded-lg ghost-border relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-b from-error/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-            <div className="flex justify-between items-start mb-4">
-              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Quarantined</span>
-              <span className="material-symbols-outlined text-error">gpp_bad</span>
-            </div>
-            <div className="font-headline text-4xl font-bold text-error">{blocklist.length || 3}</div>
-            <div className="font-mono text-[10px] text-error mt-2 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[12px]">warning</span> Critical action required
-            </div>
-          </div>
-
-          <div className="bg-surface-container p-5 rounded-lg ghost-border relative overflow-hidden group">
-            <div className="flex justify-between items-start mb-4">
-              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Intercept Rate</span>
-              <span className="material-symbols-outlined text-outline">shield</span>
-            </div>
-            <div className="font-headline text-4xl font-bold text-on-surface">99.9%</div>
-            <div className="font-mono text-[10px] text-on-surface-variant mt-2 flex items-center gap-1">
-              Based on heuristics engine
-            </div>
-          </div>
-
-          <div className="bg-surface-container p-5 rounded-lg ghost-border relative overflow-hidden group">
-            <div className="flex justify-between items-start mb-4">
-              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Packet Drop</span>
-              <span className="material-symbols-outlined text-outline">call_missed_outgoing</span>
-            </div>
-            <div className="font-headline text-4xl font-bold text-on-surface">0.04%</div>
-            <div className="font-mono text-[10px] text-secondary mt-2 flex items-center gap-1">
-              <span className="material-symbols-outlined text-[12px]">check_circle</span> Normal operational bounds
-            </div>
-          </div>
-        </div>
-
-        {/* ── Agent Data Table (The Swarm Grid) ── from raqim_console_aegis_firewall ── */}
-        <div className="flex-1 bg-surface-container-lowest rounded-lg ghost-border flex flex-col overflow-hidden relative min-h-0">
-          {/* Table Header */}
-          <div className="bg-surface-container-high px-6 py-4 border-b border-outline-variant/20 flex-shrink-0">
-            <div className="grid grid-cols-12 gap-4 items-center">
-              <div className="col-span-3 font-mono text-xs text-on-surface-variant uppercase tracking-widest">Agent ID</div>
-              <div className="col-span-2 font-mono text-xs text-on-surface-variant uppercase tracking-widest">Sector</div>
-              <div className="col-span-3 font-mono text-xs text-on-surface-variant uppercase tracking-widest">Protocol Status</div>
-              <div className="col-span-2 font-mono text-xs text-on-surface-variant uppercase tracking-widest">Uptime</div>
-              <div className="col-span-2 font-mono text-xs text-on-surface-variant uppercase tracking-widest text-right">Action</div>
-            </div>
-          </div>
-          {/* Table Body */}
-          <div className="flex-1 overflow-y-auto">
-            {/* Normal Row */}
-            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 hover:bg-surface-container-low transition-colors border-b border-outline-variant/10">
-              <div className="col-span-3 font-mono text-sm text-on-surface flex items-center gap-3">
-                <span className="material-symbols-outlined text-secondary text-[18px]">radio_button_checked</span>
-                AX-901-DELTA
+    <MainLayout title="Aegis Firewall">
+      <style>
+        {`
+          @keyframes radarSpin {
+            100% { transform: rotate(360deg); }
+          }
+          @keyframes radarFlash {
+            0% { opacity: 0; transform: scale(0.8); }
+            50% { opacity: 0.8; transform: scale(1); box-shadow: inset 0 0 50px rgba(255,0,0,0.5); }
+            100% { opacity: 0; transform: scale(1.1); }
+          }
+        `}
+      </style>
+      <div className="flex-1 p-6 overflow-hidden min-h-0 bg-zinc-950">
+        <div className="grid grid-cols-12 gap-6 h-full">
+          
+          {/* ── Left Column (8/12): Operational Pane ── */}
+          <div className="col-span-8 flex flex-col gap-6 h-full min-h-0">
+            
+            {/* Top 4 Metric Cards */}
+            <div className="grid grid-cols-4 gap-4 shrink-0">
+              <div className="bg-zinc-900 border border-zinc-800 p-4 flex flex-col gap-2">
+                <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">Total Quarantined</span>
+                <span className="font-mono text-3xl font-bold text-error drop-shadow-[0_0_8px_rgba(255,0,0,0.5)]">{totalQuarantined}</span>
               </div>
-              <div className="col-span-2 font-body text-sm text-on-surface-variant">Europ-West-1</div>
-              <div className="col-span-3">
-                <span className="bg-surface-container px-2 py-1 rounded-sm font-mono text-[10px] text-secondary border border-secondary/20">SECURE_HANDSHAKE</span>
+              <div className="bg-zinc-900 border border-zinc-800 p-4 flex flex-col gap-2">
+                <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">Recent Interdictions</span>
+                <span className="font-mono text-3xl font-bold text-white">{recentInterdictions}</span>
               </div>
-              <div className="col-span-2 font-mono text-xs text-on-surface-variant">42d 11h 09m</div>
-              <div className="col-span-2 flex justify-end">
-                <button className="text-on-surface-variant hover:text-on-surface font-mono text-xs uppercase px-3 py-1 bg-surface-container rounded-sm border border-outline-variant/30 hover:border-outline-variant/60 transition-all">Inspect</button>
+              <div className="bg-zinc-900 border border-zinc-800 p-4 flex flex-col gap-2">
+                <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">Signature Spoofs</span>
+                <span className="font-mono text-3xl font-bold text-error drop-shadow-[0_0_8px_rgba(255,0,0,0.5)]">{signatureSpoofs}</span>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 p-4 flex flex-col gap-2">
+                <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest">Namespace Breaches</span>
+                <span className="font-mono text-3xl font-bold text-[#ffb300] drop-shadow-[0_0_8px_rgba(255,179,0,0.5)]">{namespaceViolations}</span>
               </div>
             </div>
 
-            {/* Quarantined Row */}
-            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 bg-error/5 hover:bg-error/10 transition-colors border-b border-error/20 relative">
-              <div className="absolute left-0 top-0 bottom-0 w-1 bg-error"></div>
-              <div className="col-span-3 font-mono text-sm text-error flex items-center gap-3 font-bold">
-                <span className="material-symbols-outlined text-error text-[18px]">warning</span>
-                KR-442-OMEGA
-              </div>
-              <div className="col-span-2 font-body text-sm text-on-surface-variant">Asia-East-2</div>
-              <div className="col-span-3">
-                <span className="bg-error/10 px-2 py-1 rounded-sm font-mono text-[10px] text-error border border-error/30 inline-flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[12px]">lock</span> ISOLATED
+            {/* Quarantine Blocklist Table */}
+            <div className="flex-1 bg-zinc-900 border border-zinc-800 flex flex-col min-h-0 overflow-hidden">
+              <div className="bg-zinc-950 px-4 py-2 border-b border-zinc-800">
+                <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[14px]">table_rows</span>
+                  Quarantine Blocklist
                 </span>
               </div>
-              <div className="col-span-2 font-mono text-xs text-error/80">0d 00h 14m</div>
-              <div className="col-span-2 flex justify-end gap-2">
-                <button className="bg-surface-container-highest text-on-surface hover:text-primary font-mono text-xs uppercase px-3 py-1 rounded-sm border border-outline-variant/30 hover:border-primary/50 transition-all">Inspect</button>
-                <button className="bg-surface-container text-error hover:bg-error/20 font-mono text-xs uppercase px-3 py-1 rounded-sm border border-error/50 transition-all font-bold">Lift Quarantine</button>
+              
+              <div className="grid grid-cols-12 px-4 py-2 border-b border-zinc-800 bg-zinc-900 shrink-0">
+                <div className="col-span-3 font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Agent Hex</div>
+                <div className="col-span-3 font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Violation</div>
+                <div className="col-span-3 font-mono text-[9px] text-zinc-500 uppercase tracking-widest">Target Path</div>
+                <div className="col-span-3 font-mono text-[9px] text-zinc-500 uppercase tracking-widest text-right">Action</div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto bg-zinc-950">
+                {blocklist.length === 0 ? (
+                   <div className="flex items-center justify-center h-full">
+                     <span className="font-mono text-xs text-zinc-600 uppercase tracking-widest animate-pulse">No Active Quarantines</span>
+                   </div>
+                ) : (
+                  blocklist.map(record => (
+                    <div 
+                      key={record.agent_hex}
+                      onClick={() => setSelectedAgentHex(record.agent_hex)}
+                      className={`grid grid-cols-12 px-4 py-3 border-b border-zinc-800/50 cursor-pointer transition-colors ${selectedAgentHex === record.agent_hex ? 'bg-zinc-900 border-l-2 border-l-[#00f3ff]' : 'hover:bg-zinc-900 border-l-2 border-l-transparent'}`}
+                    >
+                      <div className="col-span-3 font-mono text-xs text-[#00f3ff] flex items-center">{record.agent_hex}</div>
+                      <div className="col-span-3 flex items-center">
+                        <span className={`font-mono text-[9px] px-2 py-0.5 border ${getViolationColor(record.violation_type)}`}>
+                          {record.violation_type}
+                        </span>
+                      </div>
+                      <div className="col-span-3 font-mono text-xs text-zinc-300 flex items-center truncate pr-2">{record.attempted_path}</div>
+                      <div className="col-span-3 flex justify-end items-center">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setModalAgent(record.agent_hex); }}
+                          className="font-mono text-[9px] text-error border border-error/50 hover:bg-error/20 px-2 py-1 uppercase tracking-widest transition-colors"
+                        >
+                          Lift Quarantine
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
-            {/* Quarantined Row */}
-            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 bg-error/5 hover:bg-error/10 transition-colors border-b border-error/20 relative">
-              <div className="absolute left-0 top-0 bottom-0 w-1 bg-error"></div>
-              <div className="col-span-3 font-mono text-sm text-error flex items-center gap-3 font-bold">
-                <span className="material-symbols-outlined text-error text-[18px]">warning</span>
-                US-110-SIGMA
+            {/* Live Rejection Stream */}
+            <div className="h-64 bg-black border border-zinc-800 shrink-0 flex flex-col overflow-hidden">
+              <div className="bg-zinc-950 px-4 py-1 border-b border-zinc-800 flex items-center justify-between">
+                <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[12px]">terminal</span>
+                  Stdout Logs
+                </span>
+                <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse shadow-[0_0_5px_rgba(255,0,0,0.8)]"></span>
               </div>
-              <div className="col-span-2 font-body text-sm text-on-surface-variant">US-Central-1</div>
-              <div className="col-span-3">
-                <span className="bg-error/10 px-2 py-1 rounded-sm font-mono text-[10px] text-error border border-error/30 inline-flex items-center gap-1">
-                  <span className="material-symbols-outlined text-[12px]">block</span> PAYLOAD_REJECT
+              <div className="flex-1 p-4 overflow-y-auto font-mono text-[11px] leading-relaxed break-all">
+                {aegisAlerts.length === 0 ? (
+                  <span className="text-zinc-700">Listening on port 0.0.0.0...</span>
+                ) : (
+                  aegisAlerts.map((alert, idx) => (
+                    <div key={`${alert.timestamp}-${idx}`} className="mb-1">
+                      <span className="text-zinc-500">{formatTimestamp(alert.timestamp)}</span>
+                      <span className="text-error ml-2">[AEGIS_DROP]</span>
+                      <span className="text-[#00f3ff] ml-2">{alert.violation_type}</span>
+                      <span className="text-zinc-300 ml-2">from {alert.agent_hex} on path {alert.attempted_path}.</span>
+                    </div>
+                  ))
+                )}
+                <div ref={terminalEndRef} />
+              </div>
+            </div>
+
+          </div>
+
+          {/* ── Right Column (4/12): Threat & Inspector Pane ── */}
+          <div className="col-span-4 flex flex-col gap-6 h-full min-h-0">
+            
+            {/* Threat Radar Visual */}
+            <div className="h-64 bg-zinc-900 border border-zinc-800 shrink-0 relative overflow-hidden flex flex-col">
+              <div className="bg-zinc-950 px-4 py-2 border-b border-zinc-800 z-10 absolute top-0 w-full flex justify-between">
+                <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[14px]">radar</span>
+                  Threat Radar
                 </span>
               </div>
-              <div className="col-span-2 font-mono text-xs text-error/80">0d 02h 44m</div>
-              <div className="col-span-2 flex justify-end gap-2">
-                <button className="bg-surface-container-highest text-on-surface hover:text-primary font-mono text-xs uppercase px-3 py-1 rounded-sm border border-outline-variant/30 hover:border-primary/50 transition-all">Inspect</button>
-                <button className="bg-surface-container text-error hover:bg-error/20 font-mono text-xs uppercase px-3 py-1 rounded-sm border border-error/50 transition-all font-bold">Lift Quarantine</button>
+              <div className="flex-1 relative flex items-center justify-center pt-8 bg-zinc-950 overflow-hidden">
+                {/* SVG Radar Grid */}
+                <svg width="100%" height="100%" viewBox="0 0 200 200" className="opacity-50">
+                  <defs>
+                    <pattern id="radarGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+                      <rect width="20" height="20" fill="none" stroke="#27272a" strokeWidth="0.5"/>
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" fill="url(#radarGrid)" />
+                  <circle cx="100" cy="100" r="40" fill="none" stroke="#00f3ff" strokeWidth="0.5" strokeDasharray="4 4"/>
+                  <circle cx="100" cy="100" r="80" fill="none" stroke="#00f3ff" strokeWidth="0.5" />
+                  {/* Spinning Line */}
+                  <line x1="100" y1="100" x2="100" y2="20" stroke="#00f3ff" strokeWidth="1" className="origin-center" style={{ animation: 'radarSpin 4s linear infinite' }}/>
+                </svg>
+                {/* Red Kinetic Wave on Alert */}
+                {radarPing && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-full h-full rounded-full border border-error bg-error/10" style={{ animation: 'radarFlash 0.5s ease-out forwards' }}></div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Normal Row */}
-            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 hover:bg-surface-container-low transition-colors border-b border-outline-variant/10">
-              <div className="col-span-3 font-mono text-sm text-on-surface flex items-center gap-3">
-                <span className="material-symbols-outlined text-secondary text-[18px]">radio_button_checked</span>
-                AX-902-DELTA
+            {/* Inspector Panel */}
+            <div className="flex-1 bg-zinc-900 border border-zinc-800 flex flex-col min-h-0 overflow-hidden">
+              <div className="bg-zinc-950 px-4 py-2 border-b border-zinc-800 shrink-0">
+                <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[14px]">policy</span>
+                  Inspector Panel
+                </span>
               </div>
-              <div className="col-span-2 font-body text-sm text-on-surface-variant">Europ-West-1</div>
-              <div className="col-span-3">
-                <span className="bg-surface-container px-2 py-1 rounded-sm font-mono text-[10px] text-secondary border border-secondary/20">SECURE_HANDSHAKE</span>
-              </div>
-              <div className="col-span-2 font-mono text-xs text-on-surface-variant">42d 11h 05m</div>
-              <div className="col-span-2 flex justify-end">
-                <button className="text-on-surface-variant hover:text-on-surface font-mono text-xs uppercase px-3 py-1 bg-surface-container rounded-sm border border-outline-variant/30 hover:border-outline-variant/60 transition-all">Inspect</button>
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+                {!selectedRecord ? (
+                  <div className="h-full flex items-center justify-center">
+                    <span className="font-mono text-xs text-zinc-600 tracking-widest uppercase text-center">Select a quarantined node<br/>to view forensics</span>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Agent Hex</span>
+                      <span className="font-mono text-sm text-[#00f3ff] break-all">{selectedRecord.agent_hex}</span>
+                    </div>
+                    <div>
+                      <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Violation</span>
+                      <span className={`font-mono text-[10px] px-2 py-0.5 border inline-block ${getViolationColor(selectedRecord.violation_type)}`}>
+                        {selectedRecord.violation_type}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Time of Death</span>
+                      <span className="font-mono text-xs text-zinc-300">{formatTimestamp(selectedRecord.timestamp)}</span>
+                    </div>
+                    <div>
+                      <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest block mb-1">Attempted Path</span>
+                      <span className="font-mono text-xs text-zinc-300">{selectedRecord.attempted_path}</span>
+                    </div>
+                    <div className="flex-1 flex flex-col min-h-0 mt-2">
+                      <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest block mb-2">Payload Preview</span>
+                      <div className="flex-1 bg-zinc-950 border border-error/30 p-3 rounded-sm overflow-auto text-error font-mono text-[11px] whitespace-pre shadow-[inset_0_0_10px_rgba(255,0,0,0.1)]">
+                        {selectedRecord.payload_preview}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
-            {/* Normal Row */}
-            <div className="grid grid-cols-12 gap-4 items-center px-6 py-4 hover:bg-surface-container-low transition-colors border-b border-outline-variant/10">
-              <div className="col-span-3 font-mono text-sm text-on-surface flex items-center gap-3">
-                <span className="material-symbols-outlined text-secondary text-[18px]">radio_button_checked</span>
-                BR-771-ALPHA
-              </div>
-              <div className="col-span-2 font-body text-sm text-on-surface-variant">SA-East-1</div>
-              <div className="col-span-3">
-                <span className="bg-surface-container px-2 py-1 rounded-sm font-mono text-[10px] text-secondary border border-secondary/20">SECURE_HANDSHAKE</span>
-              </div>
-              <div className="col-span-2 font-mono text-xs text-on-surface-variant">12d 04h 22m</div>
-              <div className="col-span-2 flex justify-end">
-                <button className="text-on-surface-variant hover:text-on-surface font-mono text-xs uppercase px-3 py-1 bg-surface-container rounded-sm border border-outline-variant/30 hover:border-outline-variant/60 transition-all">Inspect</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Bottom Terminal / Cryptographic Stream ── from raqim_console_aegis_firewall ── */}
-        <div className="h-48 bg-surface-container-lowest rounded-lg ghost-border flex flex-col overflow-hidden relative flex-shrink-0">
-          {/* Terminal Header */}
-          <div className="bg-surface-container-high px-4 py-2 border-b border-outline-variant/20 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-on-surface-variant text-sm">terminal</span>
-              <span className="font-mono text-xs text-on-surface-variant uppercase tracking-widest">Aegis Rejection Stream</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
-              <span className="font-mono text-[10px] text-secondary uppercase tracking-widest">Live</span>
-              <div className="flex gap-1.5 ml-2">
-                <span className="w-2 h-2 rounded-full bg-outline-variant"></span>
-                <span className="w-2 h-2 rounded-full bg-outline-variant"></span>
-                <span className="w-2 h-2 rounded-full bg-outline-variant"></span>
-              </div>
-            </div>
-          </div>
-          {/* Terminal Output */}
-          <div className="flex-1 p-4 overflow-y-auto font-mono text-xs leading-relaxed space-y-1">
-            <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:44.102]</span> REJECT: Invalid cryptographic signature from source IP 192.168.1.44 (KR-442-OMEGA)</div>
-            <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:44.105]</span> ACTION: Quarantine policy applied to KR-442-OMEGA. Connection severed.</div>
-            <div className="text-on-surface-variant"><span className="text-outline">[14:02:45.001]</span> INFO: Handshake successful AX-901-DELTA.</div>
-            <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:50.882]</span> REJECT: Payload anomaly detected. Malformed headers in packet stream from US-110-SIGMA.</div>
-            <div className="text-on-surface-variant"><span className="text-tertiary">[14:02:50.884]</span> ACTION: Quarantine policy applied to US-110-SIGMA. Deep inspection queued.</div>
-            <div className="text-on-surface-variant"><span className="text-outline">[14:02:55.220]</span> INFO: Routine telemetry sync complete across Europ-West cluster.</div>
-            <div className="text-on-surface-variant"><span className="text-tertiary">[14:03:01.002]</span> REJECT: Key rotation mismatch attempt from untracked MAC 00:1A:2B:3C:4D:5E.</div>
-            <div className="text-on-surface-variant"><span className="text-outline">[14:03:05.110]</span> SYSTEM: Listening for incoming node registration requests...</div>
           </div>
         </div>
       </div>
+      
+      <LiftQuarantineModal 
+        isOpen={!!modalAgent} 
+        agentHex={modalAgent || ''} 
+        onClose={() => setModalAgent(null)} 
+        onConfirm={() => {
+          if (modalAgent) {
+            liftQuarantine(modalAgent);
+            if (selectedAgentHex === modalAgent) {
+              setSelectedAgentHex(null);
+            }
+          }
+        }} 
+      />
     </MainLayout>
   );
 }

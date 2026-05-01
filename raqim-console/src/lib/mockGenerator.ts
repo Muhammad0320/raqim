@@ -69,6 +69,21 @@ export function startMockStream(pushToBuffer: (t: UiThought, evs: UiEvent[]) => 
       });
     }
 
+    // Randomly emit an AegisAlert event
+    if (Math.random() > 0.85) {
+      const violations: ("CRYPTO_SPOOF" | "NAMESPACE_BREACH" | "RAG_POISONING")[] = ["CRYPTO_SPOOF", "NAMESPACE_BREACH", "RAG_POISONING"];
+      events.push({
+        event_type: "AegisAlert",
+        record: {
+          agent_hex: MOCK_AGENTS[Math.floor(Math.random() * MOCK_AGENTS.length)],
+          violation_type: violations[Math.floor(Math.random() * violations.length)],
+          attempted_path: MOCK_NAMESPACES[Math.floor(Math.random() * MOCK_NAMESPACES.length)],
+          payload_preview: `0x${genHex(32)}\nAttempting execution via unauthorized channel.`,
+          timestamp: Date.now()
+        }
+      });
+    }
+
     pushToBuffer(t, events);
   }, 150); // Emits fast for visual density
 

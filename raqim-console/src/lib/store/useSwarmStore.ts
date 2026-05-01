@@ -1,9 +1,18 @@
 import { create } from 'zustand';
 import { Node, Edge } from '@xyflow/react';
 
+export interface AegisRecord {
+    agent_hex: string;
+    violation_type: "CRYPTO_SPOOF" | "NAMESPACE_BREACH" | "RAG_POISONING";
+    attempted_path: string;
+    payload_preview: string;
+    timestamp: number;
+}
+
 export type UiEvent = 
   | { event_type: "ThoughtCommitted"; agent_hex: string; intent_path: string; tx_id: number; text: string; }
-  | { event_type: "A2aMessageRouted"; source_hex: string; target_hex: string; namespace: string; question_payload: string; answer_payload: string; latency_ms: number; };
+  | { event_type: "A2aMessageRouted"; source_hex: string; target_hex: string; namespace: string; question_payload: string; answer_payload: string; latency_ms: number; }
+  | { event_type: "AegisAlert"; record: AegisRecord };
 
 export interface UiThought {
   agent_hex: string;
@@ -30,11 +39,16 @@ interface SwarmState {
   topologyEdges: Edge[];
   namespaces: string[];
 
+  // Firewall State
+  aegisAlerts: AegisRecord[];
+  quarantinedAgents: string[];
+
   fetchInitialTopology: () => Promise<void>;
   batchAddThoughts: (thoughts: UiThought[]) => void;
   processUiEvents: (events: UiEvent[]) => void;
   pruneEphemeralEdges: () => void;
   setActiveTxId: (tx_id: number | null) => void;
+  liftQuarantine: (agent_hex: string) => void;
   clear: () => void;
 }
 
@@ -52,6 +66,15 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   topologyNodes: [],
   topologyEdges: [],
   namespaces: [],
+
+  // Firewall State
+  aegisAlerts: [],
+  quarantinedAgents: [],
+
+  liftQuarantine: (agent_hex: string) => 
+    set((state) => ({
+      quarantinedAgents: state.quarantinedAgents.filter(a => a !== agent_hex)
+    })),
 
   fetchInitialTopology: async () => {
     // In a real app, this would be a fetch to /v1/swarm/topology/snapshot
@@ -206,13 +229,18 @@ export const useSwarmStore = create<SwarmState>((set) => ({
               animated: true,
             });
           }
+        } else if (ev.event_type === 'AegisAlert') {
+          newAlerts.push(ev.record);
+          newQuarantined.add(ev.record.agent_hex);
         }
       }
 
       return {
         topologyNodes: newNodes,
         topologyEdges: newEdges,
-        namespaces: Array.from(newNamespaces)
+        namespaces: Array.from(newNamespaces),
+        aegisAlerts: newAlerts.slice(-200), // Keep last 200 alerts
+        quarantinedAgents: Array.from(newQuarantined)
       };
     }),
 
