@@ -257,14 +257,6 @@ impl AegisGateKeeper {
         }
     }
 
-    /// Fetches the live qurantine list for the Admin Dashboard
-    pub fn fetch_quaratined_agents(&self) -> Vec<String> {
-        self.quarantine_blocklist
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
-    }
-
     /// Universally verifies any crytographic payload at the network edge
     pub fn verify_agent_signature(
         &self,
