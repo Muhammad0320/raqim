@@ -14,7 +14,6 @@ use dashmap::DashMap;
 use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
 use std::convert::Infallible;
-use std::result;
 use tokio_stream::wrappers::BroadcastStream;
 
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
