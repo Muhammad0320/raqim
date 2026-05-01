@@ -260,8 +260,6 @@ impl AegisGateKeeper {
     /// Fetches the live qurantine list for the Admin Dashboard
     pub fn fetch_quaratined_agents(&self) -> Vec<String> {
         self.quarantine_blocklist
-            .read()
-            .unwrap()
             .iter()
             .map(|s| s.to_string())
             .collect()
