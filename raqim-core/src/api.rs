@@ -15,6 +15,7 @@ use dashmap::DashMap;
 use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
 use std::convert::Infallible;
+use std::result;
 use tokio_stream::wrappers::BroadcastStream;
 
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
@@ -421,13 +422,6 @@ pub async fn sse_firehose_endpoint(
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new())
 }
 
-async fn get_quarantine(
-    _auth: ValidatedIdentity,
-    State(state): State<ApiState>,
-) -> Result<Json<Vec<String>>, StatusCode> {
-    Ok(Json(state.aegis.fetch_quaratined_agents()))
-}
-
 #[derive(Deserialize)]
 struct ResurrectPayload {
     agent_id: String,
@@ -680,14 +674,14 @@ pub async fn active_qurantine_endpoint(
     // Sort by most recent first
     quarantined_agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-    Ok(Json(quarantined_agents))
+    result::Result::Ok(Json(quarantined_agents))
 }
 
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
         // Admin / Debugging endpoints
-        .route("/v1/admin/quarantine", get(get_quarantine))
+        .route("/v1/admin/quarantine", get(active_qurantine_endpoint))
         .route(
             "/v1/admin/quarantine/lift",
             post(lift_qurantine_and_resurrect),
