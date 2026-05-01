@@ -224,6 +224,25 @@ impl GlobalNetworkBridge {
                 // Return the answer bytes back to the caller
                 let res_bytes = sample.payload().to_bytes().to_vec();
                 telemetry.record_a2a_bytes(res_bytes.len() as u64);
+
+                // Attempt to parse the pythons SDK's envelope to extract the true responder and answer
+                if let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(&res_bytes) {
+                    let actual_responder = json_val["responder_hex"]
+                        .as_str()
+                        .unwrap_or(&sender_hex)
+                        .to_string();
+
+                    // Reselialize the answer bytes to send back to the original caller
+                    let clean_answer = json_val["answer"]
+                        .as_str()
+                        .unwrap_or("")
+                        .as_bytes()
+                        .to_vec();
+
+                    return Ok((clean_answer, actual_responder));
+                }
+
+                // Fallback if the payload was shitly formatted
                 return Ok((res_bytes, sender_hex.clone()));
             }
         }
