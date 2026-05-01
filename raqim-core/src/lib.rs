@@ -173,18 +173,19 @@ pub enum SystemEvent {
         reason: String,
         culprit_text: String,
     },
-    CompactionTriggered {
-        archived_count: usize,
-    },
-    PluginLoaded {
-        plugin_name: String,
-    },
 
     AegisInterdiction {
         agent_id: String,
         attempted_path: String,
         rule_broken: String,
         payload: String,
+    },
+
+    CompactionTriggered {
+        archived_count: usize,
+    },
+    PluginLoaded {
+        plugin_name: String,
     },
 
     SystemBoot {

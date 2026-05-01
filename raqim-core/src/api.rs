@@ -99,7 +99,7 @@ pub enum UiEvent {
         namespace: String,
         question_payload: String,
         answer_payload: String,
-        latence_ms: u32,
+        latency_ms: u32,
     },
 }
 
@@ -353,7 +353,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                             namespace: capability,
                             question_payload: String::from_utf8_lossy(&question).into_owned(),
                             answer_payload: String::from_utf8_lossy(&answer).into_owned(),
-                            latence_ms,
+                            latency_ms,
                         };
 
                         let _ = os_state_clone.ui_tx.send(ui_event);
