@@ -1,3 +1,4 @@
+use anyhow::Ok;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Query};
 use axum::response::Response;
@@ -29,7 +30,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
-use crate::aegis::QuarantineRecord;
+use crate::aegis::{self, QuarantineRecord};
 use crate::axon::AxonGateKeeper;
 use crate::health::SystemHealth;
 use crate::nucleus::WalEngine;
@@ -663,6 +664,23 @@ pub async fn sse_health_endpoint(
     });
 
     Sse::new(stream).keep_alive(KeepAlive::new())
+}
+
+pub async fn active_qurantine_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Result<Json<Vec<QuarantineRecord>>, StatusCode> {
+    let mut quarantined_agents = Vec::new();
+
+    // Iterate over Dashmap Shards safely.
+    for entry in state.aegis.quarantine_blocklist.iter() {
+        quarantined_agents.push(entry.value().clone());
+    }
+
+    // Sort by most recent first
+    quarantined_agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    Ok(Json(quarantined_agents))
 }
 
 // Route Builder

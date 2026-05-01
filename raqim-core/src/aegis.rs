@@ -3,7 +3,6 @@ use crate::api::UiEvent;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
-use rkyv::Serialize;
 use serde::Deserialize;
 use std::sync::mpsc::channel;
 use std::time::{SystemTime, UNIX_EPOCH};
