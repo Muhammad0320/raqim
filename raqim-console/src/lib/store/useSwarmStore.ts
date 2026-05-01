@@ -167,6 +167,8 @@ export const useSwarmStore = create<SwarmState>((set) => ({
       let newNodes = [...state.topologyNodes];
       let newEdges = [...state.topologyEdges];
       const newNamespaces = new Set(state.namespaces);
+      const newAlerts = [...state.aegisAlerts];
+      const newQuarantined = new Set(state.quarantinedAgents);
       const now = Date.now();
 
       // Ensure namespaces are placed in a circle
