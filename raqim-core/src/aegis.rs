@@ -1,14 +1,27 @@
 use crate::SystemEvent;
+use crate::api::UiEvent;
+use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
+use rkyv::Serialize;
 use serde::Deserialize;
 use std::sync::mpsc::channel;
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs,
     sync::{Arc, RwLock},
 };
 use tokio::sync::broadcast::Sender;
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct QuarantineRecord {
+    pub agent_hex: String,
+    pub violation_type: String,
+    pub attemped_path: String,
+    pub payload_preview: String,
+    pub timestamp: u64,
+}
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AegisPolicy {
@@ -26,19 +39,22 @@ pub struct AegisGateKeeper {
     // AEGIS ENGINE: Maps an Agent's Hex ID to their specific security policy.
     policies: RwLock<HashMap<String, AegisPolicy>>,
 
-    // QUARANTINE: Agents in this list are completely paralysed at the network level
-    pub quarantine_blocklist: RwLock<HashSet<String>>,
+    // TRUE CONCURRENCY: Dashmaps shards the locks. O(1) reads without blocking writers.
+    pub quarantine_blocklist: DashMap<String, QuarantineRecord>,
     tx: Sender<SystemEvent>,
+
+    ui_tx: Sender<UiEvent>,
 }
 
 impl AegisGateKeeper {
-    pub fn new(config_path: &str, tx: Sender<SystemEvent>) -> Arc<Self> {
+    pub fn new(config_path: &str, tx: Sender<SystemEvent>, ui_tx: Sender<UiEvent>) -> Arc<Self> {
         let initial_config = Self::parse_toml(&config_path);
 
         let gatekeeper = Arc::new(Self {
             policies: RwLock::new(initial_config),
-            quarantine_blocklist: RwLock::new(HashSet::new()),
+            quarantine_blocklist: DashMap::new(),
             tx,
+            ui_tx,
         });
 
         // Spawn a dedicated bg thread for the C-level fs watcher
@@ -109,12 +125,7 @@ impl AegisGateKeeper {
     /// The Semantic Interdiction Switch. Returns TRUE if allowed, FALSE if malicious.
     pub fn enforce_aegis_policy(&self, agent_hex: &str, intent_path: &str) -> bool {
         // Check quarantine first (0(1) instant rejection )
-        if self
-            .quarantine_blocklist
-            .read()
-            .unwrap()
-            .contains(agent_hex)
-        {
+        if self.quarantine_blocklist.contains_key(agent_hex) {
             eprintln!(
                 "[AEGIS] PARALYSED AGENT {} ATTEMPTED ACTION. DROPPED. ",
                 agent_hex
@@ -159,22 +170,37 @@ impl AegisGateKeeper {
 
     /// Locks down the agent globally across the OS
     pub fn trigger_quarantine(&self, agent_hex: &str, target: &str, reason: &str) {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let record = QuarantineRecord {
+            agent_hex: agent_hex.to_string(),
+            violation_type: "AEGIS_INTERDICTION".to_string(),
+            attemped_path: target.to_string(),
+            payload_preview: reason.to_string(),
+            timestamp,
+        };
+
+        // Lock the agent down at network layer instantly.
+        self.quarantine_blocklist
+            .insert(agent_hex.to_string(), record.clone());
+
+        // Fire the durable WAL log
+        let _ = self.tx.send(SystemEvent::AegisInterdiction {
+            agent_id: agent_hex.to_string(),
+            attempted_path: target.to_string(),
+            rule_broken: "Strict Enforcement".to_string(),
+            payload: reason.to_string(),
+        });
+
+        // Fire the SSE alert directly to the React Terminal
+        let _ = self.ui_tx.send(UiEvent::AegisAlert { record });
+
         eprintln!(
             "\n[AEGIS RED ALERT] Unauthorized access attempts by {} on path: {} ",
             agent_hex, target
         );
-
-        let _ = self.tx.send(SystemEvent::AegisInterdiction {
-            agent_id: agent_hex.to_string(),
-            attempted_path: target.to_string(),
-            rule_broken: "".to_string(),
-            payload: reason.to_string(),
-        });
-
-        self.quarantine_blocklist
-            .write()
-            .unwrap()
-            .insert(agent_hex.to_string());
     }
 
     /// Evaluates if an agent is authorized to communicate with a specific service capability

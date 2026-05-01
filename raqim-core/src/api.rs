@@ -29,6 +29,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
+use crate::aegis::QuarantineRecord;
 use crate::axon::AxonGateKeeper;
 use crate::health::SystemHealth;
 use crate::nucleus::WalEngine;
@@ -100,6 +101,10 @@ pub enum UiEvent {
         question_payload: String,
         answer_payload: String,
         latency_ms: u32,
+    },
+
+    AegisAlert {
+        record: QuarantineRecord,
     },
 }
 
@@ -318,8 +323,8 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                 let envelope = A2AEnvelope {
                     sender_id: sender_id_bytes,
-                    target_capability: capability,
-                    payload: question,
+                    target_capability: capability.clone(),
+                    payload: question.clone(),
                     signature: sig_bytes,
                 };
 
@@ -340,7 +345,10 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                         let latency_ms = start_time.elapsed().as_millis() as u32;
 
                         // Send the answer back to the requesting agentn
-                        let res = WsMessage::QuestionAnswered { request_id, answer };
+                        let res = WsMessage::QuestionAnswered {
+                            request_id,
+                            answer: answer.clone(),
+                        };
                         let _ = conn_clone
                             .downstream_tx
                             .send(Message::Text(serde_json::to_string(&res).unwrap()))
@@ -350,7 +358,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                         let ui_event = UiEvent::A2aMessageRouted {
                             source_hex: sender_hex,
                             target_hex: responder_hex,
-                            namespace: capability,
+                            namespace: capability.clone(),
                             question_payload: String::from_utf8_lossy(&question).into_owned(),
                             answer_payload: String::from_utf8_lossy(&answer).into_owned(),
                             latency_ms,
