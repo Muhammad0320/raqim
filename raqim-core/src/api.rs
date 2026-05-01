@@ -1,4 +1,3 @@
-use anyhow::Ok;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Query};
 use axum::response::Response;
@@ -31,7 +30,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
-use crate::aegis::{self, QuarantineRecord};
+use crate::aegis::QuarantineRecord;
 use crate::axon::AxonGateKeeper;
 use crate::health::SystemHealth;
 use crate::nucleus::WalEngine;
@@ -674,7 +673,7 @@ pub async fn active_qurantine_endpoint(
     // Sort by most recent first
     quarantined_agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-    result::Result::Ok(Json(quarantined_agents))
+    Ok(Json(quarantined_agents))
 }
 
 // Route Builder
