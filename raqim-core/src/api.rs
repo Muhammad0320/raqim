@@ -422,7 +422,8 @@ pub async fn sse_firehose_endpoint(
 
 #[derive(Deserialize)]
 struct ResurrectPayload {
-    agent_id: String,
+    agent_hex: String,
+    system_prompt_override: String,
 }
 
 async fn lift_qurantine_and_resurrect(
@@ -438,8 +439,36 @@ async fn lift_qurantine_and_resurrect(
         return Err(StatusCode::PAYMENT_REQUIRED);
     }
 
-    // List the Aegis Block.
-    state.aegis.lift_quarantine(&payload.agent_id);
+    // Fire the Out-of-Band Context Eviction Via Zenoh
+    println!(
+        "[AEGIS] Dispatching Context Eviction to: {}... ",
+        payload.agent_hex.clone()
+    );
+    state
+        .global_net
+        .dispatch_control_override(&payload.agent_hex, &payload.system_prompt_override)
+        .await;
+
+    // Unfreeze the Agent (Remove from DashhMap)
+    if state
+        .aegis
+        .quarantine_blocklist
+        .remove(&payload.agent_hex)
+        .is_some()
+    {
+        // Also update the Ram process table so the Topology page knows it's alive again.
+        state
+            .swarm_registry
+            .touch_agent(&payload.agent_hex, "Unknown", "Rebooting");
+
+        println!(
+            "[AEGIS] Agent {} quarantine lifted. Reality re-seeded.",
+            payload.agent_hex
+        );
+        Ok(StatusCode::OK)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
 
     match state
         .mem_router
