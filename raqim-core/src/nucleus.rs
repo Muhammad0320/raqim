@@ -1,11 +1,13 @@
 use std::{
     collections::BTreeMap,
+    fs::File,
     io::Read,
     sync::{Arc, RwLock},
     thread,
 };
 
 use crate::{OpLog, api::VaultSearchResult};
+use memmap2::MmapOptions;
 use rkyv::to_bytes;
 use tokio::sync::mpsc;
 use tokio_uring::fs::OpenOptions;
@@ -110,13 +112,61 @@ impl WalEngine {
     pub fn lexical_scan(
         &self,
         query: &str,
-        namespace: Option<&str>,
+        namespace_filter: Option<&str>,
         limit: usize,
-    ) -> Vec<VaultSearchResult> {
-        let mut results = Vec::new();
-        let query_lower = query.to_lowercase();
+        wal_path: &str,
+    ) -> Result<Vec<VaultSearchResult>, anyhow::Error> {
+        let file = File::open(wal_path)?;
 
-        results
+        // Page the WAL directly into virtual memory. Zero read() syscall overhead
+        let mmap = unsafe { MmapOptions::new().map(&file)? };
+
+        // Compile the search automaton (case-insensitive)
+        let ac = AhoCorasick::builder()
+            .ascii_case_insensitive(true)
+            .build(vec![query])
+            .map_err(|e| anyhow::anyhow!("Failed to build automaton: {}", e))?;
+
+        let mut results = Vec::new();
+        let mut cursor = 0;
+
+        while cursor < mmap.len() && results.len() < limit {
+            if cursor + 4 > mmap.len() {
+                break;
+            }
+            let len = u32::from_le_bytes(mmap[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+
+            let payload = &cursor[cursor..cursor + len];
+            cursor += len;
+
+            // Zero-copy rkyv extraction
+            let archived_log =
+                unsafe { rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload) };
+            let text = archived_log.state.text.as_str();
+            let ns = archived_log.state.namespace.as_str();
+
+            if let Some(filter) = namespace_filter {
+                if !filter.is_empty() && filter != ns {
+                    continue;
+                }
+            }
+
+            //  SIMD-accelerated search over the exact text slice
+            if ac.is_match(text) {
+                results.push(VaultSearchResult {
+                    agent_hex: hex::encode(archived_log.state.agent_id.unwrap()),
+                    tx_id: archived_log.state.transaction_id.into(),
+                    namespace: archived_log.state.namespace.to_string(),
+                    payload: text.to_string(),
+                    timestamp: archived_log.state.timestamp.to_string(),
+                    source: "HOT_WAL".to_string(),
+                    similarity_score: 1.0,
+                });
+            }
+        }
+        results.reverse();
+        Ok(results)
     }
 
     /// Scans the raw WAL file to find the highest TxID it contains.

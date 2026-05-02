@@ -97,10 +97,23 @@ impl WalCompactor {
                 unsafe { rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice) };
 
             if let Ok(log) = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log) {
-                let simulated_vector = vec![0.01_f32; self.lance_engine.dims as usize];
+                // Construct the dense semantic string
+                let semantic_payload = format!(
+                    "[{}] Agent in {} stated {}",
+                    log.state.status, log.state.namespace, log.state.text
+                );
 
-                logs_to_archive.push(log);
-                vector.push(simulated_vector);
+                // Call the Pluggable Embedder ( This is CPU bound, but we're off the TCP path )
+                match self.lance_engine.embedder.embed(&semantic_payload) {
+                    Ok(vec_data) => {
+                        logs_to_archive.push(log);
+                        vector.push(vec_data);
+                    }
+                    Err(e) => eprintln!(
+                        "[COMPACTOR WARNING] Failed to embed TxID {}: {} ",
+                        log.state.transaction_id, e
+                    ),
+                }
             }
 
             offset += entry_len;
