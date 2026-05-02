@@ -1,3 +1,4 @@
+use crate::embedding::EmbeddingProvider;
 use crate::{OpLog, SystemEvent};
 use anyhow::Ok;
 use arrow_array::Array;
@@ -19,29 +20,26 @@ pub struct LanceEngine {
     pub db: Connection,
     pub history_table: String,
     pub snapshot_table: String,
-    pub dims: i32,
-    pub embedder: Mutex<TextEmbedding>,
+    // pub dims: i32,
+    pub embedder: Box<dyn EmbeddingProvider>, // Polymorphic injection
 }
 
 impl LanceEngine {
-    pub async fn new(storage_path: &str, table_name: &str, vector_dim: i32) -> Self {
+    pub async fn new(
+        storage_path: &str,
+        table_name: &str,
+        embedder: Box<dyn EmbeddingProvider>,
+    ) -> Self {
         println!("Bismillah. Booting LanceEngine & Local Embedding Model...");
         let db = connect(storage_path)
             .execute()
             .await
             .expect("Failed to connect to lanceDB");
 
-        // Initialize the local AI embedding model
-        let embedder = Mutex::new(
-            TextEmbedding::try_new(InitOptions::new(EmbeddingModel::AllMiniLML6V2))
-                .expect("Failed to initialize FastEmbed "),
-        );
-
         Self {
             db,
             history_table: table_name.to_string(),
             snapshot_table: "agent_snapshot".to_string(),
-            dims: vector_dim,
             embedder,
         }
     }
