@@ -7,13 +7,12 @@ use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
 };
 use arrow_schema::{DataType, Field, Schema};
-use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use futures::StreamExt;
 use lancedb::connect;
 use lancedb::connection::Connection;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct LanceEngine {
