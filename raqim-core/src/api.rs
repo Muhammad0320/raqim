@@ -465,18 +465,24 @@ async fn lift_qurantine_and_resurrect(
             "[AEGIS] Agent {} quarantine lifted. Reality re-seeded.",
             payload.agent_hex
         );
-        Ok(StatusCode::OK)
+
+        match state
+            .mem_router
+            .boot_historical_agent(&payload.agent_hex, None, None, false)
+            .await
+        {
+            Ok(()) => Ok(StatusCode::OK),
+
+            Err(e) => {
+                eprintln!(
+                    "[TIME MACHINE FATAL] Failed to resurrect WASM state for {}: {} ",
+                    &payload.agent_hex, e
+                );
+                Ok(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
     } else {
         Err(StatusCode::NOT_FOUND)
-    }
-
-    match state
-        .mem_router
-        .boot_historical_agent(&payload.agent_hex, None, None, false)
-        .await
-    {
-        Ok(()) => Ok(StatusCode::OK),
-        Err(_) => Ok(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
