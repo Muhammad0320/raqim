@@ -613,4 +613,12 @@ impl LanceEngine {
 
         Ok((0, total_rows))
     }
+
+    pub async fn get_total_vector_count(&self) -> Result<usize, anyhow::Error> {
+        let table = self.db.open_table(&self.history_table).execute().await?;
+        Ok(table.count_rows(None).await?)
+    }
+
+    /// Executes a DataFusion aggregation tp find the namespace with most vectors.
+    pub async fn get_densest_namespace(&self) -> Result<String, anyhow::Error> {}
 }

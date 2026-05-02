@@ -137,7 +137,7 @@ impl WalEngine {
             let len = u32::from_le_bytes(mmap[cursor..cursor + 4].try_into().unwrap()) as usize;
             cursor += 4;
 
-            let payload = &cursor[cursor..cursor + len];
+            let payload = &mmap[cursor..cursor + len];
             cursor += len;
 
             // Zero-copy rkyv extraction
