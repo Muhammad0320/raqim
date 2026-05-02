@@ -38,6 +38,6 @@ impl EmbeddingProvider for LocalBgeProvider {
     }
 
     fn dimension(&self) -> i32 {
-        768 // BGe-Base dimension size
+        768 // Bge-Base dimension size
     }
 }

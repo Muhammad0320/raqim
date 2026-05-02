@@ -143,7 +143,7 @@ impl LanceEngine {
                 "vector",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, false)),
-                    768,
+                    self.embedder.dimension(),
                 ),
                 false,
             ),

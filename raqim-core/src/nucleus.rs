@@ -115,6 +115,8 @@ impl WalEngine {
     ) -> Vec<VaultSearchResult> {
         let mut results = Vec::new();
         let query_lower = query.to_lowercase();
+
+        results
     }
 
     /// Scans the raw WAL file to find the highest TxID it contains.
