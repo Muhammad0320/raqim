@@ -64,7 +64,7 @@ export default function VaultPage() {
   return (
     <MainLayout title="Audit Vault">
       <div className="flex-1 p-6 overflow-hidden min-h-0 bg-zinc-950">
-        <div className="grid grid-cols-12 gap-6 h-full" style={{ gridTemplateRows: 'minmax(0, 45%) minmax(0, 1fr)' }}>
+        <div className="grid grid-cols-12 gap-6 h-full" style={{ gridTemplateRows: '45fr 55fr' }}>
           
           {/* ── Pane 1: Left Sidebar (3/12 width) ── */}
           <div className="col-span-3 row-span-2 bg-zinc-900 border border-zinc-800 flex flex-col h-full overflow-y-auto">
@@ -156,7 +156,7 @@ export default function VaultPage() {
           </div>
 
           {/* ── Pane 2: Semantic Constellation (Top Right) ── */}
-          <div className="col-span-9 row-span-1 bg-zinc-900 border border-zinc-800 relative flex flex-col min-h-0 overflow-hidden">
+          <div className="col-start-4 col-span-9 row-start-1 row-span-1 bg-zinc-900 border border-zinc-800 relative flex flex-col min-h-0 overflow-hidden">
             <div className="bg-zinc-950 border-b border-zinc-800 px-4 py-2 shrink-0 flex justify-between items-center z-10 relative">
               <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest flex items-center gap-2">
                 <span className="material-symbols-outlined text-[14px]">share</span>
@@ -175,7 +175,7 @@ export default function VaultPage() {
           </div>
 
           {/* ── Pane 3: Unified Ledger (Bottom Right) ── */}
-          <div className="col-span-9 row-span-1 bg-zinc-900 border border-zinc-800 flex flex-col min-h-0 overflow-hidden">
+          <div className="col-start-4 col-span-9 row-start-2 row-span-1 bg-zinc-900 border border-zinc-800 flex flex-col min-h-0 overflow-hidden">
             <div className="bg-zinc-950 border-b border-zinc-800 px-4 py-2 shrink-0 flex justify-between items-center">
               <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest flex items-center gap-2">
                 <span className="material-symbols-outlined text-[14px]">table_chart</span>
