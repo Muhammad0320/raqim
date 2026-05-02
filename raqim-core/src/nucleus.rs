@@ -5,7 +5,7 @@ use std::{
     thread,
 };
 
-use crate::OpLog;
+use crate::{OpLog, api::VaultSearchResult};
 use rkyv::to_bytes;
 use tokio::sync::mpsc;
 use tokio_uring::fs::OpenOptions;
@@ -104,6 +104,17 @@ impl WalEngine {
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
     pub async fn append(&self, log: OpLog) {
         let _ = self.sender.send(log).await;
+    }
+
+    /// Extremely fast binary scan of the active WAL for a specific substring
+    pub fn lexical_scan(
+        &self,
+        query: &str,
+        namespace: Option<&str>,
+        limit: usize,
+    ) -> Vec<VaultSearchResult> {
+        let mut results = Vec::new();
+        let query_lower = query.to_lowercase();
     }
 
     /// Scans the raw WAL file to find the highest TxID it contains.
