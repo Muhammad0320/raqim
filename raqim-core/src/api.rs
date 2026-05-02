@@ -472,7 +472,22 @@ pub async fn unified_vault_search(
     }
 
     // Sort the unified results purely semantic score (Highest first)
-    unified_results.sort_by(|a, b| b.similarity_score.partial_cmp(&a.similarity_score))
+    unified_results.sort_by(|a, b| {
+        b.similarity_score
+            .partial_cmp(&a.similarity_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Cap at top 100 for UI performance
+    unified_results.trucate(100);
+
+    Ok(Json(unified_results))
+}
+
+pub async fn vault_telemetry_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Result<Json<VaultTelemetry>, StatusCode> {
 }
 
 #[derive(Deserialize)]
@@ -781,7 +796,10 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         // Agent Swarm endpoints
         .route("/v1/mcp/ws", post(mcp_ws_handler))
         .route("/v1/swarm/ingress", post(http_ingress_endpoint))
-        .route("/v1/swarm/live", get(sse_firehose_endpoint))
         .route("/v1/swarm/memory", get(semantic_search_endpoint))
+        // UI endpoints
+        .route("/v1/swarm/live", get(sse_firehose_endpoint))
+        .route("/v1/vault/search", post(unified_vault_search))
+        .route("/v1/vault/telemetry", get(vault_telemetry_endpoint))
         .with_state(state)
 }
