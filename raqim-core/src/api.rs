@@ -32,6 +32,7 @@ use uuid::Uuid;
 use crate::aegis::QuarantineRecord;
 use crate::axon::AxonGateKeeper;
 use crate::health::SystemHealth;
+use crate::lancedb_store::LanceEngine;
 use crate::nucleus::WalEngine;
 use crate::registry::SwarmRegistry;
 use crate::state::SwarmState;
@@ -146,6 +147,7 @@ pub struct ApiState {
     pub telemetry: Arc<TelemetryEngine>,
     pub cortex_tx: UnboundedSender<Vec<u8>>,
     pub wal: Arc<WalEngine>,
+    pub lance: Arc<LanceEngine>,
     pub global_tx_counter: Arc<AtomicU64>,
 
     pub event_tx: Sender<SystemEvent>,
@@ -437,6 +439,40 @@ pub async fn sse_firehose_endpoint(
 
     // Return the SSE stream to the browser.
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new())
+}
+
+#[derive(Deserialize)]
+pub struct UnifiedSearchQuery {
+    pub query: String,
+    pub namespace: Option<String>,
+}
+
+pub async fn unified_vault_search(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+    Query(params): Query<UnifiedSearchQuery>,
+) -> Result<Json<Vec<VaultSearchResult>>, StatusCode> {
+    // The Scatter: Launch both searches concurrently on different OS threads
+    let lance_future = state
+        .lance
+        .semantic_search(&params.query, params.namespace.as_deref(), 50);
+    let wal_future = async {
+        state
+            .wal
+            .lexical_scan(&params.query, params.namespace.as_deref(), 50);
+    };
+
+    let (lance_res, wal_res) = tokio::join!(lance_future, wal_future);
+
+    // THE GATHER: Starting with the hot wal reasult
+    let mut unified_results = wal_res;
+
+    if let Ok(mut cold_results) = lance_res {
+        unified_results.append(&mut cold_results)
+    }
+
+    // Sort the unified results purely semantic score (Highest first)
+    unified_results.sort_by(|a, b| b.similarity_score.partial_cmp(&a.similarity_score))
 }
 
 #[derive(Deserialize)]

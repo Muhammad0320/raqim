@@ -53,7 +53,7 @@ impl LanceEngine {
         // Math translation via the polymorphic embedder
         let query_vector = self.embedder.embed(query)?;
 
-        let table = self.db.open_table(self.history_table).execute().await?;
+        let table = self.db.open_table(&self.history_table).execute().await?;
 
         // Build the query dynamically based on namespace constraints
         let mut query_builder = table.query().nearest_to(query_vector)?;
