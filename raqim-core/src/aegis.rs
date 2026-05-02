@@ -204,12 +204,7 @@ impl AegisGateKeeper {
 
     /// Evaluates if an agent is authorized to communicate with a specific service capability
     pub fn enforce_a2a_policy(&self, sender_hex: &str, target_capability: &str) -> bool {
-        if self
-            .quarantine_blocklist
-            .read()
-            .unwrap()
-            .contains(sender_hex)
-        {
+        if self.quarantine_blocklist.contains_key(sender_hex) {
             return false;
         }
 
