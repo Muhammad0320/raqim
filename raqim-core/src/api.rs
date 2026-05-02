@@ -109,6 +109,25 @@ pub enum UiEvent {
 }
 
 #[derive(Serialize, Clone, Debug)]
+pub struct VaultSearchResult {
+    pub tx_id: u64,
+    pub agent_hex: String,
+    pub namespace: String,
+    pub payload: String,
+    pub timestamp: String,
+    pub source: String,
+    pub similarity_score: f32,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct VaultTelemetry {
+    pub total_vectors: usize,
+    pub index_size_mb: f64,
+    pub wal_pending_count: usize,
+    pub densest_namespace: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct ActiveAgentNode {
     pub namespace: String,
     pub status: String, // Active, Quarantined, Idle
