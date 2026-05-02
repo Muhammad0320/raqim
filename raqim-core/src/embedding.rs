@@ -28,7 +28,7 @@ impl LocalBgeProvider {
     }
 }
 
-impl EmbeddingModel for LocalBgeProvider {
+impl EmbeddingProvider for LocalBgeProvider {
     fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error> {
         let mut model = self.model.lock().unwrap();
 

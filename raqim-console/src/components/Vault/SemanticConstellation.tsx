@@ -49,7 +49,7 @@ export function SemanticConstellation({ results, queryText, hoveredTxId, onHover
         style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '15px 15px' }}
       ></div>
 
-      <svg viewBox="0 0 100 100" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+      <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
         {/* Radar Rings */}
         <circle cx="50" cy="50" r="15" fill="none" stroke="#27272a" strokeWidth="0.2" />
         <circle cx="50" cy="50" r="30" fill="none" stroke="#27272a" strokeWidth="0.2" />
