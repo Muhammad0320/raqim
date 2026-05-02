@@ -1,8 +1,8 @@
+use crate::api::VaultSearchResult;
 use crate::embedding::EmbeddingProvider;
 use crate::{OpLog, SystemEvent};
-use anyhow::Ok;
-use arrow_array::Array;
 use arrow_array::types::Float32Type;
+use arrow_array::{Array, Float32Array};
 use arrow_array::{
     BinaryArray, FixedSizeListArray, Int64Array, RecordBatch, RecordBatchIterator, StringArray,
 };
@@ -44,6 +44,89 @@ impl LanceEngine {
         }
     }
 
+    /// The Semantic Retriever. Now returns a structured UI data, not a raw string.
+    pub async fn semantic_search(
+        &self,
+        query: &str,
+        namespace_filter: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<VaultSearchResult>, anyhow::Error> {
+        // Math translation via the polymorphic embedder
+        let query_vector = self.embedder.embed(query)?;
+
+        let table = self.db.open_table(self.history_table).execute().await?;
+
+        // Build the query dynamically based on namespace constraints
+        let mut query_builder = table.query().nearest_to(query_vector)?;
+        if let Some(ns) = namespace_filter {
+            if !ns.is_empty() {
+                query_builder = query_builder.only_if(format!("namespace = '{}'", ns));
+            }
+        }
+
+        let mut stream = query_builder.limit(limit).execute().await?;
+        let mut results = Vec::new();
+
+        while let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+
+            // We must exttract the hidden "_distance" column that LanceDB generates during `nearest_to` searches
+            let text_col = batch
+                .column_by_name("text")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let agent_id_col = batch
+                .column_by_name("agent_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let ns_col = batch
+                .column_by_name("namespace")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let timestamp_col = batch
+                .column_by_name("timestamp")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let tx_id_col = batch
+                .column_by_name("transaction_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let dist_col = batch
+                .column_by_name("_distance")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .unwrap();
+
+            for i in 0..text_col.len() {
+                // Cosing distance to Similarity mapping (1.0 - distance)
+                let similatiry = 1.0 - dist_col.value(i);
+
+                results.push(VaultSearchResult {
+                    tx_id: tx_id_col.value(i) as u64,
+                    agent_hex: agent_id_col.value(i).to_string(),
+                    namespace: ns_col.value(i).to_string(),
+                    source: "LANCEDB".to_string(),
+                    similarity_score: similatiry,
+                    payload: text_col.value(i).to_string(),
+                    timestamp: timestamp_col.value(i).to_string(),
+                });
+            }
+        }
+
+        Ok(results)
+    }
+
     /// The exact Apache Arrow Schema mapping for our OpLog
     fn schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
@@ -61,7 +144,7 @@ impl LanceEngine {
                 "vector",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, false)),
-                    self.dims,
+                    768,
                 ),
                 false,
             ),
