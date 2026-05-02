@@ -4,6 +4,7 @@ pub mod axon;
 pub mod compactor;
 pub mod config;
 pub mod cortex;
+pub mod embedding;
 pub mod health;
 pub mod lancedb_store;
 pub mod memory_router;
