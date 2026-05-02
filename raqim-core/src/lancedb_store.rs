@@ -620,5 +620,10 @@ impl LanceEngine {
     }
 
     /// Executes a DataFusion aggregation tp find the namespace with most vectors.
-    pub async fn get_densest_namespace(&self) -> Result<String, anyhow::Error> {}
+    pub async fn get_densest_namespace(&self) -> Result<String, anyhow::Error> {
+        let table = self.db.open_table(&self.history_table).execute().await?;
+
+        // Execute an SQL aggregation over the Apache Arrow dataset
+        let mut stream = table.query().limit(1).execute().await?;
+    }
 }

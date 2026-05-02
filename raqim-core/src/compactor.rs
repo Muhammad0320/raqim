@@ -99,7 +99,7 @@ impl WalCompactor {
             if let Ok(log) = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log) {
                 // Construct the dense semantic string
                 let semantic_payload = format!(
-                    "[{}] Agent in {} stated {}",
+                    "[{:?}] Agent in {} stated {}",
                     log.state.status, log.state.namespace, log.state.text
                 );
 
