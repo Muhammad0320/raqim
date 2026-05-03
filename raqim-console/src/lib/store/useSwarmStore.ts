@@ -43,12 +43,18 @@ interface SwarmState {
   aegisAlerts: AegisRecord[];
   quarantinedAgents: string[];
 
+  // Temporal Router State
+  isPaused: boolean;
+  isForking: boolean;
+
   fetchInitialTopology: () => Promise<void>;
   batchAddThoughts: (thoughts: UiThought[]) => void;
   processUiEvents: (events: UiEvent[]) => void;
   pruneEphemeralEdges: () => void;
   setActiveTxId: (tx_id: number | null) => void;
   liftQuarantine: (agent_hex: string) => void;
+  setIsPaused: (paused: boolean) => void;
+  setIsForking: (forking: boolean) => void;
   clear: () => void;
 }
 
@@ -71,10 +77,17 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   aegisAlerts: [],
   quarantinedAgents: [],
 
+  // Temporal Router State
+  isPaused: false,
+  isForking: false,
+
   liftQuarantine: (agent_hex: string) => 
     set((state) => ({
       quarantinedAgents: state.quarantinedAgents.filter(a => a !== agent_hex)
     })),
+
+  setIsPaused: (paused: boolean) => set({ isPaused: paused }),
+  setIsForking: (forking: boolean) => set({ isForking: forking }),
 
   fetchInitialTopology: async () => {
     // In a real app, this would be a fetch to /v1/swarm/topology/snapshot

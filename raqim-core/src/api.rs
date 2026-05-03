@@ -445,16 +445,17 @@ pub async fn unified_vault_search(
     Query(params): Query<UnifiedSearchQuery>,
 ) -> Result<Json<Vec<VaultSearchResult>>, StatusCode> {
     // The Scatter: Launch both searches concurrently on different OS threads
-    let lance_future = state
-        .lance
-        .semantic_search(&params.query, params.namespace.as_deref(), 50);
+    let lance_future =
+        state
+            .lance
+            .semantic_search(&params.query, params.namespace.as_deref(), 50)?;
     let wal_future = async {
         state.wal.lexical_scan(
             &params.query,
             params.namespace.as_deref(),
             50,
             &state.config.wal_path,
-        )
+        )?
     };
 
     let (lance_res, wal_res) = tokio::join!(lance_future, wal_future);

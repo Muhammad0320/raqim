@@ -4,48 +4,44 @@ import { useEffect, useState, useMemo } from 'react';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 
 export function NLEScrubber() {
-  const { thoughtOrder, activeTxId, setActiveTxId } = useSwarmStore();
-  const [isPlaying, setIsPlaying] = useState(true);
+  const { thoughtOrder, activeTxId, setActiveTxId, isPaused, setIsPaused } = useSwarmStore();
 
-  // If we have no thoughts, just show empty track
   const maxIdx = Math.max(0, thoughtOrder.length - 1);
   const activeIdx = activeTxId ? thoughtOrder.indexOf(activeTxId) : maxIdx;
   
-  // Format current TX for display
   const currentTxDisplay = useMemo(() => {
     if (thoughtOrder.length === 0) return 'WAITING...';
     const tx = activeTxId || thoughtOrder[maxIdx];
     return '0x' + tx.toString().padStart(8, '0').toUpperCase();
   }, [activeTxId, thoughtOrder, maxIdx]);
 
-  // Handle slider changes natively
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newIdx = parseInt(e.target.value, 10);
     if (newIdx === maxIdx) {
       setActiveTxId(null);
-      setIsPlaying(true);
+      setIsPaused(false);
     } else {
       setActiveTxId(thoughtOrder[newIdx]);
-      setIsPlaying(false);
+      setIsPaused(true);
     }
   };
 
   const handlePlayPause = () => {
-    if (isPlaying) {
+    if (!isPaused) {
       // Pause at current position
       setActiveTxId(thoughtOrder[maxIdx]);
-      setIsPlaying(false);
+      setIsPaused(true);
     } else {
       // Resume live stream
       setActiveTxId(null);
-      setIsPlaying(true);
+      setIsPaused(false);
     }
   };
 
   const goPrevious = () => {
     if (activeIdx > 0) {
       setActiveTxId(thoughtOrder[activeIdx - 1]);
-      setIsPlaying(false);
+      setIsPaused(true);
     }
   };
 
@@ -54,7 +50,7 @@ export function NLEScrubber() {
       const nextIdx = activeIdx + 1;
       if (nextIdx === maxIdx) {
         setActiveTxId(null);
-        setIsPlaying(true);
+        setIsPaused(false);
       } else {
         setActiveTxId(thoughtOrder[nextIdx]);
       }
@@ -62,58 +58,83 @@ export function NLEScrubber() {
   };
 
   return (
-    <div className="h-28 bg-surface-container-highest shrink-0 flex flex-col px-8 py-4 justify-center relative z-20 shadow-[0_-20px_40px_rgba(0,0,0,0.4)]">
-      <div className="flex justify-between items-end mb-3">
-        <h3 className="text-xs font-label uppercase tracking-[0.05rem] text-on-surface-variant flex items-center gap-2">
-          <span className="material-symbols-outlined text-sm">history</span> Temporal Navigation
-        </h3>
-        <div className="font-mono text-sm text-white flex items-center gap-3">
-          <span className="text-on-surface-variant">CURRENT TX:</span> {currentTxDisplay}
-          <div className="flex gap-1 ml-4">
-            <button onClick={goPrevious} className="bg-surface-container hover:bg-surface-container-low text-on-surface p-1 rounded transition-colors">
-              <span className="material-symbols-outlined text-sm">skip_previous</span>
-            </button>
-            <button onClick={handlePlayPause} className="bg-surface-container hover:bg-surface-container-low text-on-surface p-1 rounded transition-colors w-8 flex justify-center">
-              <span className="material-symbols-outlined text-sm">{isPlaying ? 'pause' : 'play_arrow'}</span>
-            </button>
-            <button onClick={goNext} className="bg-surface-container hover:bg-surface-container-low text-on-surface p-1 rounded transition-colors">
-              <span className="material-symbols-outlined text-sm">skip_next</span>
-            </button>
+    <div className="h-full w-full flex flex-col justify-center px-8 relative bg-zinc-950 border-t border-zinc-800">
+      
+      {/* Top Header: Controls and State Display */}
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex gap-4">
+          <button 
+            onClick={goPrevious} 
+            className="w-12 h-12 bg-zinc-900 border border-zinc-700 hover:border-[#00f3ff] hover:text-[#00f3ff] text-zinc-400 rounded transition-colors flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)]"
+          >
+            <span className="material-symbols-outlined text-2xl">skip_previous</span>
+          </button>
+          <button 
+            onClick={handlePlayPause} 
+            className={`w-16 h-12 border rounded transition-all flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)] font-bold font-mono text-xs ${isPaused ? 'bg-[#ffb300]/20 border-[#ffb300] text-[#ffb300]' : 'bg-[#00f3ff]/20 border-[#00f3ff] text-[#00f3ff]'}`}
+          >
+            <span className="material-symbols-outlined text-2xl">{isPaused ? 'play_arrow' : 'pause'}</span>
+          </button>
+          <button 
+            onClick={goNext} 
+            className="w-12 h-12 bg-zinc-900 border border-zinc-700 hover:border-[#00f3ff] hover:text-[#00f3ff] text-zinc-400 rounded transition-colors flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)]"
+          >
+            <span className="material-symbols-outlined text-2xl">skip_next</span>
+          </button>
+        </div>
+
+        <div className="flex flex-col items-end">
+          <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Cursor Position</span>
+          <div className="font-mono text-3xl font-bold text-white tracking-widest bg-zinc-900 px-4 py-1 rounded border border-zinc-800 shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]">
+            {currentTxDisplay}
           </div>
         </div>
       </div>
       
-      <div className="relative w-full py-2">
-        {/* Timeline markers (Decorative) */}
-        <div className="absolute w-full h-full flex justify-between px-1 pointer-events-none top-0 pt-3">
-          <div className="w-[1px] h-2 bg-outline-variant/30"></div>
-          <div className="w-[1px] h-2 bg-outline-variant/30"></div>
-          <div className="w-[1px] h-2 bg-outline-variant/30"></div>
-          <div className="w-[1px] h-2 bg-outline-variant/30"></div>
-          <div className="w-[1px] h-3 bg-primary-container/50"></div>
-          <div className="w-[1px] h-2 bg-outline-variant/30"></div>
-          <div className="w-[1px] h-2 bg-outline-variant/30"></div>
-          <div className="w-[1px] h-2 bg-outline-variant/30"></div>
-          <div className="w-[1px] h-2 bg-outline-variant/30"></div>
-          <div className="w-[1px] h-2 bg-outline-variant/30"></div>
+      {/* Massive Scrubber */}
+      <div className="relative w-full py-4 group">
+        {/* Decorative Grid Lines */}
+        <div className="absolute inset-0 flex justify-between pointer-events-none px-2 items-center">
+          {Array.from({ length: 40 }).map((_, i) => (
+             <div key={i} className={`w-[1px] ${i % 5 === 0 ? 'h-full bg-zinc-700' : 'h-1/2 bg-zinc-800'} transition-colors group-hover:bg-zinc-600`}></div>
+          ))}
         </div>
-        
+
         <input 
-          className="w-full relative z-10 native-range-scrubber" 
+          className="w-full relative z-10 appearance-none bg-transparent h-10 outline-none cursor-ew-resize" 
           max={maxIdx} 
           min={0} 
           type="range" 
           value={activeIdx}
           onChange={handleSliderChange}
+          style={{
+            background: `linear-gradient(to right, rgba(0, 243, 255, 0.2) ${(activeIdx / Math.max(1, maxIdx)) * 100}%, transparent 0)`
+          }}
         />
-        
-        <div className="flex justify-between mt-2 font-mono text-[9px] text-on-surface-variant opacity-50">
-          <span>Genesis (0x0000)</span>
-          <span>{thoughtOrder.length > 0 ? "0x" + thoughtOrder[Math.floor(maxIdx / 3)].toString().padStart(4, '0').toUpperCase() : "0x..."}</span>
-          <span>{thoughtOrder.length > 0 ? "0x" + thoughtOrder[Math.floor((maxIdx / 3) * 2)].toString().padStart(4, '0').toUpperCase() : "0x..."}</span>
-          <span>Live Edge</span>
-        </div>
+        <style jsx>{`
+          input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 48px;
+            background: ${isPaused ? '#ffb300' : '#00f3ff'};
+            cursor: pointer;
+            border-radius: 2px;
+            box-shadow: 0 0 15px ${isPaused ? 'rgba(255,179,0,0.8)' : 'rgba(0,243,255,0.8)'};
+            transition: background 0.2s, box-shadow 0.2s;
+          }
+          input[type=range]::-moz-range-thumb {
+            width: 12px;
+            height: 48px;
+            background: ${isPaused ? '#ffb300' : '#00f3ff'};
+            cursor: pointer;
+            border-radius: 2px;
+            border: none;
+            box-shadow: 0 0 15px ${isPaused ? 'rgba(255,179,0,0.8)' : 'rgba(0,243,255,0.8)'};
+          }
+        `}</style>
       </div>
+
     </div>
   );
 }

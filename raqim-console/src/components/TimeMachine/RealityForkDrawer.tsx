@@ -1,78 +1,95 @@
+'use client';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { useState, useEffect } from 'react';
+import Editor from '@monaco-editor/react';
 
 export function RealityForkDrawer() {
-  const { activeTxId, setActiveTxId } = useSwarmStore();
+  const { activeTxId, isPaused, setIsPaused, setIsForking } = useSwarmStore();
   const [isClient, setIsClient] = useState(false);
+  const [entropySeed, setEntropySeed] = useState(42);
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  if (!isClient || activeTxId === null) return null;
+  if (!isClient) return null;
 
   return (
-    <div className="w-80 lg:w-96 bg-surface-container-highest rounded-lg flex flex-col shadow-2xl shadow-black/50 overflow-hidden relative backdrop-blur-md border border-outline-variant/10 shrink-0">
-      {/* Glassmorphism header effect */}
-      <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-b from-primary-container/10 to-transparent pointer-events-none"></div>
-      
-      <div className="p-5 border-b border-outline-variant/10 relative z-10 flex items-center justify-between">
-        <h2 className="font-headline font-bold text-lg text-white flex items-center gap-2">
-          <span className="material-symbols-outlined text-primary">alt_route</span> Reality Fork
+    <div 
+      className={`absolute top-0 right-0 h-full w-[400px] bg-zinc-950/95 backdrop-blur-xl border-l border-zinc-800 shadow-[-20px_0_50px_rgba(0,0,0,0.8)] z-50 flex flex-col transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${isPaused ? 'translate-x-0' : 'translate-x-full'}`}
+    >
+      <div className="p-6 border-b border-zinc-800 flex items-center justify-between shrink-0">
+        <h2 className="font-mono text-sm font-bold text-white uppercase tracking-widest flex items-center gap-3">
+          <span className="material-symbols-outlined text-[#ffb300]">alt_route</span> 
+          Initialize Phantom Fork
         </h2>
-        <div className="flex items-center gap-2">
-          <span className="bg-surface-container text-on-surface-variant px-2 py-1 rounded text-[10px] font-mono border border-outline-variant/20">CTRL+F</span>
-          <button 
-            className="text-on-surface-variant hover:text-white"
-            onClick={() => setActiveTxId(null)}
-          >
-            <span className="material-symbols-outlined text-sm">close</span>
-          </button>
-        </div>
+        <button 
+          className="text-zinc-500 hover:text-white transition-colors"
+          onClick={() => setIsPaused(false)}
+        >
+          <span className="material-symbols-outlined">close</span>
+        </button>
       </div>
       
-      <div className="p-5 flex-1 flex flex-col gap-4 overflow-y-auto z-10">
-        <div className="flex flex-col gap-2">
-          <label className="text-xs font-label uppercase tracking-[0.05rem] text-on-surface-variant">Target State URI</label>
-          <div className="bg-surface-container-lowest rounded-lg p-1 ghost-glow transition-all">
-            <input 
-              className="w-full bg-transparent border-none text-sm font-mono text-white focus:ring-0 px-3 py-2 outline-none" 
-              spellCheck="false" 
-              type="text" 
-              defaultValue={`raqim://router/state/${activeTxId}`}
-            />
+      <div className="p-6 flex-1 flex flex-col gap-6 overflow-hidden">
+        <div className="flex flex-col gap-2 shrink-0">
+          <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Temporal Anchor (TX_ID)</label>
+          <div className="bg-zinc-900 border border-zinc-800 rounded px-4 py-2 font-mono text-sm text-zinc-300">
+            {activeTxId ? `0x${activeTxId.toString().padStart(8, '0').toUpperCase()}` : 'LIVE EDGE'}
           </div>
         </div>
+
+        <div className="flex flex-col gap-2 shrink-0">
+          <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Entropy Seed Override</label>
+          <input 
+            className="w-full bg-zinc-900 border border-zinc-800 text-sm font-mono text-[#00f3ff] focus:border-[#00f3ff]/50 px-4 py-2 rounded outline-none transition-colors" 
+            type="number" 
+            value={entropySeed}
+            onChange={(e) => setEntropySeed(parseInt(e.target.value) || 0)}
+          />
+        </div>
         
-        <div className="flex flex-col gap-2 flex-1">
-          <label className="text-xs font-label uppercase tracking-[0.05rem] text-on-surface-variant flex justify-between">
-            JSON Payload Injection
-            <span className="text-primary-fixed-dim cursor-pointer hover:text-white">Format</span>
+        <div className="flex flex-col gap-2 flex-1 min-h-0">
+          <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 flex justify-between">
+            Network Injection Payload (JSON)
           </label>
-          <div className="bg-surface-container-lowest rounded-lg p-1 ghost-glow transition-all flex-1 flex flex-col">
-            <textarea 
-              className="w-full flex-1 bg-transparent border-none text-xs font-mono text-primary focus:ring-0 p-3 resize-none leading-relaxed outline-none" 
-              spellCheck="false"
+          <div className="flex-1 border border-zinc-800 rounded overflow-hidden relative">
+            <Editor
+              height="100%"
+              defaultLanguage="json"
+              theme="vs-dark"
+              options={{
+                minimap: { enabled: false },
+                fontSize: 12,
+                fontFamily: 'monospace',
+                lineNumbers: 'off',
+                scrollBeyondLastLine: false,
+                padding: { top: 16 }
+              }}
               defaultValue={`{
   "instruction_set": "OVERRIDE",
-  "temporal_anchor": "${activeTxId}",
+  "temporal_anchor": "${activeTxId || 'LIVE'}",
   "parameters": {
     "entropy_bias": -0.15,
     "bypass_firewall": true
   },
-  "signature": "SHA-256:..."
+  "signature": "SHA-256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }`}
             />
           </div>
         </div>
       </div>
       
-      <div className="p-5 bg-surface-container/50 border-t border-outline-variant/10 z-10">
+      <div className="p-6 border-t border-zinc-800 shrink-0 bg-zinc-900/50">
         <button 
-          className="w-full bg-gradient-to-b from-primary-container to-on-primary-fixed-variant text-on-primary-container font-bold uppercase tracking-wide py-3 px-4 rounded text-sm transition-all active:scale-95 hover:brightness-110 flex items-center justify-center gap-2 shadow-lg shadow-primary-container/20"
-          onClick={() => setActiveTxId(null)}
+          className="w-full bg-[#ffb300]/10 border border-[#ffb300] hover:bg-[#ffb300]/20 text-[#ffb300] font-bold font-mono uppercase tracking-[0.2em] py-4 rounded text-xs transition-all flex items-center justify-center gap-3 shadow-[0_0_15px_rgba(255,179,0,0.15)] hover:shadow-[0_0_20px_rgba(255,179,0,0.3)] active:scale-[0.98]"
+          onClick={() => {
+             setIsForking(true);
+             setIsPaused(false);
+          }}
         >
-          <span className="material-symbols-outlined text-base">call_split</span> Fork Reality
+          <span className="material-symbols-outlined text-xl">bolt</span> 
+          Execute Fork (XOR)
         </button>
       </div>
     </div>
