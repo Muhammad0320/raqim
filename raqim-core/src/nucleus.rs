@@ -107,7 +107,7 @@ impl WalEngine {
     pub async fn append(&self, log: OpLog) {
         let _ = self.sender.send(log).await;
     }
-    
+
     /// Extremely fast binary scan of the active WAL for a specific substring
     pub fn lexical_scan(
         &self,
@@ -120,7 +120,7 @@ impl WalEngine {
 
         // Page the WAL directly into virtual memory. Zero read() syscall overhead
         let mmap = unsafe { MmapOptions::new().map(&file)? };
-         
+
         // Compile the search automaton (case-insensitive)
         let ac = AhoCorasick::builder()
             .ascii_case_insensitive(true)
@@ -170,7 +170,7 @@ impl WalEngine {
     }
 
     /// Returns the exact number of uncompacted thoughts currently in the Hot WAL. O(1) operation utilizing the BTreeMap index
-    pub fn get_pending_count(&self) usize {
+    pub fn get_pending_count(&self) -> usize {
         self.index.read().unwrap().len()
     }
 
@@ -213,5 +213,4 @@ impl WalEngine {
 
         highest_tx
     }
-
 }
