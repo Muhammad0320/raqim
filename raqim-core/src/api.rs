@@ -454,7 +454,7 @@ pub async fn unified_vault_search(
             params.namespace.as_deref(),
             50,
             &state.config.wal_path,
-        );
+        )
     };
 
     let (lance_res, wal_res) = tokio::join!(lance_future, wal_future);
@@ -489,7 +489,7 @@ pub async fn vault_telemetry_endpoint(
 
     let index_size_mb = state.lance.get_index_size_mb().await;
 
-    let densest_namepsace = state
+    let densest_namespace = state
         .lance
         .get_densest_namespace()
         .await
