@@ -480,6 +480,26 @@ pub async fn vault_telemetry_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
 ) -> Result<Json<VaultTelemetry>, StatusCode> {
+    let wal_pending_count = state.wal.get_pending_count();
+
+    let total_vectors = state.lance.get_total_vector_count().await.unwrap_or(0);
+
+    let index_size_mb = state.lance.get_index_size_mb().await;
+
+    let densest_namepsace = state
+        .lance
+        .get_densest_namespace()
+        .await
+        .unwrap_or_else(|_| "UNKNOWN (0%)".to_string());
+
+    let telemetry = VaultTelemetry {
+        total_vectors,
+        wal_pending_count,
+        index_size_mb,
+        densest_namespace,
+    };
+
+    Ok(Json(telemetry))
 }
 
 #[derive(Deserialize)]
