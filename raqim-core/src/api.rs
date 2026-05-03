@@ -449,9 +449,12 @@ pub async fn unified_vault_search(
         .lance
         .semantic_search(&params.query, params.namespace.as_deref(), 50);
     let wal_future = async {
-        state
-            .wal
-            .lexical_scan(&params.query, params.namespace.as_deref(), 50);
+        state.wal.lexical_scan(
+            &params.query,
+            params.namespace.as_deref(),
+            50,
+            &state.config.wal_path,
+        );
     };
 
     let (lance_res, wal_res) = tokio::join!(lance_future, wal_future);
