@@ -163,14 +163,6 @@ pub struct EnterpriseClaim {
     pub exp: usize,
 }
 
-#[derive(Deserialize, Clone)]
-pub struct ForkConfig {
-    pub override_seed: Option<u64>,
-    pub inject_network: Option<String>,
-    pub env_overrides: HashMap<String, String>,
-    pub config_overrides: HashMap<String, String>,
-}
-
 pub struct ValidatedIdentity(pub EnterpriseClaim);
 
 // THE AXUM EXTRACTOR: This automatically protects any route it is attached onto.
@@ -556,9 +548,17 @@ async fn lift_qurantine_and_resurrect(
     }
 }
 
+#[derive(Deserialize, Clone)]
+pub struct ForkConfig {
+    pub override_seed: Option<u64>,
+    pub inject_network: Option<String>,
+    pub env_overrides: HashMap<String, String>,
+    pub config_overrides: HashMap<String, String>,
+}
+
 #[derive(Deserialize)]
 struct TimeTravelRequest {
-    agent_id: String,
+    agent_hex: String,
     target_tx_id: u64,
     fork_config: ForkConfig,
 }
@@ -579,20 +579,35 @@ async fn time_travel(
     );
 
     // 1. Lift aegis Quarantine so that the agent can actually boot
-    state.aegis.lift_quarantine(&payload.agent_id);
-
-    match state
-        .mem_router
-        .boot_historical_agent(
-            &payload.agent_id,
-            Some(payload.target_tx_id),
-            Some(payload.fork_config),
-            true,
-        )
-        .await
+    // Unfreeze the Agent (Remove from DashhMap)
+    if state
+        .aegis
+        .quarantine_blocklist
+        .remove(&payload.agent_hex)
+        .is_some()
     {
-        Ok(()) => Ok(StatusCode::OK),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        match state
+            .mem_router
+            .boot_historical_agent(
+                &payload.agent_hex,
+                Some(payload.target_tx_id),
+                Some(payload.fork_config),
+                false,
+            )
+            .await
+        {
+            Ok(()) => Ok(StatusCode::OK),
+
+            Err(e) => {
+                eprintln!(
+                    "[TIME MACHINE FATAL] Failed to Determinstically Replay {}: {} ",
+                    &payload.agent_hex, e
+                );
+                Ok(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    } else {
+        Err(StatusCode::NOT_FOUND)
     }
 }
 

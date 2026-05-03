@@ -1,3 +1,7 @@
+use crate::{OpLog, api::VaultSearchResult};
+use aho_corasick::AhoCorasick;
+use memmap2::MmapOptions;
+use rkyv::to_bytes;
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -5,10 +9,6 @@ use std::{
     sync::{Arc, RwLock},
     thread,
 };
-
-use crate::{OpLog, api::VaultSearchResult};
-use memmap2::MmapOptions;
-use rkyv::to_bytes;
 use tokio::sync::mpsc;
 use tokio_uring::fs::OpenOptions;
 
