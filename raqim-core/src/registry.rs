@@ -14,17 +14,19 @@ pub struct AgentProcess {
 pub struct SwarmRegistry {
     // The Live Process Table
     pub active_agents: DashMap<String, AgentProcess>,
+    pub alias: DashMap<String, String>,
 }
 
 impl SwarmRegistry {
     pub fn new() -> Self {
         Self {
             active_agents: DashMap::new(),
+            alias: Dashmap::new(),
         }
     }
 
     /// O(1) update function called during TCP ingress
-    pub fn touch_agent(&self, agent_hex: &str, namespace: &str, status: &str) {
+    pub fn touch_agent(&self, agent_hex: &str, namespace: &str, status: &str, alias: &str) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -39,6 +41,11 @@ impl SwarmRegistry {
                 status: status.to_string(),
             },
         );
+
+        if !alias.is_empty() {
+            self.agent_alias
+                .insert(agent_hex.to_string(), alias.to_string());
+        }
     }
 
     /// Flags an agent as quarantined instantly across the UI
