@@ -1,3 +1,5 @@
+use datafusion::prelude::SessionContext;
+
 use crate::api::VaultSearchResult;
 use crate::embedding::EmbeddingProvider;
 use crate::{OpLog, SystemEvent};
@@ -19,6 +21,7 @@ pub struct LanceEngine {
     pub db: Connection,
     pub history_table: String,
     pub snapshot_table: String,
+    pub storage_path: String,
     // pub dims: i32,
     pub embedder: Box<dyn EmbeddingProvider>, // Polymorphic injection
 }
@@ -38,6 +41,7 @@ impl LanceEngine {
         Self {
             db,
             history_table: table_name.to_string(),
+            storage_path: storage_path.to_string(),
             snapshot_table: "agent_snapshot".to_string(),
             embedder,
         }
@@ -619,11 +623,57 @@ impl LanceEngine {
         Ok(table.count_rows(None).await?)
     }
 
-    /// Executes a DataFusion aggregation tp find the namespace with most vectors.
+    /// Executes a DataFusion SQL Aggregation over the Apache Arrow Memory Layout
     pub async fn get_densest_namespace(&self) -> Result<String, anyhow::Error> {
         let table = self.db.open_table(&self.history_table).execute().await?;
 
-        // Execute an SQL aggregation over the Apache Arrow dataset
-        let mut stream = table.query().limit(1).execute().await?;
+        // Initialize the DataFusion execution context
+        let ctx = SessionContext::new();
+
+        // Register the Lance table natively into DataFusion
+        ctx.register_table("memory", Arc::new(table.dataset().clone()))?;
+
+        // Execute the  aggregation: Group by namespace, count occurences, sort descending, grab the top 1.
+        let sql = "
+    SELECT namespace, COUNT(tx_id) as freq 
+    FROM memory 
+    GROUP BY namespace 
+    ORDER BY freq DESC
+    LIMIT 1
+    ";
+
+        let df = ctx.sql(sql).await?;
+        let batches = df.collect().await?;
+
+        if batches.is_empty() || batches[0].num_rows() == 0 {
+            return Ok("Empty (0%)".to_string());
+        }
+
+        // Downcast the result safely
+        let batch = &batches[0];
+        let ns_col = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        let count_col = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap();
+
+        let top_ns = ns_col.value(0);
+        let top_count = count_col.value(1) as f64;
+
+        // Fetch total to calculate the true %
+        let total_count = table.count_rows(None).await? as f64;
+
+        if total_count == 0.0 {
+            return Ok("Empty (0%)".to_string());
+        }
+
+        let percent = (top_count / total_count) * 100.0;
+
+        Ok(format!("{} ({:..1}%) ", top_ns, percent))
     }
 }
