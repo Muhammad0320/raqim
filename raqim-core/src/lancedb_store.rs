@@ -674,6 +674,22 @@ impl LanceEngine {
 
         let percent = (top_count / total_count) * 100.0;
 
-        Ok(format!("{} ({:..1}%) ", top_ns, percent))
+        Ok(format!("{} ({:.1}%) ", top_ns, percent))
+    }
+
+    /// Computes the exact size of the LanceDB directory on Disk
+    pub async fn get_index_size_mb(&self) -> f64 {
+        let table_dir = format!("{}/{}.lance", &self.storage_path, &self.history_table);
+
+        match fs_extra::dir::get_size(&table_dir) {
+            Ok(bytes) => bytes as f64 / (1024.0 * 1024.0),
+            Err(e) => {
+                eprintln!(
+                    "[VAULT WARNING] Failed to calculate directory size for {}: {}",
+                    table_dir, e
+                );
+                0.0
+            }
+        }
     }
 }
