@@ -16,6 +16,7 @@ use tokio::sync::mpsc;
 use crate::AgentStatus;
 use crate::aegis::AegisGateKeeper;
 use crate::api::ForkConfig;
+use crate::api::UiEvent;
 use crate::axon::AxonGateKeeper;
 use crate::network::GlobalNetworkBridge;
 use crate::sandbox::SandboxContent;
@@ -441,6 +442,7 @@ impl MemoryRouter {
         target_tx_id: Option<u64>,
         fork_config: Option<ForkConfig>,
         is_isolated_debug: bool,
+        phantom_ui_tx: tokio::sync::broadcast::Sender<UiEvent>,
     ) -> Result<(), anyhow::Error> {
         let fetch_target = target_tx_id.unwrap_or(u64::MAX);
 
@@ -454,6 +456,25 @@ impl MemoryRouter {
         let mut recovered_timestamps = Vec::new();
 
         // The phantom brain initialization
+        // The XOR Cryptographic Mutation.
+        let original_bytes = hex::decode(agent_hex).expect("Invalid agent hex");
+        let mut phantom_bytes = [0u8; 16];
+        phantom_bytes.copy_from_slice(&original_bytes);
+
+        if is_isolated_debug {
+            // Flip every bit to create a mathematically isolated Phantom ID
+            for b in &mut phantom_bytes {
+                *b ^= 0xFF;
+            }
+        }
+
+        let phantom_hex = hex::encode(phantom_bytes);
+
+        println!(
+            "[TIME MACHINE] Phantom ID {} generated from Host {}",
+            phantom_hex, agent_hex
+        );
+
         let (dummy_tx, _) = broadcast::channel(1);
         let dummy_wal =
             Arc::new(WalEngine::start(format!("phamtom_{}", agent_hex).to_string()).await);

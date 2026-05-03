@@ -443,9 +443,9 @@ pub async fn agent_alias_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
 ) -> axum::Json<Hashmap<String, String>> {
-    let mut map = Hashmap::new();
+    let mut map = HashMap::new();
     for entry in state.swarm_registry.active_agents.iter() {
-        map.insert(entry.key(), entry.value().alias.clone())
+        map.insert(entry.key(), entry.value().alias.clone());
     }
     axum::Json(map)
 }
