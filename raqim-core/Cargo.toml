@@ -29,6 +29,8 @@ arrow-schema = "52.2"
 
 anyhow = "1.0"
 
+datafusion = "35.0"
+
 fastembed = "5.12"
 
 futures = "0.3"
