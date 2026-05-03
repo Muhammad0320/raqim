@@ -6,6 +6,7 @@ use serde::Serialize;
 #[derive(Serialize, Clone, Debug)]
 pub struct AgentProcess {
     pub agent_hex: String,
+    pub alias: String,
     pub namespace: String,
     pub last_seen_ts: u64,
     pub status: String, // e.g "Idle", "Reasoning", "Quarantined"
@@ -14,14 +15,12 @@ pub struct AgentProcess {
 pub struct SwarmRegistry {
     // The Live Process Table
     pub active_agents: DashMap<String, AgentProcess>,
-    pub alias: DashMap<String, String>,
 }
 
 impl SwarmRegistry {
     pub fn new() -> Self {
         Self {
             active_agents: DashMap::new(),
-            alias: Dashmap::new(),
         }
     }
 
@@ -36,16 +35,12 @@ impl SwarmRegistry {
             agent_hex.to_string(),
             AgentProcess {
                 agent_hex: agent_hex.to_string(),
+                alias: aliias.to_string(),
                 namespace: namespace.to_string(),
                 last_seen_ts: now,
                 status: status.to_string(),
             },
         );
-
-        if !alias.is_empty() {
-            self.agent_alias
-                .insert(agent_hex.to_string(), alias.to_string());
-        }
     }
 
     /// Flags an agent as quarantined instantly across the UI
