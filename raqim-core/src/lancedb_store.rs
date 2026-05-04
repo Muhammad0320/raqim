@@ -1,6 +1,6 @@
 use datafusion::prelude::SessionContext;
 
-use crate::api::VaultSearchResult;
+use crate::api::{TimelineNode, VaultSearchResult};
 use crate::embedding::EmbeddingProvider;
 use crate::{OpLog, SystemEvent};
 use arrow_array::types::Float32Type;
@@ -705,5 +705,59 @@ impl LanceEngine {
                 0.0
             }
         }
+    }
+
+    pub async fn fetch_historical_timeline(
+        &self,
+        agent_hex: &str,
+    ) -> Result<TimelineNode, anyhow::Error> {
+        let table = self.db.open_table(self.history_table).execute().await?;
+
+        let mut stream = table
+            .query()
+            .only_if(format!("agent_id = '{}'", agent_hex))
+            .execute()
+            .await?;
+
+        let mut nodes = Vec::new();
+
+        while let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+            let text_col = batch
+                .column_by_name("text")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let tx_col = batch
+                .column_by_name("transaction_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let status_col = batch
+                .column_by_name("status")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let timestamp_col = batch
+                .column_by_name("timestamp")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+
+            for i in 0..tx_col.len() {
+                nodes.push(TimelineNode {
+                    tx_id: tx_col.value(i) as u64,
+                    timestamp: timestamp_col.value(i).to_string(),
+                    agent_status: status_col.value(i).to_string(),
+                    payload_preview: text_col.value(i).to_string(),
+                });
+            }
+        }
+
+        Ok(nodes)
     }
 }
