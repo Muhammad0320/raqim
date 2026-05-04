@@ -12,7 +12,7 @@ pub struct SwarmState {
 
 impl SwarmState {
     /// Initialize the CRDT brain for a specific swarm domain.
-    pub fn new(swarm_namespace: &str, event_tx: Sender<SystemEvent>) -> Self {
+    pub fn new(swarm_namespace: &str) -> Self {
         let doc = Arc::new(LoroDoc::new());
 
         // LoroDocs acts likes a filesystem. We create a root dir (Map) for our swarm.
@@ -20,8 +20,6 @@ impl SwarmState {
 
         // --- THE CRDT EVENT LISTENER ---
         // We attach a deep listener to the Loro Doc. Whenever the math resolves a conflict, this closure fires syncronously
-        let tx_clone = event_tx.clone();
-        let doc_clone = doc.clone();
         let subscriber = doc.subscribe_root(Arc::new(move |event: loro::event::DiffEvent| {
             // event.events contains the precise diffs (what was added, deleted, updated)
             for diff in &event.events {

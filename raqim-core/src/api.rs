@@ -9,7 +9,7 @@ use axum::{
 };
 
 use axum::body::Bytes;
-use axum::response::sse::{Event, Sse};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use dashmap::DashMap;
 use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
@@ -152,6 +152,7 @@ pub struct ApiState {
 
     pub event_tx: Sender<SystemEvent>,
     pub ui_tx: Sender<UiEvent>,
+    pub phantom_ui_tx: Sender<UiEvent>,
     pub health_tx: Sender<SystemHealth>,
     pub swarm_registry: Arc<SwarmRegistry>,
 }
@@ -418,9 +419,7 @@ pub async fn sse_firehose_endpoint(
         match msg {
             Ok(ui_event) => {
                 let json_string = serde_json::to_string(&ui_event).unwrap();
-                Some(Ok::<axum::response::sse::Event, Infallible>(
-                    Event::default().data(json_string),
-                ))
+                Some(Ok::<Event, Infallible>(Event::default().data(json_string)))
             }
             Err(_) => {
                 // Lagging subscribers are skipped automatically by tokio broadcast
@@ -433,6 +432,27 @@ pub async fn sse_firehose_endpoint(
     Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new())
 }
 
+// The Observatiton deck ( Only used by the time machine UI )
+pub async fn sse_phantom_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let receiver = state.phantom_ui_tx.subscribe();
+
+    let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
+        match msg {
+            Ok(p_event) => {
+                let json_string = serde_json::to_string(&p_event).unwrap();
+                Some(Ok::<Event, Infallible>(Event::default().data(json_string)))
+            }
+
+            Err(_) => None,
+        }
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::new())
+}
+
 #[derive(Deserialize)]
 pub struct UnifiedSearchQuery {
     pub query: String,
@@ -442,7 +462,7 @@ pub struct UnifiedSearchQuery {
 pub async fn agent_alias_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
-) -> axum::Json<Hashmap<String, String>> {
+) -> axum::Json<HashMap<String, String>> {
     let mut map = HashMap::new();
     for entry in state.swarm_registry.active_agents.iter() {
         map.insert(entry.key(), entry.value().alias.clone());
@@ -849,6 +869,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/swarm/memory", get(semantic_search_endpoint))
         // UI endpoints
         .route("/v1/swarm/live", get(sse_firehose_endpoint))
+        .route("v1/time-travel/live", get(sse_phantom_endpoint))
         .route("/v1/vault/search", post(unified_vault_search))
         .route("/v1/vault/telemetry", get(vault_telemetry_endpoint))
         .with_state(state)

@@ -35,7 +35,7 @@ impl SwarmRegistry {
             agent_hex.to_string(),
             AgentProcess {
                 agent_hex: agent_hex.to_string(),
-                alias: aliias.to_string(),
+                alias: alias.to_string(),
                 namespace: namespace.to_string(),
                 last_seen_ts: now,
                 status: status.to_string(),

@@ -491,7 +491,6 @@ impl MemoryRouter {
 
         // We must route the dummy events to the React UI so the Admin can watch the fork!
         let ui_tx_clone = phantom_ui_tx.clone();
-        let phantom_hex_clone = sandbox_agent_hex.clone();
 
         if is_isolated_debug {
             tokio::spawn(async move {
@@ -504,7 +503,7 @@ impl MemoryRouter {
                     } = event
                     {
                         let ui_event = UiEvent::ThoughtCommited {
-                            agent_hex: phantom_hex_clone,
+                            agent_hex: agent_id,
                             intent_path: namespace,
                             tx_id,
                             text,
