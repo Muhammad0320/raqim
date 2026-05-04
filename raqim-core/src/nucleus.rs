@@ -1,4 +1,7 @@
-use crate::{OpLog, api::VaultSearchResult};
+use crate::{
+    OpLog,
+    api::{TimelineNode, VaultSearchResult},
+};
 use aho_corasick::AhoCorasick;
 use memmap2::MmapOptions;
 use rkyv::to_bytes;
@@ -212,5 +215,51 @@ impl WalEngine {
         }
 
         highest_tx
+    }
+
+    pub fn fetch_hot_timeline(
+        &self,
+        agent_hex: &str,
+        wal_path: &str,
+    ) -> Result<Vec<TimelineNode>, anyhow::Error> {
+        let mut nodes = Vec::new();
+
+        let file = match File::open(wal_path) {
+            Ok(f) => f,
+            Err(_) => return Ok(nodes),
+        };
+
+        // Page WAL into memory
+        let mmap = unsafe { MmapOptions::new().map(&file)? };
+        let mut cursor = 0;
+        let target_bytes = hex::decode(agent_hex).unwrap_or(vec![0; 16]);
+
+        while cursor < mmap.len() {
+            if cursor + 4 > mmap.len() {
+                break;
+            }
+
+            let len = u32::from_le_bytes(mmap[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+
+            let payload = &mmap[cursor..cursor + len];
+            cursor += len;
+
+            let archived_bytes =
+                unsafe { rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload) };
+
+            let current_bytes = archived_bytes.agent_id;
+
+            if current_bytes.as_slice() == target_bytes.as_slice() {
+                nodes.push(TimelineNode {
+                    tx_id: archived_bytes.state.transaction_id.into(),
+                    timestamp: archived_bytes.state.timestamp.to_string(),
+                    agent_status: format!("{:?}", archived_bytes.state.status),
+                    payload_preview: archived_bytes.state.text.to_string(),
+                });
+            }
+        }
+
+        Ok(nodes)
     }
 }
