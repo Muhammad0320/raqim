@@ -468,25 +468,38 @@ impl MemoryRouter {
             }
         }
 
-        let phantom_hex = hex::encode(phantom_bytes);
+        let sandbox_agent_hex = hex::encode(phantom_bytes);
 
         println!(
             "[TIME MACHINE] Phantom ID {} generated from Host {}",
-            phantom_hex, agent_hex
+            sandbox_agent_hex, agent_hex
         );
 
-        let (dummy_tx, _) = broadcast::channel(1);
+        // Isolated Infrastructure (The Quarantine Sandbox)
+        let (dummy_tx, mut dummy_event_rx) = broadcast::channel(100);
         let dummy_wal =
-            Arc::new(WalEngine::start(format!("phamtom_{}", agent_hex).to_string()).await);
+            Arc::new(WalEngine::start(format!("phamtom_{}", sandbox_agent_hex).to_string()).await);
         let dummy_net = Arc::new(
             GlobalNetworkBridge::new(
                 "phantom_tenant",
-                format!("phamtom_{}", agent_hex).as_str(),
+                format!("phamtom_{}", sandbox_agent_hex).as_str(),
                 self.aegis.clone(),
                 false,
             )
             .await,
         );
+
+        // We must route the dummy events to the React UI so the Admin can watch the fork!
+        let ui_tx_clone = phantom_ui_tx.clone();
+        let phantom_hex_code = sandbox_agent_hex.clone();
+
+        if is_isolated_debug {
+            tokio::spawn(async move {
+
+                // TODO:
+            });
+        }
+
         let actual_tx = if is_isolated_debug {
             dummy_tx
         } else {
@@ -550,7 +563,7 @@ impl MemoryRouter {
             event_tx: self.event_tx.clone(),
             wasi: wasi_ctx,
             lance: self.lance_engine.clone(),
-            agent_hex: agent_hex.clone().to_string(),
+            agent_hex: sandbox_agent_hex.clone().to_string(),
             telemetry: self.telemetry.clone(),
 
             // Live queue start empty

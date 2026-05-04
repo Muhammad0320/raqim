@@ -32,21 +32,10 @@ impl SwarmState {
                     .collect::<Vec<String>>()
                     .join("/");
 
-                // Extract the actual Loro Lamport Clock (TxID) for this exact merge event!
-                let front = doc_clone
-                    .oplog_vv()
-                    .iter()
-                    .next()
-                    .map(|(_, &counter)| counter as u64)
-                    .unwrap_or(0);
-
-                // We broadcast the exact internal memory mutation to the daemon.
-                let _ = tx_clone.send(SystemEvent::ThoughtCommited {
-                    agent_id: "CRDT_MERGE".to_string(),
-                    tx_id: front, // The real mathematical clock.
-                });
-
-                println!("[CRDT RESOLUTION] State mutated at path: {} ", target_path)
+                println!(
+                    "[CRDT RESOLUTION] Memory alignment complete at path: {} ",
+                    target_path
+                );
             }
         }));
 
