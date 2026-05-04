@@ -491,12 +491,21 @@ impl MemoryRouter {
 
         // We must route the dummy events to the React UI so the Admin can watch the fork!
         let ui_tx_clone = phantom_ui_tx.clone();
-        let phantom_hex_code = sandbox_agent_hex.clone();
+        let phantom_hex_clone = sandbox_agent_hex.clone();
 
         if is_isolated_debug {
             tokio::spawn(async move {
-
-                // TODO:
+                while let Ok(event) = dummy_event_rx.recv().await {
+                    if let SystemEvent::ThoughtCommited(oplog) = event {
+                        let ui_event = UiEvent::ThoughtCommited {
+                            agent_hex: phantom_hex_clone,
+                            intent_path: "".to_string(),
+                            tx_id: oplog.tx_id,
+                            text: "".to_string(),
+                        };
+                        let _ = ui_tx_clone.send(ui_event);
+                    }
+                }
             });
         }
 
