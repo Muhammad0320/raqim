@@ -182,11 +182,25 @@ impl LanceEngine {
             .as_millis() as i64;
 
         let (e_type, agent_id, meta) = match event {
-            SystemEvent::ThoughtCommited { agent_id, tx_id } => (
-                "ThoughtCommited",
-                agent_id.clone(),
-                format!(" {{\"tx_id\": {}}} ", tx_id),
-            ),
+            SystemEvent::ThoughtCommited {
+                agent_id,
+                tx_id,
+                namespace,
+                text,
+            } => {
+                // Sanitize the text to prevent JSON parsing panics in the meta column
+                let safe_text = text
+                    .replace("\"", "\\\"")
+                    .chars()
+                    .take(100)
+                    .collect::<String>();
+                let m = format!(
+                    "{{\"tx_id\": {}, \"namespace\": \"{}\", \"text_preview\": \"{}...\"}}",
+                    tx_id, namespace, safe_text
+                );
+
+                ("ThoughtCommited", agent_id.clone(), m)
+            }
 
             SystemEvent::AegisInterdiction {
                 agent_id,

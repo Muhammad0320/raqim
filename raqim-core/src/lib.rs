@@ -158,6 +158,8 @@ pub async fn execute_raqim_cascade(
     let _ = tx.send(SystemEvent::ThoughtCommited {
         agent_id: agent_hex.clone(),
         tx_id: enriched_state.clone().transaction_id,
+        namespace: enriched_state.clone().namespace,
+        text: enriched_state.clone().text,
     });
 
     enriched_state.transaction_id
@@ -168,6 +170,8 @@ pub enum SystemEvent {
     ThoughtCommited {
         agent_id: String,
         tx_id: u64,
+        namespace: String,
+        text: String,
     },
     SecurityBreach {
         agent_id: String,

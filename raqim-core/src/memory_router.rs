@@ -496,12 +496,18 @@ impl MemoryRouter {
         if is_isolated_debug {
             tokio::spawn(async move {
                 while let Ok(event) = dummy_event_rx.recv().await {
-                    if let SystemEvent::ThoughtCommited(oplog) = event {
+                    if let SystemEvent::ThoughtCommited {
+                        agent_id,
+                        tx_id,
+                        namespace,
+                        text,
+                    } = event
+                    {
                         let ui_event = UiEvent::ThoughtCommited {
                             agent_hex: phantom_hex_clone,
-                            intent_path: "".to_string(),
-                            tx_id: oplog.tx_id,
-                            text: "".to_string(),
+                            intent_path: namespace,
+                            tx_id,
+                            text,
                         };
                         let _ = ui_tx_clone.send(ui_event);
                     }
