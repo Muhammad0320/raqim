@@ -1,5 +1,5 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Multipart, Query};
+use axum::extract::{Multipart, Path, Query};
 use axum::response::Response;
 use axum::{
     Json, async_trait,
@@ -476,17 +476,16 @@ pub async fn unified_vault_search(
     Query(params): Query<UnifiedSearchQuery>,
 ) -> Result<Json<Vec<VaultSearchResult>>, StatusCode> {
     // The Scatter: Launch both searches concurrently on different OS threads
-    let lance_future =
-        state
-            .lance
-            .semantic_search(&params.query, params.namespace.as_deref(), 50)?;
+    let lance_future = state
+        .lance
+        .semantic_search(&params.query, params.namespace.as_deref(), 50);
     let wal_future = async {
         state.wal.lexical_scan(
             &params.query,
             params.namespace.as_deref(),
             50,
             &state.config.wal_path,
-        )?
+        )
     };
 
     let (lance_res, wal_res) = tokio::join!(lance_future, wal_future);
@@ -848,6 +847,38 @@ pub async fn active_qurantine_endpoint(
     quarantined_agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
     Ok(Json(quarantined_agents))
+}
+
+pub struct TimelineNode {
+    pub tx_id: u64,
+    pub timestamp: String,
+    pub agent_status: String,
+    pub payload_preview: String,
+}
+
+pub async fn fetch_agent_timeline(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+    Path(agent_hex): Path<String>,
+) -> Result<Json<Vec<TimelineNode>>, StatusCode> {
+    // The scatter: Let the engines do their native work
+    let lance_future = state.lance.fetch_historical_timeline(&agent_hex);
+    let wal_future = unsafe {
+        state
+            .wal
+            .fetch_hot_timeline(&agent_hex, &state.config.wal_path)
+    };
+
+    let (lance_res, wal_res) = tokio::join!(lance_future, wal_future);
+
+    let mut nodes = wal_res.unwrap_or_default();
+    if let Ok(mut cold_res) = lance_res {
+        nodes.append(&mut cold_res)
+    }
+
+    nodes.sort_by(|a, b| a.tx_id.cmp(&b.tx_id));
+
+    Ok(Json(nodes))
 }
 
 // Route Builder
