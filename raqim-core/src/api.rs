@@ -11,6 +11,7 @@ use axum::{
 use axum::body::Bytes;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use dashmap::DashMap;
+use futures::TryFutureExt;
 use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
 use std::convert::Infallible;

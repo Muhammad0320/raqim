@@ -514,12 +514,6 @@ impl MemoryRouter {
             });
         }
 
-        let actual_tx = if is_isolated_debug {
-            dummy_tx
-        } else {
-            self.event_tx.clone()
-        };
-
         let target_brain = if is_isolated_debug {
             Arc::new(SwarmState::new(format!("phantom_{}", agent_hex).as_str()))
         } else {

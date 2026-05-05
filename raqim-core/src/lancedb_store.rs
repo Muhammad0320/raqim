@@ -710,7 +710,7 @@ impl LanceEngine {
     pub async fn fetch_historical_timeline(
         &self,
         agent_hex: &str,
-    ) -> Result<TimelineNode, anyhow::Error> {
+    ) -> Result<Vec<TimelineNode>, anyhow::Error> {
         let table = self.db.open_table(self.history_table).execute().await?;
 
         let mut stream = table
