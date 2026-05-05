@@ -5,6 +5,7 @@ use raqim_core::axon::AxonGateKeeper;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
+use raqim_core::embedding::{EmbeddingProvider, LocalBgeProvider, OpenAIProvider};
 use raqim_core::health::{HealthMonitor, SystemHealth};
 use raqim_core::lancedb_store::LanceEngine;
 use raqim_core::memory_router::MemoryRouter;
@@ -37,6 +38,11 @@ async fn main() {
 
     // THE INTERNAL EVENT BUS
     let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(5000);
+
+    let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(5000);
+    let registry = Arc::new(SwarmRegistry::new());
+    let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
+    let (phantom_ui_tx, _phanom_ui_rx) = broadcast::channel::<UiEvent>(100);
 
     let telemetry_topic = format!("{}_telemetry", config.topic);
 
@@ -106,21 +112,31 @@ async fn main() {
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain = Arc::new(SwarmState::new(&config.topic));
     let axon = Arc::new(AxonGateKeeper::new());
-    let aegis = AegisGateKeeper::new("aegis.toml", event_tx.clone());
+    let aegis = AegisGateKeeper::new("aegis.toml", event_tx.clone(), ui_tx.clone());
     let wal = Arc::new(WalEngine::start(config.wal_path.clone()).await);
     let global_net = Arc::new(
         GlobalNetworkBridge::new(&verified_tenat_id, &config.topic, aegis.clone(), allow_wan).await,
     );
+    let wasm_engine = Arc::new(WasmEngine::new());
+
+    let embedder: Box<dyn EmbeddingProvider> = match config.embedder_type.as_str() {
+        "openai" => {
+            let key =
+                std::env::var("OPEN_API_KEY").expect("OPEN_API_KEY required for remote embedding ");
+            Box::new(OpenAIProvider::new(key))
+        }
+
+        _ => Box::new(LocalBgeProvider::new()),
+    };
 
     let lance_engine = Arc::new(
         LanceEngine::new(
             &format!("{}_semantic.lancedb", &config.topic),
             "agent_history",
-            config.dims,
+            embedder,
         )
         .await,
     );
-    let wasm_engine = Arc::new(WasmEngine::new());
 
     // THE BOOTSTRAP PROTOCOL
     let (lance_highest_tx, valut_capacity) =
@@ -355,11 +371,6 @@ async fn main() {
             .listen_for_foreign_thoughts(global_brain, global_axon, global_tx)
             .await;
     });
-
-    let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(5000);
-    let registry = Arc::new(SwarmRegistry::new());
-    let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
-    let (phantom_ui_tx, _phanom_ui_rx) = broadcast::channel::<UiEvent>(100);
 
     // Spawn the hardware interrupt loop
     HealthMonitor::spawn_telemetry_loop(health_tx.clone());

@@ -40,7 +40,7 @@ impl EmbeddingProvider for LocalBgeProvider {
         ));
 
         let res = tokio::task::spawn_blocking(move || {
-            let model = model_arc.lock().unwrap();
+            let mut model = model_arc.lock().unwrap();
             model.embed(vec![text_clone], None)
         })
         .await??;

@@ -3,12 +3,19 @@ import json
 import uuid
 from typing import Dict, Callable, Awaitable
 import websockets
+import zenoh
 import httpx
 from raqim_core import RaqimCryptoCore  # Our compiled PyO3 Rust extension!
 
 class RaqimClient:
-    def __init__(self, private_key_path: str, daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081):
+    def __init__(self, alias: str, tenant: str, private_key_path: str, daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081):
+        self.alias = alias 
+        self.tenant = tenant 
         self.crypto_core = RaqimCryptoCore(private_key_path)
+       
+       # Convert Rust's [u8; 32] public key into 64-char hex string
+        self.agent_hex = bytes(self.crypto_core.public_key_bytes).hex()
+
         self.tcp_addr = (daemon_host, tcp_port)
         self.http_url = f"http://{daemon_host}:{http_port}"
         self.ws_url = f"ws://{daemon_host}:{http_port}/v1/mcp/ws"
@@ -17,6 +24,32 @@ class RaqimClient:
         self._pending_requests: Dict[str, asyncio.Future] = {}
         self._capabilities: Dict[str, Callable[[bytes], Awaitable[bytes]]] = {}
         self._ws_connection = None
+        self._zenoh_session = None 
+
+    async def boot(self): 
+        """The Enterprise Ignition Sequence: Handshake + Zenoh Control Plane"""
+        # 1. TCP Handshake Protocol (Registers Alias with RAM Process Table)
+        await self.commit_thought(
+            agent_hex=self.agent_hex,
+            intent_path="/system/handshake",
+            text=f"ALIAS={self.alias}"
+        )
+        print(f"[BOOT] Agent '{self.alias}' ({self.agent_hex[:8]}...) registered.")
+
+        # 2. Establish Zenoh Control Plane for Aegis Circuit Breaker Resets
+        self._zenoh_session = zenoh.open(zenoh.Config())
+        control_topic = f"raqim/{self.tenant}/control/{self.agent_hex}"
+        self._zenoh_session.declare_subscriber(control_topic, self._handle_os_control_override)
+
+    def _handle_os_control_override(self, sample):
+        """ The Out-of-Band Context Eviction Listener """
+        payload = json.loads(sample.payload.decode('utf-8'))
+        
+        if payload.get("command") == "FORCE_CONTEXT_EVICTION":
+            print(f"\n[OS RED ALERT] Aegis Firewall mandated a Reality Re-seed.")
+            new_system_prompt = payload.get("new_system_prompt")
+            print(f"[OS DIRECTIVE]: {new_system_prompt}")
+            # TODO: In a real Langchain agent, just call self.memory.clear() here.
 
     async def commit_thought(self, agent_hex: str, intent_path: str, text: str):
         """Firehose Data Plane: Shoots pure RKYV bytes over raw TCP."""
@@ -71,7 +104,8 @@ class RaqimClient:
                         reply = {
                             "type": "ReplyToQuestion",
                             "request_id": data["request_id"],
-                            "answer": list(answer_bytes) # JSON arrays for bytes
+                            "answer": list(answer_bytes), 
+                            "responder_hex": self.agent_hex
                         }
                         await self._ws_connection.send(json.dumps(reply))
                         
