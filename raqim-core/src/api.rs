@@ -630,7 +630,7 @@ async fn time_travel(
 
     println!(
         "[TIME TRAVEL] Admin requested Reality Forkk for Agent {} at TxID {} ",
-        payload.agent_id, payload.target_tx_id
+        payload.agent_hex, payload.target_tx_id
     );
 
     // 1. Lift aegis Quarantine so that the agent can actually boot
@@ -647,7 +647,7 @@ async fn time_travel(
                 &payload.agent_hex,
                 Some(payload.target_tx_id),
                 Some(payload.fork_config),
-                false,
+                true,
                 state.phantom_ui_tx,
             )
             .await

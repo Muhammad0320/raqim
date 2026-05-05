@@ -476,7 +476,6 @@ impl MemoryRouter {
         );
 
         // Isolated Infrastructure (The Quarantine Sandbox)
-        let (dummy_tx, mut dummy_event_rx) = broadcast::channel(100);
         let dummy_wal =
             Arc::new(WalEngine::start(format!("phamtom_{}", sandbox_agent_hex).to_string()).await);
         let dummy_net = Arc::new(
@@ -488,6 +487,7 @@ impl MemoryRouter {
             )
             .await,
         );
+        let (dummy_tx, mut dummy_event_rx) = broadcast::channel(100);
 
         // We must route the dummy events to the React UI so the Admin can watch the fork!
         let ui_tx_clone = phantom_ui_tx.clone();
@@ -513,6 +513,12 @@ impl MemoryRouter {
                 }
             });
         }
+
+        let actual_tx = if is_isolated_debug {
+            dummy_tx.clone()
+        } else {
+            self.event_tx.clone()
+        };
 
         let target_brain = if is_isolated_debug {
             Arc::new(SwarmState::new(format!("phantom_{}", agent_hex).as_str()))
@@ -565,7 +571,7 @@ impl MemoryRouter {
             cortex_tx: self.cortex_tx.clone(),
             global_net: active_net.clone(),
             global_tx_counter: self.global_tx_counter.clone(),
-            event_tx: self.event_tx.clone(),
+            event_tx: actual_tx.clone(),
             wasi: wasi_ctx,
             lance: self.lance_engine.clone(),
             agent_hex: sandbox_agent_hex.clone().to_string(),

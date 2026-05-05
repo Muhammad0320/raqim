@@ -452,6 +452,7 @@ async fn main() {
             };
 
             let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
+            let text = archived_state.text.as_str().to_string();
             // 1. Checking aegis first before doing any expensive math or hitting the wal.
             if !task_aegis.enforce_aegis_policy(&agent_hex, path_intent) {
                 eprintln!(
@@ -468,6 +469,22 @@ async fn main() {
             if !task_aegis.verify_agent_signature(&agent_hex, state_slice, &sig_bytes) {
                 eprintln!(" [SECURITY] Invalid Ed25519 signature. Dropping TCP packet.");
                 return;
+            }
+
+            let mut alias = "Unknown".to_string();
+            if intent_path == "/system/handshake" {
+                if text.starts_with("ALIAS=") {
+                    let alias = text.replace("ALIAS=", "").trim().to_string();
+                    // We do not execute a cascade for handshake. We just register and drop
+                    task_registry.touch_agent(&agent_hex, &intent_path, "Connected", &alias);
+
+                    return;
+                }
+            } else {
+                // O(1) Ram lookup and keep the alias active for normal thought
+                if let Some(agent_proc) = task_registry.active_agents.get(&agent_hex) {
+                    alias = agent_proc.alias.clone();
+                }
             }
 
             // --- The Raqim Cascade ---
@@ -491,13 +508,14 @@ async fn main() {
                 agent_hex.clone().as_str(),
                 archived_ingress.intent_path.as_str(),
                 "Active",
+                &alias,
             );
 
             let ui_payload = UiEvent::ThoughtCommited {
                 agent_hex: agent_hex.clone(),
-                intent_path: archived_ingress.intent_path.as_str().to_string(),
+                intent_path,
                 tx_id,
-                text: archived_state.text.as_str().to_string(),
+                text,
             };
 
             let _ = task_ui_tx.send(ui_payload);
