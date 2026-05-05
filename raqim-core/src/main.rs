@@ -104,7 +104,7 @@ async fn main() {
 
     // ===============================
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
-    let brain = Arc::new(SwarmState::new(&config.topic, event_tx.clone()));
+    let brain = Arc::new(SwarmState::new(&config.topic));
     let axon = Arc::new(AxonGateKeeper::new());
     let aegis = AegisGateKeeper::new("aegis.toml", event_tx.clone());
     let wal = Arc::new(WalEngine::start(config.wal_path.clone()).await);
@@ -116,7 +116,7 @@ async fn main() {
         LanceEngine::new(
             &format!("{}_semantic.lancedb", &config.topic),
             "agent_history",
-            config.dims.clone(),
+            config.dims,
         )
         .await,
     );

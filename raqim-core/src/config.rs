@@ -21,6 +21,15 @@ pub struct CliArgs {
     #[arg(short, long)]
     pub public_key_path: Option<String>,
 
+    #[arg(short, long)]
+    pub embedder_type: Option<String>,
+
+    #[arg(short, long)]
+    pub openai_api_key: Option<String>,
+
+    #[arg(long, short)]
+    pub voyage_api_key: Option<String>,
+
     #[arg(long)]
     pub tenant_id: Option<String>,
 
@@ -47,6 +56,9 @@ pub struct RaqimConfig {
     pub tenant_id: String,
     pub license_key: String,
     pub public_key_path: String,
+    pub embedder_type: String,
+    pub openai_api_key: String,
+    pub voyage_api_key: String,
     pub dims: i32,
     pub limit: usize,
     pub port: u16,
@@ -63,6 +75,9 @@ impl Default for RaqimConfig {
             tenant_id: "open_core_local".to_string(),
             license_key: "dev_move".to_string(),
             public_key_path: "public_key.pem".to_string(),
+            embedder_type: "bge".to_string(),
+            openai_api_key: "".to_string(),
+            voyage_api_key: "".to_string(),
             dims: 384,
             limit: 5,
             port: 8080,
@@ -102,6 +117,18 @@ impl RaqimConfig {
 
         if let Some(p_key) = args.public_key_path {
             config.public_key_path = p_key;
+        }
+
+        if let Some(e_type) = args.embedder_type {
+            config.embedder_type = e_type
+        }
+
+        if let Some(o_api) = args.openai_api_key {
+            config.openai_api_key = o_api
+        }
+
+        if let Some(v_api) = args.voyage_api_key {
+            config.voyage_api_key = v_api
         }
 
         if let Some(l) = args.lance_path {
