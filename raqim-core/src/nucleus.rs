@@ -254,7 +254,7 @@ impl WalEngine {
                 nodes.push(TimelineNode {
                     tx_id: archived_bytes.state.transaction_id.into(),
                     timestamp: archived_bytes.state.timestamp.to_string(),
-                    agent_status: format!("{:?}", archived_bytes.state.status),
+                    agent_status: format!("{:?}", archived_bytes.state.status.into()),
                     payload_preview: archived_bytes.state.text.to_string(),
                 });
             }

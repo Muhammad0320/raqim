@@ -521,10 +521,7 @@ impl MemoryRouter {
         };
 
         let target_brain = if is_isolated_debug {
-            Arc::new(SwarmState::new(
-                format!("phantom_{}", agent_hex).as_str(),
-                actual_tx.clone(),
-            ))
+            Arc::new(SwarmState::new(format!("phantom_{}", agent_hex).as_str()))
         } else {
             self.brain.clone()
         };
