@@ -359,6 +359,7 @@ async fn main() {
     let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(5000);
     let registry = Arc::new(SwarmRegistry::new());
     let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
+    let (phantom_ui_tx, _phanom_ui_rx) = broadcast::channel::<UiEvent>(100);
 
     // Spawn the hardware interrupt loop
     HealthMonitor::spawn_telemetry_loop(health_tx.clone());
@@ -371,6 +372,7 @@ async fn main() {
         telemetry: telemetry.clone(),
         axon: axon.clone(),
         brain: brain.clone(),
+        lance: lance_engine.clone(),
         cortex_tx: cortex_tx.clone(),
         global_tx_counter: tx_counter.clone(),
         wal: wal.clone(),
@@ -378,6 +380,7 @@ async fn main() {
         decoding_key,
 
         ui_tx: ui_tx.clone(),
+        phantom_ui_tx: phantom_ui_tx.clone(),
         health_tx: health_tx.clone(),
         swarm_registry: registry.clone(),
     };

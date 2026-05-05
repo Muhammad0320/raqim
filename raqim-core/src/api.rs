@@ -466,7 +466,7 @@ pub async fn agent_alias_endpoint(
 ) -> axum::Json<HashMap<String, String>> {
     let mut map = HashMap::new();
     for entry in state.swarm_registry.active_agents.iter() {
-        map.insert(entry.key(), entry.value().alias.clone());
+        map.insert(entry.key().clone().to_string(), entry.value().alias.clone());
     }
     axum::Json(map)
 }
@@ -585,7 +585,7 @@ async fn lift_qurantine_and_resurrect(
 
         match state
             .mem_router
-            .boot_historical_agent(&payload.agent_hex, None, None, false)
+            .boot_historical_agent(&payload.agent_hex, None, None, false, state.phantom_ui_tx)
             .await
         {
             Ok(()) => Ok(StatusCode::OK),
@@ -648,6 +648,7 @@ async fn time_travel(
                 Some(payload.target_tx_id),
                 Some(payload.fork_config),
                 false,
+                state.phantom_ui_tx,
             )
             .await
         {

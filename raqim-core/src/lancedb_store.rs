@@ -22,7 +22,7 @@ pub struct LanceEngine {
     pub history_table: String,
     pub snapshot_table: String,
     pub storage_path: String,
-    // pub dims: i32,
+    pub dims: i32,
     pub embedder: Box<dyn EmbeddingProvider>, // Polymorphic injection
 }
 
@@ -44,6 +44,7 @@ impl LanceEngine {
             storage_path: storage_path.to_string(),
             snapshot_table: "agent_snapshot".to_string(),
             embedder,
+            dims: embedder.dimension(),
         }
     }
 
@@ -147,7 +148,7 @@ impl LanceEngine {
                 "vector",
                 DataType::FixedSizeList(
                     Arc::new(Field::new("item", DataType::Float32, false)),
-                    self.embedder.dimension(),
+                    self.dims,
                 ),
                 false,
             ),
@@ -711,7 +712,7 @@ impl LanceEngine {
         &self,
         agent_hex: &str,
     ) -> Result<Vec<TimelineNode>, anyhow::Error> {
-        let table = self.db.open_table(self.history_table).execute().await?;
+        let table = self.db.open_table(&self.history_table).execute().await?;
 
         let mut stream = table
             .query()
