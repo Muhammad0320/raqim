@@ -4,7 +4,7 @@ import { UiThought } from '../../lib/store/useSwarmStore';
 export interface TimelineNode {
     tx_id: number;
     timestamp: string;
-    action_type: "THOUGHT" | "NETWORK_RECV" | "AEGIS_BLOCK";
+    agent_status: string;
     payload_preview: string;
 }
 
@@ -17,19 +17,19 @@ export function DagNode({ data }: NodeProps) {
   const nodeData: TimelineNode = {
       tx_id: thought.tx_id,
       timestamp: new Date().toISOString().split('T')[1].substring(0, 12), // mock timestamp
-      action_type: thought.status === 'REJECTED' ? 'AEGIS_BLOCK' : (thought.is_a2a_query ? 'NETWORK_RECV' : 'THOUGHT'),
+      agent_status: thought.status === 'REJECTED' ? 'AegisInterdiction' : (thought.is_a2a_query ? 'NetworkSync' : 'Reasoning'),
       payload_preview: thought.intent_path
   };
 
-  const displayId = "0x" + nodeData.tx_id.toString().padStart(8, '0').toUpperCase();
+  const displayId = "#" + nodeData.tx_id;
   
-  let statusColor = '#00f3ff'; // cyan for THOUGHT
+  let statusColor = '#00f3ff'; // cyan
   let icon = 'memory';
   
-  if (nodeData.action_type === 'AEGIS_BLOCK') {
+  if (nodeData.agent_status === 'AegisInterdiction') {
     statusColor = '#ff2a2a'; // red
     icon = 'gpp_bad';
-  } else if (nodeData.action_type === 'NETWORK_RECV') {
+  } else if (nodeData.agent_status === 'NetworkSync') {
     statusColor = '#ffb300'; // amber
     icon = 'lan';
   }
@@ -57,7 +57,7 @@ export function DagNode({ data }: NodeProps) {
       <span className="font-mono text-xs text-white truncate">{nodeData.payload_preview}</span>
       
       <div className="flex justify-between items-center mt-1">
-         <span className="font-mono text-[9px] text-zinc-500 uppercase">{nodeData.action_type}</span>
+         <span className="font-mono text-[10px] text-zinc-300 font-bold bg-zinc-800/50 px-1.5 py-0.5 rounded border border-zinc-700/50">{nodeData.agent_status}</span>
          <span className="font-mono text-[9px] text-zinc-600">{nodeData.timestamp}</span>
       </div>
       

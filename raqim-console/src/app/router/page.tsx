@@ -14,36 +14,39 @@ export default function RouterPage() {
   useEffect(() => {
     if (!isForking) return;
     
-    // Simulate Phantom Stream connection
-    console.log("Opening NEW EventSource connection to GET /v1/time_travel/stream...");
+    console.log("Opening NEW EventSource connection to http://localhost:8081/v1/time_travel/stream...");
+    const eventSource = new EventSource('http://localhost:8081/v1/time_travel/stream');
     
-    // Start phantom stream from current active tx id, or latest if null
-    let phantomTxId = activeTxId ? activeTxId + 1 : Date.now() % 10000;
-    
-    const interval = setInterval(() => {
-      const newPhantomThought: UiThought = {
-        tx_id: phantomTxId,
-        agent_hex: "0xPHANTOM",
-        intent_path: "EVALUATE_INJECTED_PAYLOAD",
-        text: "Analyzing context eviction prompt and new mock network data.",
-        parent_tx_id: phantomTxId - 1,
-        status: "FORKED",
-        is_a2a_query: false,
-      };
-      
-      batchAddThoughts([newPhantomThought]);
-      
-      // Auto-scroll scrubber by updating activeTxId to the latest phantom node
-      setActiveTxId(phantomTxId);
-      
-      phantomTxId++;
-    }, 1500); // New thought every 1.5 seconds
+    eventSource.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        if (parsed.event_type === "ThoughtCommitted") {
+          const newPhantomThought: UiThought = {
+            tx_id: parsed.tx_id,
+            agent_hex: parsed.agent_hex || "0xPHANTOM",
+            intent_path: parsed.intent_path,
+            text: parsed.text,
+            parent_tx_id: parsed.tx_id - 1, // Assuming sequential for now
+            status: "FORKED",
+            is_a2a_query: false,
+          };
+          batchAddThoughts([newPhantomThought]);
+          setActiveTxId(parsed.tx_id);
+        }
+      } catch (err) {
+        console.error("Error parsing phantom stream event", err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error("Phantom stream EventSource failed", err);
+    };
     
     return () => {
-      clearInterval(interval);
+      eventSource.close();
       console.log("Closing Phantom Stream EventSource connection.");
     };
-  }, [isForking, activeTxId, batchAddThoughts, setActiveTxId]);
+  }, [isForking, batchAddThoughts, setActiveTxId]);
 
   return (
     <MainLayout title="State Inspector">
@@ -55,9 +58,9 @@ export default function RouterPage() {
             <div className="flex flex-col">
               <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest mb-1">Target Agent</span>
               <select className="bg-zinc-900 border border-zinc-700 text-[#00f3ff] font-mono text-xs px-3 py-1.5 rounded-sm outline-none cursor-pointer hover:border-[#00f3ff]/50 transition-colors">
-                <option>FINANCE-LEDGER-01 (0x9F4A...)</option>
-                <option>LOGISTICS-CORE-02 (0x3B2C...)</option>
-                <option>AUTH-GATEWAY-05 (0x1A8F...)</option>
+                <option>FINANCE-LEDGER-01 (#1492)</option>
+                <option>LOGISTICS-CORE-02 (#1493)</option>
+                <option>AUTH-GATEWAY-05 (#1494)</option>
               </select>
             </div>
           </div>

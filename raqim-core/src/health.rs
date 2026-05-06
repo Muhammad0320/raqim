@@ -20,16 +20,16 @@ impl HealthMonitor {
             let mut sys = System::new_with_specifics(
                 RefreshKind::new()
                     .with_cpu(CpuRefreshKind::everything())
-                    .with_memory(),
+                    .with_memory(MemoryRefreshKind::everything()),
             );
-            let mut components = Components::new_with_algo(systeminfo::ComponentUpdateMode::Append);
+            let mut components = Components::new_with_refreshed_list();
 
             loop {
                 // PHYSICS: Only perform expensive hardware interrupts if an Admin UI is actually connected.
                 if health_tx.receiver_count() > 0 {
                     sys.refresh_cpu();
                     sys.refresh_memory();
-                    components.refresh_lists();
+                    components.refresh_list();
 
                     let cpu_load = sys.global_cpu_info().cpu_usage();
                     let mem_used = sys.used_memory() as f32 / (1024.0 * 1024.0);
@@ -38,7 +38,7 @@ impl HealthMonitor {
                     let core_temp = components
                         .iter()
                         .next()
-                        .map(|c| c.temperature())
+                        .map(|c: &sysinfo::Component| c.temperature())
                         .unwrap_or(0.0);
 
                     let payload = SystemHealth {
