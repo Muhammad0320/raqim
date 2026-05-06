@@ -104,7 +104,7 @@ impl WalCompactor {
                 );
 
                 // Call the Pluggable Embedder ( This is CPU bound, but we're off the TCP path )
-                match self.lance_engine.embedder.embed(&semantic_payload) {
+                match self.lance_engine.embedder.embed(&semantic_payload).await {
                     Ok(vec_data) => {
                         logs_to_archive.push(log);
                         vector.push(vec_data);

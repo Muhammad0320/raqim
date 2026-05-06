@@ -14,7 +14,7 @@ class RaqimClient:
         self.crypto_core = RaqimCryptoCore(private_key_path)
        
        # Convert Rust's [u8; 32] public key into 64-char hex string
-        self.agent_hex = bytes(self.crypto_core.public_key_bytes).hex()
+        self.agent_hex = bytes(self.crypto_core.public_key_bytes)[:16].hex()
 
         self.tcp_addr = (daemon_host, tcp_port)
         self.http_url = f"http://{daemon_host}:{http_port}"

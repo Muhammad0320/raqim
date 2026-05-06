@@ -37,7 +37,7 @@ impl LanceEngine {
             .execute()
             .await
             .expect("Failed to connect to lanceDB");
-        let dims = embedder.dimension()
+        let dims = embedder.dimension();
 
         Self {
             db,
@@ -45,7 +45,7 @@ impl LanceEngine {
             storage_path: storage_path.to_string(),
             snapshot_table: "agent_snapshot".to_string(),
             embedder,
-            dims
+            dims,
         }
     }
 
