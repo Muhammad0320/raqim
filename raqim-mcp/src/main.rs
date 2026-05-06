@@ -4,6 +4,7 @@ use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
+use md5::{Digest, Md5};
 use raqim_core::api::WsMessage;
 use raqim_core::config::RaqimConfig;
 use serde_json::{Value, json};
@@ -70,7 +71,6 @@ impl RaqimHandler {
                         "thought_text": {"type": "string"},
                         "status": {"type": "string", "enum": ["Reasoning", "ToolExecution", "Halted", "Idle"]},
                         "intent_path": {"type": "string", "description": "The namespace e.g rqm_finance/ledger"},
-                        "agent_id_hex": {"type": "string", "description": "The exact 32-char hex UUID of this agent thread."}
                     },
                     "required": ["thought_text", "status", "intent_path", "agent_id_hex"]
                 }),
@@ -130,15 +130,13 @@ impl ServerHandler for RaqimHandler {
                 })?;
 
                 if name == "commit_thought" {
-                    // Enforce agent identity
-                    let agent_id_hex = args
-                        .get("agent_id_hex")
-                        .and_then(|v| v.as_str())
-                        .ok_or_else(|| {
-                            mcp_rust_sdk::Error::Other("Missing agent_id_hex".to_string())
-                        })?;
-                    let agent_id_bytes = hex::decode(agent_id_hex)
-                        .map_err(|_| mcp_rust_sdk::Error::Other("Invalid Hex".to_string()))?;
+                    // Mathematical derivation. (The absolute Truth)
+                    // The hash the exact public key that was used to initialize this MCP Server instance.
+                    let mut hasher = Md5::new();
+                    hasher.update(self.pub_key_bytes);
+                    let derived_16_bytes: [u8; 16] = hasher.finalize().into();
+
+                    let agent_hex = hex::encode(derived_16_bytes);
 
                     // --- Translation layer ----
                     let intent_path = args
@@ -165,7 +163,7 @@ impl ServerHandler for RaqimHandler {
 
                     // Translate into Raqim core logic
                     let state = AgentState {
-                        agent_id: Some(agent_id_bytes.try_into().unwrap_or([0; 16])),
+                        agent_id: Some(derived_16_bytes.try_into().unwrap_or([0; 16])),
                         transaction_id: 0,
                         namespace: intent_path.clone(),
                         timestamp: SystemTime::now()
