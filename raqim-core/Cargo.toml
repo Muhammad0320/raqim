@@ -28,6 +28,7 @@ arrow-array = "52.2"
 arrow-schema = "52.2"
 
 anyhow = "1.0"
+md5 = "0.7"
 
 datafusion = "35.0"
 

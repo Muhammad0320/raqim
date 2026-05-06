@@ -31,21 +31,42 @@ export function RealityForkDrawer() {
         </button>
       </div>
       
-      <div className="p-6 flex-1 flex flex-col gap-6 overflow-hidden">
+      <div className="p-6 flex-1 flex flex-col gap-6 overflow-y-auto">
         <div className="flex flex-col gap-2 shrink-0">
-          <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Temporal Anchor (TX_ID)</label>
-          <div className="bg-zinc-900 border border-zinc-800 rounded px-4 py-2 font-mono text-sm text-zinc-300">
-            {activeTxId ? `0x${activeTxId.toString().padStart(8, '0').toUpperCase()}` : 'LIVE EDGE'}
-          </div>
+          <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Temporal Anchor (target_tx_id)</label>
+          <input 
+            type="text"
+            readOnly
+            className="bg-zinc-900 border border-zinc-800 rounded px-4 py-2 font-mono text-sm text-zinc-500 cursor-not-allowed outline-none"
+            value={activeTxId ? `#${activeTxId}` : 'LIVE EDGE'}
+          />
         </div>
 
         <div className="flex flex-col gap-2 shrink-0">
           <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Entropy Seed Override</label>
           <input 
-            className="w-full bg-zinc-900 border border-zinc-800 text-sm font-mono text-[#00f3ff] focus:border-[#00f3ff]/50 px-4 py-2 rounded outline-none transition-colors" 
+            className="w-full bg-zinc-900 border border-zinc-800 text-sm font-mono text-[#00f3ff] focus:border-[#00f3ff]/50 px-4 py-2 rounded outline-none transition-colors shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]" 
             type="number" 
             value={entropySeed}
             onChange={(e) => setEntropySeed(parseInt(e.target.value) || 0)}
+          />
+        </div>
+        
+        <div className="flex flex-col gap-2 shrink-0">
+          <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Env Overrides (env_overrides)</label>
+          <textarea 
+            className="w-full h-20 bg-zinc-900 border border-zinc-800 text-xs font-mono text-white focus:border-[#00f3ff]/50 px-4 py-3 rounded outline-none transition-colors resize-none shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]" 
+            placeholder="KEY=VALUE&#10;API_KEY=123"
+            spellCheck="false"
+          />
+        </div>
+
+        <div className="flex flex-col gap-2 shrink-0">
+          <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500">Config Overrides (config_overrides)</label>
+          <textarea 
+            className="w-full h-20 bg-zinc-900 border border-zinc-800 text-xs font-mono text-white focus:border-[#00f3ff]/50 px-4 py-3 rounded outline-none transition-colors resize-none shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]" 
+            placeholder='{"bypass_cache": true}'
+            spellCheck="false"
           />
         </div>
         
@@ -58,7 +79,7 @@ export function RealityForkDrawer() {
           />
         </div>
         
-        <div className="flex flex-col gap-2 flex-1 min-h-0">
+        <div className="flex flex-col gap-2 flex-1 min-h-[200px]">
           <label className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 flex justify-between">
             Network Injection Payload (JSON)
           </label>
