@@ -5,6 +5,8 @@ from typing import Dict, Callable, Awaitable
 import websockets
 import zenoh
 import httpx
+import hashlib
+
 from raqim_core import RaqimCryptoCore  # Our compiled PyO3 Rust extension!
 
 class RaqimClient:
@@ -13,8 +15,13 @@ class RaqimClient:
         self.tenant = tenant 
         self.crypto_core = RaqimCryptoCore(private_key_path)
        
-       # Convert Rust's [u8; 32] public key into 64-char hex string
-        self.agent_hex = bytes(self.crypto_core.public_key_bytes)[:16].hex()
+       # Mathematically bind the 16-bytes routing ID to the 32-byte public key
+        public_key_bytes = bytes(self.crypto_core.public_key_bytes)
+        derived_16_bytes = hashlib.md5(public_key_bytes).digest()
+       
+       
+        # The 32-character hex string representing the 16-bytes
+        self.agent_hex = derived_16_bytes.hex()
 
         self.tcp_addr = (daemon_host, tcp_port)
         self.http_url = f"http://{daemon_host}:{http_port}"
@@ -24,7 +31,9 @@ class RaqimClient:
         self._pending_requests: Dict[str, asyncio.Future] = {}
         self._capabilities: Dict[str, Callable[[bytes], Awaitable[bytes]]] = {}
         self._ws_connection = None
-        self._zenoh_session = None 
+        self._zenoh_session = None
+        # The callback function provided by the developer
+        self._reality_fork_hook: Callable[[str], None] = None 
 
     async def boot(self): 
         """The Enterprise Ignition Sequence: Handshake + Zenoh Control Plane"""
@@ -41,6 +50,12 @@ class RaqimClient:
         control_topic = f"raqim/{self.tenant}/control/{self.agent_hex}"
         self._zenoh_session.declare_subscriber(control_topic, self._handle_os_control_override)
 
+    def register_eviction_hook(self, callback: Callable[[str], None]): 
+        """
+            The developer defines HOW their specific LLM clears its memory, and registers that function here
+        """
+        self._reality_fork_hook = callback
+
     def _handle_os_control_override(self, sample):
         """ The Out-of-Band Context Eviction Listener """
         payload = json.loads(sample.payload.decode('utf-8'))
@@ -49,7 +64,12 @@ class RaqimClient:
             print(f"\n[OS RED ALERT] Aegis Firewall mandated a Reality Re-seed.")
             new_system_prompt = payload.get("new_system_prompt")
             print(f"[OS DIRECTIVE]: {new_system_prompt}")
-            # TODO: In a real Langchain agent, just call self.memory.clear() here.
+            # Trigger the closure
+            if self._reality_fork_hook: 
+                self._reality_fork_hook(new_system_prompt)
+                print("[OS OVERRIDE] Developer hook executed. Reality re-seeded.")
+            else: 
+                print("[OS WARNING] No eviction hook registered. Agent memory is corrupted ")
 
     async def commit_thought(self, agent_hex: str, intent_path: str, text: str):
         """Firehose Data Plane: Shoots pure RKYV bytes over raw TCP."""

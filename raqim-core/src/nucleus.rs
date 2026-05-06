@@ -1,5 +1,5 @@
 use crate::{
-    OpLog,
+    AgentState, AgentStatus, OpLog,
     api::{TimelineNode, VaultSearchResult},
 };
 use aho_corasick::AhoCorasick;
@@ -251,10 +251,15 @@ impl WalEngine {
             let current_bytes = archived_bytes.agent_id;
 
             if current_bytes.as_slice() == target_bytes.as_slice() {
+                let native_status = rkyv::deserialize::<AgentStatus, rkyv::rancor::Error>(
+                    &archived_bytes.state.status,
+                )
+                .unwrap();
+
                 nodes.push(TimelineNode {
                     tx_id: archived_bytes.state.transaction_id.into(),
                     timestamp: archived_bytes.state.timestamp.to_string(),
-                    agent_status: format!("{:?}", archived_bytes.state.status),
+                    agent_status: format!("{:?}", native_status),
                     payload_preview: archived_bytes.state.text.to_string(),
                 });
             }
