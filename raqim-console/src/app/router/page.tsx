@@ -1,5 +1,5 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { MainLayout } from '../../components/Layout/MainLayout';
 import { DagCanvas } from '../../components/DagCanvas/DagCanvas';
 import { NLEScrubber } from '../../components/TimeMachine/NLEScrubber';
@@ -10,14 +10,13 @@ import { useSwarmStore, UiThought } from '../../lib/store/useSwarmStore';
 export default function RouterPage() {
   useSwarmStream();
   const { isForking, activeTxId, batchAddThoughts, setActiveTxId } = useSwarmStore();
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
 
   useEffect(() => {
     if (!isForking) return;
     
-    // Simulate Phantom Stream connection
-    console.log("Opening NEW EventSource connection to GET /v1/time_travel/stream...");
+    setTerminalLogs(prev => [...prev, `[SYSTEM] Opening EventSource connection to GET /v1/time_travel/stream...`, `[SYSTEM] Connected to Forked Reality Engine.`]);
     
-    // Start phantom stream from current active tx id, or latest if null
     let phantomTxId = activeTxId ? activeTxId + 1 : Date.now() % 10000;
     
     const interval = setInterval(() => {
@@ -25,23 +24,24 @@ export default function RouterPage() {
         tx_id: phantomTxId,
         agent_hex: "0xPHANTOM",
         intent_path: "EVALUATE_INJECTED_PAYLOAD",
-        text: "Analyzing context eviction prompt and new mock network data.",
+        text: `Executing instruction offset 0x${Math.floor(Math.random()*1000).toString(16)}... Memory bounds checked. Proceeding with override evaluation.`,
         parent_tx_id: phantomTxId - 1,
         status: "FORKED",
         is_a2a_query: false,
       };
       
       batchAddThoughts([newPhantomThought]);
-      
-      // Auto-scroll scrubber by updating activeTxId to the latest phantom node
       setActiveTxId(phantomTxId);
       
+      const logLine = `[${new Date().toISOString().split('T')[1].substring(0,12)}] THOUGHT_COMMITTED | TX_ID: ${phantomTxId.toString().padStart(8, '0')} | ${newPhantomThought.text}`;
+      setTerminalLogs(prev => [...prev.slice(-49), logLine]); // Keep last 50 logs
+      
       phantomTxId++;
-    }, 1500); // New thought every 1.5 seconds
+    }, 1500);
     
     return () => {
       clearInterval(interval);
-      console.log("Closing Phantom Stream EventSource connection.");
+      setTerminalLogs(prev => [...prev, `[SYSTEM] Connection terminated.`]);
     };
   }, [isForking, activeTxId, batchAddThoughts, setActiveTxId]);
 
@@ -79,7 +79,6 @@ export default function RouterPage() {
 
         {/* Main Stage (70% viewport) */}
         <div className="flex-1 relative bg-zinc-950 overflow-hidden" style={{ height: '70%' }}>
-          {/* Background Grid */}
           <div 
             className="absolute inset-0 opacity-[0.03] pointer-events-none" 
             style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '20px 20px' }}
@@ -89,13 +88,30 @@ export default function RouterPage() {
             <DagCanvas />
           </div>
           
-          {/* Drawer Overlays */}
           <RealityForkDrawer />
         </div>
 
         {/* Scrubbing Deck (30% viewport) */}
-        <div className="h-[30vh] shrink-0 border-t border-zinc-800 bg-zinc-900 relative z-20 flex flex-col shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+        <div className={`shrink-0 border-t border-zinc-800 bg-zinc-900 relative z-20 flex flex-col shadow-[0_-10px_30px_rgba(0,0,0,0.5)] transition-all duration-500 ${isForking ? 'h-[20vh]' : 'h-[30vh]'}`}>
           <NLEScrubber />
+        </div>
+        
+        {/* Phantom Terminal (Bottom Slider) */}
+        <div className={`absolute bottom-0 left-0 w-full bg-black border-t border-zinc-800 z-30 transition-all duration-500 ease-in-out flex flex-col shadow-[0_-20px_50px_rgba(0,0,0,0.8)] ${isForking ? 'h-[25vh] translate-y-0' : 'h-[25vh] translate-y-full'}`}>
+           <div className="bg-zinc-900 px-4 py-1.5 border-b border-zinc-800 flex justify-between items-center shrink-0">
+             <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#00f3ff] flex items-center gap-2">
+               <span className="material-symbols-outlined text-sm">terminal</span>
+               PHANTOM STREAM TERMINAL
+             </span>
+             <span className="font-mono text-[9px] text-zinc-500 uppercase tracking-widest animate-pulse">Live</span>
+           </div>
+           <div className="flex-1 p-4 overflow-y-auto font-mono text-[11px] leading-relaxed text-zinc-300 flex flex-col gap-1">
+             {terminalLogs.map((log, i) => (
+                <div key={i} className={`${log.startsWith('[SYSTEM]') ? 'text-[#ffb300]' : ''}`}>
+                  {log}
+                </div>
+             ))}
+           </div>
         </div>
         
       </div>
