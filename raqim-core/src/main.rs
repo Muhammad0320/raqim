@@ -122,7 +122,10 @@ async fn main() {
     let embedder: Box<dyn EmbeddingProvider> = match config.embedder_type.as_str() {
         "openai" => {
             let key =
-                std::env::var("OPEN_API_KEY").expect("OPEN_API_KEY required for remote embedding ");
+                std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| config.openai_api_key.clone());
+            if key.is_empty() {
+                panic!("OPENAI_API_KEY environment variable or config entry is required");
+            }
             Box::new(OpenAIProvider::new(key))
         }
 
@@ -499,7 +502,7 @@ async fn main() {
             }
 
             // --- The Raqim Cascade ---
-            let tx_id = execute_raqim_cascade(
+            let res = execute_raqim_cascade(
                 &archived_state,
                 task_brain,
                 task_axon,
@@ -521,6 +524,11 @@ async fn main() {
                 "Active",
                 &alias,
             );
+
+            let tx_id = match res {
+                Ok(id) => id,
+                Err(_) => return,
+            };
 
             let ui_payload = UiEvent::ThoughtCommited {
                 agent_hex: agent_hex.clone(),

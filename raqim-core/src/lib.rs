@@ -96,14 +96,14 @@ pub async fn execute_raqim_cascade(
     seeds: Vec<u64>,
     responses: Vec<String>,
     telemetry: Arc<TelemetryEngine>,
-) -> u64 {
+) -> Result<u64, anyhow::Error> {
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];
 
     // Safely extract from ArrchiveOption using .as_ref()
     let final_agent_id = match archive_state.agent_id.as_ref() {
         Some(id) if id.as_slice() != empty_id => id.as_slice().try_into().unwrap(),
-        _ => Uuid::new_v4().into_bytes(),
+        _ => return Err("Agent ID is required to merge thought"),
     };
 
     let agent_hex = hex::encode(final_agent_id);
@@ -162,7 +162,7 @@ pub async fn execute_raqim_cascade(
         text: enriched_state.clone().text,
     });
 
-    enriched_state.transaction_id
+    Ok(enriched_state.transaction_id)
 }
 
 #[derive(Clone, Debug, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize)]

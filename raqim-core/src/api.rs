@@ -763,7 +763,7 @@ pub async fn http_ingress_endpoint(
         };
 
         // Pass
-        execute_raqim_cascade(
+        let res = execute_raqim_cascade(
             &state,
             task_brain,
             task_axon,
@@ -778,6 +778,11 @@ pub async fn http_ingress_endpoint(
         )
         .await;
     });
+
+    let _ = match res {
+        Ok(id) => id,
+        Err(_) => return Err(StatusCode::BAD_REQUEST),
+    };
 
     Ok(StatusCode::ACCEPTED)
 }
