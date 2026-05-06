@@ -6,6 +6,7 @@ export interface TimelineNode {
     timestamp: string;
     action_type: "THOUGHT" | "NETWORK_RECV" | "AEGIS_BLOCK";
     payload_preview: string;
+    agent_status: "NOMINAL" | "COMPROMISED" | "ISOLATED";
 }
 
 export function DagNode({ data }: NodeProps) {
@@ -18,10 +19,12 @@ export function DagNode({ data }: NodeProps) {
       tx_id: thought.tx_id,
       timestamp: new Date().toISOString().split('T')[1].substring(0, 12), // mock timestamp
       action_type: thought.status === 'REJECTED' ? 'AEGIS_BLOCK' : (thought.is_a2a_query ? 'NETWORK_RECV' : 'THOUGHT'),
-      payload_preview: thought.intent_path
+      payload_preview: thought.text || thought.intent_path,
+      agent_status: thought.status === 'REJECTED' ? 'COMPROMISED' : (thought.status === 'FORKED' ? 'ISOLATED' : 'NOMINAL')
   };
 
-  const displayId = "0x" + nodeData.tx_id.toString().padStart(8, '0').toUpperCase();
+  // Padded integer, NOT hex.
+  const displayId = nodeData.tx_id.toString().padStart(8, '0');
   
   let statusColor = '#00f3ff'; // cyan for THOUGHT
   let icon = 'memory';
@@ -41,27 +44,41 @@ export function DagNode({ data }: NodeProps) {
   
   return (
     <div 
-      className={`bg-zinc-900 border p-3 rounded-md flex flex-col gap-1.5 w-56 ${opacity} transition-all duration-300`}
+      className={`bg-zinc-950 border p-4 rounded-sm flex flex-col gap-3 w-72 ${opacity} transition-all duration-300 shadow-2xl relative overflow-hidden`}
       style={{ 
         borderColor: borderCol,
         boxShadow: glow 
       }}
     >
-      <Handle type="target" position={Position.Left} className="w-1.5 h-4 rounded-none bg-zinc-700 border-0 !left-[-4px]" />
+      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-zinc-800 to-transparent"></div>
       
-      <div className="flex justify-between items-center border-b border-zinc-800 pb-1.5 mb-1">
-          <span className="font-mono text-[10px] font-bold tracking-widest" style={{ color: statusColor }}>{displayId}</span>
-          <span className="material-symbols-outlined text-[14px]" style={{ color: statusColor }}>{icon}</span>
+      <Handle type="target" position={Position.Left} className="w-1.5 h-6 rounded-none bg-zinc-700 border-0 !left-[-4px]" />
+      
+      <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[16px]" style={{ color: statusColor }}>{icon}</span>
+            <span className="font-mono text-sm font-bold tracking-[0.1em]" style={{ color: statusColor }}>{displayId}</span>
+          </div>
+          <span 
+            className={`font-mono text-[8px] uppercase tracking-widest px-1.5 py-0.5 border ${
+              nodeData.agent_status === 'NOMINAL' ? 'text-[#00f3ff] border-[#00f3ff]/30 bg-[#00f3ff]/10' : 
+              (nodeData.agent_status === 'COMPROMISED' ? 'text-[#ff2a2a] border-[#ff2a2a]/30 bg-[#ff2a2a]/10' : 'text-[#ffb300] border-[#ffb300]/30 bg-[#ffb300]/10')
+            }`}
+          >
+            {nodeData.agent_status}
+          </span>
       </div>
       
-      <span className="font-mono text-xs text-white truncate">{nodeData.payload_preview}</span>
+      <div className="bg-zinc-900 border border-zinc-800 p-2 rounded-sm text-zinc-300 font-mono text-[10px] leading-relaxed max-h-24 overflow-y-auto whitespace-pre-wrap">
+        {nodeData.payload_preview}
+      </div>
       
-      <div className="flex justify-between items-center mt-1">
+      <div className="flex justify-between items-center mt-auto pt-2 border-t border-zinc-800/50">
          <span className="font-mono text-[9px] text-zinc-500 uppercase">{nodeData.action_type}</span>
          <span className="font-mono text-[9px] text-zinc-600">{nodeData.timestamp}</span>
       </div>
       
-      <Handle type="source" position={Position.Right} className="w-1.5 h-4 rounded-none bg-zinc-700 border-0 !right-[-4px]" />
+      <Handle type="source" position={Position.Right} className="w-1.5 h-6 rounded-none bg-zinc-700 border-0 !right-[-4px]" />
     </div>
   );
 }
