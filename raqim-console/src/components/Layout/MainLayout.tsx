@@ -9,34 +9,6 @@ export function MainLayout({ children, title }: { children: React.ReactNode, tit
   return (
     <div className="bg-surface text-on-surface antialiased h-screen w-screen overflow-hidden flex flex-col selection:bg-primary-container/30">
 
-      {/* ── Global Top Nav ── */}
-      <nav className="z-50 bg-zinc-950/80 backdrop-blur-xl flex justify-between items-center w-full px-6 py-3 h-16 shrink-0 border-b border-zinc-900/50">
-        <div className="flex items-center gap-4">
-          <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className="drop-shadow-[0_0_8px_rgba(78,222,163,0.4)]">
-            <path d="M16 2L2 16L16 30L30 16L16 2Z" fill="url(#paint0_linear)" fillOpacity="0.2"/>
-            <path d="M16 6L6 16L16 26L26 16L16 6Z" stroke="#0070f3" strokeWidth="1.5"/>
-            <circle cx="16" cy="16" r="3" fill="#4edea3" className="animate-pulse"/>
-            <defs>
-              <linearGradient id="paint0_linear" x1="16" y1="2" x2="16" y2="30" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#aec6ff"/>
-                <stop offset="1" stopColor="#004397"/>
-              </linearGradient>
-            </defs>
-          </svg>
-          <div className="flex flex-col justify-center">
-            <span className="text-xl font-black tracking-widest text-white font-headline leading-none mt-1">RAQIM<span className="text-secondary ml-1">OS</span></span>
-            <span className="text-[8px] font-mono text-on-surface-variant tracking-[0.3em] uppercase mt-0.5">Tactical View</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <button className="text-zinc-400 hover:text-white p-2 rounded transition-colors"><span className="material-symbols-outlined text-lg">notifications</span></button>
-            <button className="text-zinc-400 hover:text-white p-2 rounded transition-colors"><span className="material-symbols-outlined text-lg">settings</span></button>
-          </div>
-          <button className="bg-primary-container text-on-primary-container px-4 py-1.5 rounded text-sm font-bold tracking-wide transition-opacity hover:opacity-90">Deploy Agent</button>
-        </div>
-      </nav>
-
       {/* ── Body row: Sidebar is a fixed-width flex child, main takes the rest ── */}
       <div className="flex flex-1 overflow-hidden min-h-0">
 

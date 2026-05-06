@@ -1,14 +1,49 @@
 'use client';
+import { useEffect } from 'react';
 import { MainLayout } from '../../components/Layout/MainLayout';
 import { DagCanvas } from '../../components/DagCanvas/DagCanvas';
 import { NLEScrubber } from '../../components/TimeMachine/NLEScrubber';
 import { RealityForkDrawer } from '../../components/TimeMachine/RealityForkDrawer';
 import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
-import { useSwarmStore } from '../../lib/store/useSwarmStore';
+import { useSwarmStore, UiThought } from '../../lib/store/useSwarmStore';
 
 export default function RouterPage() {
   useSwarmStream();
-  const isForking = useSwarmStore(state => state.isForking);
+  const { isForking, activeTxId, batchAddThoughts, setActiveTxId } = useSwarmStore();
+
+  useEffect(() => {
+    if (!isForking) return;
+    
+    // Simulate Phantom Stream connection
+    console.log("Opening NEW EventSource connection to GET /v1/time_travel/stream...");
+    
+    // Start phantom stream from current active tx id, or latest if null
+    let phantomTxId = activeTxId ? activeTxId + 1 : Date.now() % 10000;
+    
+    const interval = setInterval(() => {
+      const newPhantomThought: UiThought = {
+        tx_id: phantomTxId,
+        agent_hex: "0xPHANTOM",
+        intent_path: "EVALUATE_INJECTED_PAYLOAD",
+        text: "Analyzing context eviction prompt and new mock network data.",
+        parent_tx_id: phantomTxId - 1,
+        status: "FORKED",
+        is_a2a_query: false,
+      };
+      
+      batchAddThoughts([newPhantomThought]);
+      
+      // Auto-scroll scrubber by updating activeTxId to the latest phantom node
+      setActiveTxId(phantomTxId);
+      
+      phantomTxId++;
+    }, 1500); // New thought every 1.5 seconds
+    
+    return () => {
+      clearInterval(interval);
+      console.log("Closing Phantom Stream EventSource connection.");
+    };
+  }, [isForking, activeTxId, batchAddThoughts, setActiveTxId]);
 
   return (
     <MainLayout title="State Inspector">
