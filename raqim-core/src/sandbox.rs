@@ -352,14 +352,14 @@ impl WasmEngine {
                 let aegis_clone = content.aegis.clone();
                 let telemetry_clone = content.telemetry.clone();
 
-                let response_bytes = tokio::task::block_in_place(|| {
+                let (response_bytes, _responder_hex) = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(net_clone.execute_a2a_rpc(
                         envelope,
                         aegis_clone,
                         telemetry_clone,
                     ))
                 })
-                .unwrap_or_else(|e| e.to_string().into_bytes());
+                .unwrap_or_else(|e| (e.to_string().into_bytes(), "SYSTEM_ERROR".to_string()));
 
                 // HARD CAP: 2 MB to prevent OOM attacks
                 if response_bytes.len() > 2 * 1024 * 1024 {
