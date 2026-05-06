@@ -777,12 +777,12 @@ pub async fn http_ingress_endpoint(
             task_telemetry,
         )
         .await;
-    });
 
-    let _ = match res {
-        Ok(id) => id,
-        Err(_) => return Err(StatusCode::BAD_REQUEST),
-    };
+        let _ = match res {
+            Ok(id) => id,
+            Err(_) => return Err(StatusCode::BAD_REQUEST),
+        };
+    });
 
     Ok(StatusCode::ACCEPTED)
 }
