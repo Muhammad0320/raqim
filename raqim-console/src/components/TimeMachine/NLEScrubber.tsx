@@ -10,10 +10,9 @@ export function NLEScrubber() {
   const activeIdx = activeTxId ? thoughtOrder.indexOf(activeTxId) : maxIdx;
   
   const currentTxDisplay = useMemo(() => {
-    if (thoughtOrder.length === 0) return 'WAITING';
+    if (thoughtOrder.length === 0) return 'WAITING...';
     const tx = activeTxId || thoughtOrder[maxIdx];
-    // Strict padded integer format
-    return tx.toString().padStart(8, '0');
+    return '0x' + tx.toString().padStart(8, '0').toUpperCase();
   }, [activeTxId, thoughtOrder, maxIdx]);
 
   const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,9 +28,11 @@ export function NLEScrubber() {
 
   const handlePlayPause = () => {
     if (!isPaused) {
+      // Pause at current position
       setActiveTxId(thoughtOrder[maxIdx]);
       setIsPaused(true);
     } else {
+      // Resume live stream
       setActiveTxId(null);
       setIsPaused(false);
     }
@@ -57,83 +58,79 @@ export function NLEScrubber() {
   };
 
   return (
-    <div className="h-full w-full flex flex-col justify-between px-10 py-6 relative bg-zinc-950 border-t border-zinc-800">
+    <div className="h-full w-full flex flex-col justify-center px-8 relative bg-zinc-950 border-t border-zinc-800">
       
       {/* Top Header: Controls and State Display */}
-      <div className="flex justify-between items-center">
-        <div className="flex gap-2">
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex gap-4">
           <button 
             onClick={goPrevious} 
-            className="w-10 h-10 bg-zinc-900 border border-zinc-800 hover:border-[#00f3ff] text-zinc-400 hover:text-[#00f3ff] transition-colors flex items-center justify-center shadow-lg rounded-sm"
+            className="w-12 h-12 bg-zinc-900 border border-zinc-700 hover:border-[#00f3ff] hover:text-[#00f3ff] text-zinc-400 rounded transition-colors flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)]"
           >
-            <span className="material-symbols-outlined text-lg">skip_previous</span>
+            <span className="material-symbols-outlined text-2xl">skip_previous</span>
           </button>
           <button 
             onClick={handlePlayPause} 
-            className={`w-12 h-10 border rounded-sm transition-all flex items-center justify-center shadow-lg font-bold font-mono text-xs ${isPaused ? 'bg-[#ffb300]/10 border-[#ffb300] text-[#ffb300]' : 'bg-[#00f3ff]/10 border-[#00f3ff] text-[#00f3ff]'}`}
+            className={`w-16 h-12 border rounded transition-all flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)] font-bold font-mono text-xs ${isPaused ? 'bg-[#ffb300]/20 border-[#ffb300] text-[#ffb300]' : 'bg-[#00f3ff]/20 border-[#00f3ff] text-[#00f3ff]'}`}
           >
-            <span className="material-symbols-outlined text-xl">{isPaused ? 'play_arrow' : 'pause'}</span>
+            <span className="material-symbols-outlined text-2xl">{isPaused ? 'play_arrow' : 'pause'}</span>
           </button>
           <button 
             onClick={goNext} 
-            className="w-10 h-10 bg-zinc-900 border border-zinc-800 hover:border-[#00f3ff] text-zinc-400 hover:text-[#00f3ff] transition-colors flex items-center justify-center shadow-lg rounded-sm"
+            className="w-12 h-12 bg-zinc-900 border border-zinc-700 hover:border-[#00f3ff] hover:text-[#00f3ff] text-zinc-400 rounded transition-colors flex items-center justify-center shadow-[0_4px_10px_rgba(0,0,0,0.5)]"
           >
-            <span className="material-symbols-outlined text-lg">skip_next</span>
+            <span className="material-symbols-outlined text-2xl">skip_next</span>
           </button>
         </div>
 
         <div className="flex flex-col items-end">
-          <span className="font-mono text-[9px] text-zinc-600 uppercase tracking-[0.3em] mb-1">Cursor Position</span>
-          <div className={`font-mono text-5xl font-black tracking-widest leading-none ${isPaused ? 'text-[#ffb300] drop-shadow-[0_0_15px_rgba(255,179,0,0.6)]' : 'text-[#00f3ff] drop-shadow-[0_0_15px_rgba(0,243,255,0.6)]'}`}>
+          <span className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Cursor Position</span>
+          <div className="font-mono text-3xl font-bold text-white tracking-widest bg-zinc-900 px-4 py-1 rounded border border-zinc-800 shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]">
             {currentTxDisplay}
           </div>
         </div>
       </div>
       
-      {/* Precision Granular Scrubber */}
-      <div className="relative w-full h-8 flex items-center group">
-        {/* Granular Hash Marks */}
-        <div className="absolute inset-0 flex justify-between pointer-events-none items-end pb-2 opacity-50">
-          {Array.from({ length: 100 }).map((_, i) => {
-             const isMajor = i % 10 === 0;
-             const isMid = i % 5 === 0 && !isMajor;
-             let h = 'h-1.5';
-             if (isMajor) h = 'h-4';
-             else if (isMid) h = 'h-2.5';
-             return <div key={i} className={`w-[1px] ${h} bg-zinc-600`}></div>;
-          })}
+      {/* Massive Scrubber */}
+      <div className="relative w-full py-4 group">
+        {/* Decorative Grid Lines */}
+        <div className="absolute inset-0 flex justify-between pointer-events-none px-2 items-center">
+          {Array.from({ length: 40 }).map((_, i) => (
+             <div key={i} className={`w-[1px] ${i % 5 === 0 ? 'h-full bg-zinc-700' : 'h-1/2 bg-zinc-800'} transition-colors group-hover:bg-zinc-600`}></div>
+          ))}
         </div>
 
-        {/* The Track Line */}
-        <div className="absolute left-0 right-0 h-px bg-zinc-700 pointer-events-none"></div>
-
         <input 
-          className="w-full relative z-10 appearance-none bg-transparent h-full outline-none cursor-crosshair" 
+          className="w-full relative z-10 appearance-none bg-transparent h-10 outline-none cursor-ew-resize" 
           max={maxIdx} 
           min={0} 
           type="range" 
           value={activeIdx}
           onChange={handleSliderChange}
+          style={{
+            background: `linear-gradient(to right, rgba(0, 243, 255, 0.2) ${(activeIdx / Math.max(1, maxIdx)) * 100}%, transparent 0)`
+          }}
         />
         <style jsx>{`
           input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
-            width: 4px;
-            height: 32px;
+            width: 12px;
+            height: 48px;
             background: ${isPaused ? '#ffb300' : '#00f3ff'};
-            cursor: ew-resize;
-            border-radius: 0;
-            box-shadow: 0 0 10px ${isPaused ? 'rgba(255,179,0,0.8)' : 'rgba(0,243,255,0.8)'};
+            cursor: pointer;
+            border-radius: 2px;
+            box-shadow: 0 0 15px ${isPaused ? 'rgba(255,179,0,0.8)' : 'rgba(0,243,255,0.8)'};
+            transition: background 0.2s, box-shadow 0.2s;
           }
           input[type=range]::-moz-range-thumb {
-            width: 4px;
-            height: 32px;
+            width: 12px;
+            height: 48px;
             background: ${isPaused ? '#ffb300' : '#00f3ff'};
-            cursor: ew-resize;
-            border-radius: 0;
+            cursor: pointer;
+            border-radius: 2px;
             border: none;
-            box-shadow: 0 0 10px ${isPaused ? 'rgba(255,179,0,0.8)' : 'rgba(0,243,255,0.8)'};
+            box-shadow: 0 0 15px ${isPaused ? 'rgba(255,179,0,0.8)' : 'rgba(0,243,255,0.8)'};
           }
         `}</style>
       </div>
