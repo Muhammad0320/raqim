@@ -103,7 +103,10 @@ pub async fn execute_raqim_cascade(
     // Safely extract from ArrchiveOption using .as_ref()
     let final_agent_id = match archive_state.agent_id.as_ref() {
         Some(id) if id.as_slice() != empty_id => id.as_slice().try_into().unwrap(),
-        _ => return Err("Agent ID is required to merge thought"),
+        _ => {
+            eprintln!("[SECURITY FATAL] Unsigned/Anonymous payload hit the cascade. Dropped.");
+            return Err(anyhow::anyhow!("Agent ID is required to merge thought"));
+        }
     };
 
     let agent_hex = hex::encode(final_agent_id);
