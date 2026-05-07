@@ -610,7 +610,7 @@ impl LanceEngine {
         };
 
         let total_rows = table.count_rows(None).await? as f64;
-        if table_rows == 0.0 {
+        if total_rows == 0.0 {
             return Ok("Empty (0%)".to_string());
         }
 
