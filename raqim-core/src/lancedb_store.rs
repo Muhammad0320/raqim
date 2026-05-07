@@ -1,5 +1,3 @@
-use datafusion::prelude::SessionContext;
-
 use crate::api::{TimelineNode, VaultSearchResult};
 use crate::embedding::EmbeddingProvider;
 use crate::{OpLog, SystemEvent};
@@ -432,11 +430,7 @@ impl LanceEngine {
         // 1. Convert English query to mathematical vector
 
         // Lock the embedder for the exact ms it takes to embed
-        let query_vector = {
-            let mut model = self.embedder.lock().unwrap();
-            let embedding = model.embed(vec![query], None)?;
-            embedding[0].clone()
-        };
+        let query_vector = self.embedder.embed(query).await?;
 
         // 2. Open the table
         let table = self.db.open_table(&self.history_table).execute().await?;
@@ -627,7 +621,7 @@ impl LanceEngine {
                 .downcast_ref::<StringArray>()
                 .unwrap();
 
-            for i in ns_col.len() {
+            for i in 0..ns_col.len() {
                 let ns = ns_col.value(i);
                 *freq_map.entry(ns.to_string()).or_insert(0_u64) += 1;
             }

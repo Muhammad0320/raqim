@@ -1,6 +1,6 @@
-use jsonwebtoken::{DecodingKey, Validation, decode};
+use jsonwebtoken::{Validation, decode};
 use raqim_core::aegis::AegisGateKeeper;
-use raqim_core::api::{ApiState, EnterpriseClaim, UiEvent, UiThought, build_admin_router};
+use raqim_core::api::{ApiState, EnterpriseClaim, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
@@ -486,11 +486,11 @@ async fn main() {
             }
 
             let mut alias = "Unknown".to_string();
-            if intent_path == "/system/handshake" {
+            if path_intent == "/system/handshake" {
                 if text.starts_with("ALIAS=") {
                     let alias = text.replace("ALIAS=", "").trim().to_string();
                     // We do not execute a cascade for handshake. We just register and drop
-                    task_registry.touch_agent(&agent_hex, &intent_path, "Connected", &alias);
+                    task_registry.touch_agent(&agent_hex, &path_intent, "Connected", &alias);
 
                     return;
                 }
