@@ -532,7 +532,7 @@ async fn main() {
 
             let ui_payload = UiEvent::ThoughtCommited {
                 agent_hex: agent_hex.clone(),
-                intent_path,
+                intent_path: path_intent,
                 tx_id,
                 text,
             };
