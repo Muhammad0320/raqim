@@ -14,6 +14,7 @@ use lancedb::connect;
 use lancedb::connection::Connection;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -601,56 +602,50 @@ impl LanceEngine {
 
     /// Executes a DataFusion SQL Aggregation over the Apache Arrow Memory Layout
     pub async fn get_densest_namespace(&self) -> Result<String, anyhow::Error> {
-        let table = self.db.open_table(&self.history_table).execute().await?;
+        let table_res = self.db.open_table(&self.history_table).execute().await;
 
-        // Initialize the DataFusion execution context
-        let ctx = SessionContext::new();
+        let table = match table_res {
+            Ok(t) => t,
+            Err(_) => return Ok("Empty (0%)".to_string()),
+        };
 
-        // Register the Lance table natively into DataFusion
-        ctx.register_table("memory", Arc::new(table.dataset().clone()))?;
-
-        // Execute the  aggregation: Group by namespace, count occurences, sort descending, grab the top 1.
-        let sql = "
-    SELECT namespace, COUNT(tx_id) as freq 
-    FROM memory 
-    GROUP BY namespace 
-    ORDER BY freq DESC
-    LIMIT 1
-    ";
-
-        let df = ctx.sql(sql).await?;
-        let batches = df.collect().await?;
-
-        if batches.is_empty() || batches[0].num_rows() == 0 {
+        let total_rows = table.count_rows(None).await? as f64;
+        if table_rows == 0.0 {
             return Ok("Empty (0%)".to_string());
         }
 
-        // Downcast the result safely
-        let batch = &batches[0];
-        let ns_col = batch
-            .column(0)
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .unwrap();
-        let count_col = batch
-            .column(1)
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .unwrap();
+        // Stream the raw Arrow columns and aggregate in a Rust Hashmap
+        let mut stream = table.query().execute().await?;
+        let mut freq_map = HashMap::new();
 
-        let top_ns = ns_col.value(0);
-        let top_count = count_col.value(1) as f64;
+        while let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+            let ns_col = batch
+                .column_by_name("namespace")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
 
-        // Fetch total to calculate the true %
-        let total_count = table.count_rows(None).await? as f64;
-
-        if total_count == 0.0 {
-            return Ok("Empty (0%)".to_string());
+            for i in ns_col.len() {
+                let ns = ns_col.value(i);
+                *freq_map.entry(ns.to_string()).or_insert(0_u64) += 1;
+            }
         }
 
-        let percent = (top_count / total_count) * 100.0;
+        // Find the top namespace
+        let mut top_ns = String::from("UNKNOWN");
+        let mut top_count = 0;
 
-        Ok(format!("{} ({:.1}%) ", top_ns, percent))
+        for (ns, count) in freq_map {
+            if count > top_count {
+                top_count = count;
+                top_ns = ns;
+            }
+        }
+
+        let percent = (top_count as f64 / total_rows) * 100.0;
+        Ok(format!("{} ({:.1})%", top_ns, percent))
     }
 
     /// Return (max_tx_id, total_vector_count)
