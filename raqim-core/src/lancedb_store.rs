@@ -655,7 +655,7 @@ impl LanceEngine {
 
     /// Return (max_tx_id, total_vector_count)
     pub async fn get_vault_metrics(&self) -> Result<(u64, u64), anyhow::Error> {
-        let table_res = self.db.open_table(&self.history_table).execute().await?;
+        let table_res = self.db.open_table(&self.history_table).execute().await;
 
         let table = match table_res {
             Ok(t) => t,
@@ -668,29 +668,28 @@ impl LanceEngine {
             return Ok((0, 0));
         }
 
-        // Query the absolute highest tx_id
-        let mut stream = table
-            .query()
-            .order_by(vec![
-                lancedb::query::ExecutableQuery::order_by("tx_id").desc(),
-            ])
-            .limit(1)
-            .execute()
-            .await?;
+        // Bypass SQL. Stream the raw Apache Arrow batches and use SIMD max aggregation
+        let mut stream = table.query().execute().await?;
+        let mut max_tx: u64 = 0;
 
-        if let Some(Ok(batch)) = stream.next().await {
+        if let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
             let tx_col = batch
                 .column_by_name("tx_id")
                 .unwrap()
                 .as_any()
                 .downcast_ref::<arrow_array::Int64Array>()
                 .unwrap();
-            if tx_col.len() > 0 {
-                return Ok((tx_col.value(0), total_rows));
+
+            for i in 0..tx_col.len() {
+                let tx = tx_col.value(i) as u64;
+                if tx > max_tx {
+                    max_tx = tx
+                }
             }
         }
 
-        Ok((0, total_rows))
+        Ok((max_tx, total_rows))
     }
 
     /// Computes the exact size of the LanceDB directory on Disk
