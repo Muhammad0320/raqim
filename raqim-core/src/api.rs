@@ -492,7 +492,7 @@ pub async fn unified_vault_search(
     let (lance_res, wal_res) = tokio::join!(lance_future, wal_future);
 
     // THE GATHER: Starting with the hot wal reasult
-    let mut unified_results = wal_res;
+    let mut unified_results = wal_res.unwrap_or_default();
 
     if let Ok(mut cold_results) = lance_res {
         unified_results.append(&mut cold_results)
@@ -506,7 +506,7 @@ pub async fn unified_vault_search(
     });
 
     // Cap at top 100 for UI performance
-    unified_results.trucate(100);
+    unified_results.truncate(100);
 
     Ok(Json(unified_results))
 }
@@ -574,9 +574,10 @@ async fn lift_qurantine_and_resurrect(
         .is_some()
     {
         // Also update the Ram process table so the Topology page knows it's alive again.
+        // TODO: Update.
         state
             .swarm_registry
-            .touch_agent(&payload.agent_hex, "Unknown", "Rebooting");
+            .touch_agent(&payload.agent_hex, "Unknown", "Rebooting", "Unknown");
 
         println!(
             "[AEGIS] Agent {} quarantine lifted. Reality re-seeded.",
@@ -780,7 +781,11 @@ pub async fn http_ingress_endpoint(
 
         let _ = match res {
             Ok(id) => id,
-            Err(_) => return Err(StatusCode::BAD_REQUEST),
+            Err(_) => {
+                eprintln!("[SECURITY FATAL] Unsigned/Anonymous payload hit the cascade. Dropped.");
+
+                return;
+            }
         };
     });
 
@@ -870,7 +875,7 @@ pub async fn fetch_agent_timeline(
 ) -> Result<Json<Vec<TimelineNode>>, StatusCode> {
     // The scatter: Let the engines do their native work
     let lance_future = state.lance.fetch_historical_timeline(&agent_hex);
-    let wal_future = unsafe {
+    let wal_future = async {
         state
             .wal
             .fetch_hot_timeline(&agent_hex, &state.config.wal_path)
