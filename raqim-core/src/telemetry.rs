@@ -6,7 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 
 // The lock free memory counter. Zero impact on the hot path.
@@ -106,7 +106,29 @@ impl TelemetryEngine {
                             .set_len(0)
                             .await
                             .expect("Failed to truncate billing WAL");
+
+                        // THE ROLLING LICENSE HOT-SWAP
+                        if let Ok(json_resp) = r.json::<serde_json::Value>().await {
+                            if let Some(new_jwt) =
+                                json_resp.get("new_license").and_then(|v| v.as_str())
+                            {
+                                println!(
+                                    "[SYSTEM] Received rolling license renewal. Hot-swapping..."
+                                );
+
+                                //
+                            }
+                        }
                     }
+
+                    Ok(r) if r.status() == reqwest::StatusCode::PAYMENT_REQUIRED => {
+                        // The DEAD-MAN'S SWITCH
+                        eprintln!(
+                            "[FATAL] Raqim Cloud returned 402 PAYMENT REQUIRED. License Revoked "
+                        );
+                        eprintln!("[FATAL] initiating Downgrade to Open Core... ")
+                    }
+
                     _ => {
                         eprintln!(
                             "[TELEMETRY WARNING] Cloud API unreachable. Data safely preserved in billing.wal for next retry."
