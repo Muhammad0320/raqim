@@ -71,10 +71,10 @@ async fn main() {
     });
 
     // BOOT-TIME LICENSE_VERIFIICATION
-    let pem_content = std::fs::read(&config.public_key_path)
-        .expect("FATAL: Could not read public key for License Verification");
+    const RAQIM_PUBLIC_KEY: &[u8] = include_bytes!("../../keys/raqim_public.pem");
+   
     let decoding_key = Arc::new(
-        jsonwebtoken::DecodingKey::from_rsa_pem(&pem_content)
+        jsonwebtoken::DecodingKey::from_rsa_pem(RAQIM_PUBLIC_KEY)
             .expect("FATAL: Invalid RSA PEM format"),
     );
 

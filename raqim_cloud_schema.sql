@@ -42,3 +42,5 @@ CREATE TABLE telemetry (
     time_travel_queries BIGINT DEFAULT 0,
     last_ping TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-------------------------
