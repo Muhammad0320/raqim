@@ -202,7 +202,7 @@ impl WasmEngine {
                         rkyv::access_unchecked::<<AgentState as Archive>::Archived>(&temp_buffer)
                     };
 
-                    crate::execute_raqim_cascade(
+                    let _ = crate::execute_raqim_cascade(
                         archived_bytes,
                         brain_clone,
                         axon_clone,
@@ -215,7 +215,7 @@ impl WasmEngine {
                         network_to_save,
                         telemetry_clone,
                     )
-                    .await;
+                    .await?;
                 });
 
                 Ok(())
@@ -363,7 +363,7 @@ impl WasmEngine {
 
                 // HARD CAP: 2 MB to prevent OOM attacks
                 if response_bytes.len() > 2 * 1024 * 1024 {
-                    return -1; // Error code for payload too large!
+                    return -1;
                 }
 
                 let len = response_bytes.len() as i32;
