@@ -1,7 +1,6 @@
-use crate::{AgentState, AgentStatus, SystemEvent};
+use crate::{AgentState, AgentStatus};
 use loro::{ImportStatus, LoroDoc, LoroMap, Subscription};
 use std::{borrow::Cow, sync::Arc};
-use tokio::sync::broadcast::Sender;
 
 // ARC (Atomic Reference counting) becaue multiple (threads) agents will hold pointers to this document in memory
 pub struct SwarmState {
