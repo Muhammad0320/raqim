@@ -1,5 +1,5 @@
 use crate::{
-    AgentState, AgentStatus, OpLog,
+    AgentStatus, OpLog,
     api::{TimelineNode, VaultSearchResult},
 };
 use aho_corasick::AhoCorasick;
