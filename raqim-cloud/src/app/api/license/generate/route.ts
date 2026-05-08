@@ -1,6 +1,5 @@
-import {SignJwt, importPKCS8} from "jose";
 import { NextResponse } from "next/server";
-import {supabaseAdmin} from "@/lib/supabase"
+import {createClient} from "@/supabase/supabase-js"
 
 export async function POST(request:Request) {
         const {org_id, requested_features} = await request.json();
