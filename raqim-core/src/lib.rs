@@ -198,4 +198,8 @@ pub enum SystemEvent {
     SystemBoot {
         message: String,
     },
+    LicenseRevoked,
+    LicenseUpdated {
+        new_jwt: String,
+    },
 }

@@ -6,7 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use reqwest::{Client, StatusCode};
+use reqwest::Client;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 
 // The lock free memory counter. Zero impact on the hot path.
