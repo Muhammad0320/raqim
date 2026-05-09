@@ -9,6 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.105.3",
     "jose": "^6.2.3",
     "jsonwebtoken": "^9.0.3",
     "next": "16.2.5",
