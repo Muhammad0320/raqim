@@ -1,28 +1,30 @@
 use std::{
     sync::{
-        Arc,
+        Arc, RwLock,
         atomic::{AtomicU64, Ordering},
     },
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use reqwest::Client;
-use tokio::{fs::OpenOptions, io::AsyncWriteExt};
+use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::broadcast};
+
+use crate::SystemEvent;
 
 // The lock free memory counter. Zero impact on the hot path.
 pub struct TelemetryEngine {
     pub tenant_id: String,
-    pub licence_key: String,
+    pub license_key: RwLock<String>,
     pub crdt_merges: AtomicU64,
     pub a2a_bytes_routed: AtomicU64,
     pub time_travel_queries: AtomicU64,
 }
 
 impl TelemetryEngine {
-    pub fn new(tenant_id: &str, licence_key: &str) -> Arc<Self> {
+    pub fn new(tenant_id: &str, license: &str) -> Arc<Self> {
         Arc::new(Self {
             tenant_id: tenant_id.to_string(),
-            licence_key: licence_key.to_string(),
+            license_key: RwLock::new(license.to_string()),
             crdt_merges: AtomicU64::new(0),
             a2a_bytes_routed: AtomicU64::new(0),
             time_travel_queries: AtomicU64::new(0),
@@ -41,7 +43,7 @@ impl TelemetryEngine {
     }
 
     /// Starts the isolated OS background thread for resilient billing
-    pub fn start_sinker_daemon(engine: Arc<Self>) {
+    pub fn start_sinker_daemon(engine: Arc<Self>, event_tx: broadcast::Sender<SystemEvent>) {
         tokio::spawn(async move {
             let client = Client::new();
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -89,11 +91,12 @@ impl TelemetryEngine {
                 let pending_data = tokio::fs::read_to_string("production.billing.wal")
                     .await
                     .unwrap_or_default();
+                let current_jwt = engine.license.read().unwrap().clone();
 
                 // 4. Ship to Cloud: Send the usage data to Raqim cloud API
                 let res = client
                     .post("https://api.Raqim.cloud/v1/metering/injest")
-                    .header("Authorization", format!("Bearer {}", engine.licence_key))
+                    .header("Authorization", format!("Bearer {}", engine.license))
                     .header("Content-Type", "application/x-ndjson") // NDJSON for multiple lines
                     .body(pending_data)
                     .send()
@@ -116,7 +119,22 @@ impl TelemetryEngine {
                                     "[SYSTEM] Received rolling license renewal. Hot-swapping..."
                                 );
 
-                                //
+                                // In-Memory Hot swap
+                                *engine.license_key.write().unwrap() = new_jwt.to_string();
+
+                                // Persistence ( Zero-Destruction Ttoml Edit )
+                                let toml_str = tokio::fs::read_to_string("raqim.toml")
+                                    .await
+                                    .unwrap_or_default();
+                                if let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() {
+                                    doc["license_key"] = toml_edit::value(new_jwt);
+                                    let _ = tokio::fs::write("raqim.toml", doc.to_string()).await;
+                                }
+
+                                // FIRE SYSTEM EVENT (wake up zenoh/argis to apply new claims)
+                                let _ = event_tx.send(SystemEvent::LicenseUpdated {
+                                    new_jwt: new_jwt.to_string(),
+                                });
                             }
                         }
                     }
@@ -126,7 +144,8 @@ impl TelemetryEngine {
                         eprintln!(
                             "[FATAL] Raqim Cloud returned 402 PAYMENT REQUIRED. License Revoked "
                         );
-                        eprintln!("[FATAL] initiating Downgrade to Open Core... ")
+                        let _ = event_tx.send(SystemEvent::LicenseRevoked);
+                        *engine.license_key.write().unwrap() = "REVOKED".to_string();
                     }
 
                     _ => {
