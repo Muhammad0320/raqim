@@ -43,7 +43,7 @@ impl TelemetryEngine {
     }
 
     /// Starts the isolated OS background thread for resilient billing
-    pub fn start_sinker_daemon(engine: Arc<Self>, event_tx: broadcast::Sender<SystemEvent>) {
+    pub fn start_sinker_daemon(engine: Arc<Self>) {
         tokio::spawn(async move {
             let client = Client::new();
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -114,6 +114,90 @@ impl TelemetryEngine {
                     _ => {
                         eprintln!(
                             "[TELEMETRY WARNING] Cloud API unreachable. Data safely preserved in billing.wal for next retry."
+                        );
+                    }
+                }
+            }
+        });
+    }
+
+    /// The Highly isolated 24-hour cryptographic heartbeat
+    pub fn start_heartbeat_daemon(engine: Arc<Self>, event_tx: broadcast::Sender<SystemEvent>) {
+        tokio::spawn(async move {
+            let client = reqwest::Client::new();
+
+            let mut interval = tokio::time::Duration(std::time::Duration::from_secs(86_400));
+
+            loop {
+                interval.tick().await;
+
+                let current_jwt = engine.license_key.read().unwrap().clone();
+
+                let res = client
+                    .get("https://api.raqim.cloud/v1/system/heartbeat")
+                    .header("Authorization", format!("Bearer {}", current_jwt))
+                    .send()
+                    .await;
+
+                match res {
+                    Ok(r) if r.status().is_success() => {
+                        if let Ok(json_res) = r.json::<serde_json::Value>().await {
+                            if let Some(new_jwt) =
+                                json_res.get("new_license").and_then(|v| v.as_str())
+                            {
+                                println!("[SYSTEM] 24h Heartbeat: Rolling license renewed.");
+
+                                // In-Memory Hot swap
+                                *engine.license_key.write().unwrap() = new_jwt.to_string();
+
+                                // Persistence ( Zero-Destruction Ttoml Edit )
+                                let toml_str = tokio::fs::read_to_string("raqim.toml")
+                                    .await
+                                    .unwrap_or_default();
+                                if let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() {
+                                    doc["license_key"] = toml_edit::value(new_jwt);
+                                    let _ = tokio::fs::write("raqim.toml", doc.to_string()).await;
+                                }
+
+                                // FIRE SYSTEM EVENT (wake up zenoh/argis to apply new claims)
+                                let _ = event_tx.send(SystemEvent::LicenseUpdated {
+                                    new_jwt: new_jwt.to_string(),
+                                });
+                            }
+                        }
+                    }
+
+                    Ok(r) if r.status() == reqwest::StatusCode::PAYMENT_REQUIRED => {
+                        eprintln!(
+                            "[FATAL] Heartbeat returned 402. Stripe Invoice failed. Grace period exceeded."
+                        );
+
+                        //  We set it to the Open Core JWT the Cloud provided.
+                        if let Ok(json_res) = r.json::<serde_json::Value>().await {
+                            if let Some(fallback_jwt) =
+                                json_res.get("new_license").and_then(|v| v.as_str())
+                            {
+                                // Clear the JWT from RAM safely
+                                *engine.license_key.write().unwrap() = fallback_jwt.to_string();
+
+                                // Erase it from disc config so it doesn't try to boot with a dead key
+                                let toml_str = tokio::fs::read_to_string("raqim.toml")
+                                    .await
+                                    .unwrap_or_default();
+                                if let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() {
+                                    doc["license_key"] = toml_edit::value(fallback_jwt);
+                                    let _ = tokio::fs::write("raqim.toml", doc.to_string()).await;
+                                }
+                                let _ = event_tx.send(SystemEvent::LicenseUpdated {
+                                    new_jwt: fallback_jwt.to_string(),
+                                });
+                            }
+                        }
+                    }
+
+                    _ => {
+                        eprintln!(
+                            "[WARNING] Heartbeat failed to reach Cloud. OS survives until JWT expiration."
                         );
                     }
                 }
