@@ -126,7 +126,7 @@ impl TelemetryEngine {
         tokio::spawn(async move {
             let client = reqwest::Client::new();
 
-            let mut interval = tokio::time::Duration(std::time::Duration::from_secs(86_400));
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(86_400));
 
             loop {
                 interval.tick().await;

@@ -60,7 +60,9 @@ SELECT create_hypertable("telemetry_events", "recorded_at");
 -- THE CONTINUOUS AGG: This automatically sums the raw data in the background with zero CPU cost on the Next.js API.
 CREATE MATERIALIZED VIEW telemetry_daily_rollups
 WITH (timescale.continuous) AS 
-SELECT org_id, time_bucket('1 day', recorded_at) AS day, SUM(crdt_merges) as daily_crdt, SUM(a2a_bytes_routed) as daily_a2a, SUM(time_travel_queries) as daily_time_travel FROM telemetry_events GROUP BY org_id, day;
+SELECT org_id, time_bucket('1 day', recorded_at) AS day, SUM(crdt_merges) as daily_crdt, SUM(a2a_bytes_routed) as daily_a2a, SUM(time_travel_queries) as daily_time_travel 
+FROM telemetry_events 
+GROUP BY org_id, day;
 
 -- THE DATA RETENTION POLICY
 SELECT add_retention_policy('telemetry_events', INTERVAL '7 days');
