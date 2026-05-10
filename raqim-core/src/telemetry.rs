@@ -91,12 +91,12 @@ impl TelemetryEngine {
                 let pending_data = tokio::fs::read_to_string("production.billing.wal")
                     .await
                     .unwrap_or_default();
-                let current_jwt = engine.license.read().unwrap().clone();
+                let current_jwt = engine.license_key.read().unwrap().clone();
 
                 // 4. Ship to Cloud: Send the usage data to Raqim cloud API
                 let res = client
                     .post("https://api.Raqim.cloud/v1/metering/injest")
-                    .header("Authorization", format!("Bearer {}", engine.license))
+                    .header("Authorization", format!("Bearer {}", engine.license_key))
                     .header("Content-Type", "application/x-ndjson") // NDJSON for multiple lines
                     .body(pending_data)
                     .send()
