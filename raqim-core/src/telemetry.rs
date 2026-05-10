@@ -96,7 +96,7 @@ impl TelemetryEngine {
                 // 4. Ship to Cloud: Send the usage data to Raqim cloud API
                 let res = client
                     .post("https://api.Raqim.cloud/v1/metering/injest")
-                    .header("Authorization", format!("Bearer {}", engine.license_key))
+                    .header("Authorization", format!("Bearer {}", current_jwt))
                     .header("Content-Type", "application/x-ndjson") // NDJSON for multiple lines
                     .body(pending_data)
                     .send()
@@ -137,26 +137,6 @@ impl TelemetryEngine {
                                 });
                             }
                         }
-                    }
-
-                    Ok(r) if r.status() == reqwest::StatusCode::PAYMENT_REQUIRED => {
-                        // The DEAD-MAN'S SWITCH
-                        eprintln!(
-                            "[FATAL] Raqim Cloud returned 402 PAYMENT REQUIRED. License Revoked "
-                        );
-
-                        // Clear the JWT from RAM safely
-                        *engine.license_key.write().unwrap() = "".to_string();
-
-                        // Erase it from disc config so it doesn't try to boot with a dead key
-                        let toml_str = tokio::fs::read_to_string("raqim.toml")
-                            .await
-                            .unwrap_or_default();
-                        if let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() {
-                            doc["license_key"] = toml_edit::value("");
-                            let _ = tokio::fs::write("raqim.toml", doc.to_string()).await;
-                        }
-                        let _ = event_tx.send(SystemEvent::LicenseRevoked);
                     }
 
                     _ => {
