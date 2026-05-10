@@ -1,7 +1,10 @@
+import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import Stripe from "stripe"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {apiVersion: "2025-10-16"});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {apiVersion: "2025-12-18"});
+
+const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY! );
 
 export async function POST(req: Request) {
 
@@ -17,13 +20,43 @@ export async function POST(req: Request) {
 
 
     // SUCCESS
-    if (event.type === "checkout.session.completed") {
-        const session = event.data.object as Stripe.Checkout.Session; 
+    if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.updated" ) {
+
+        const subscription = event.data.object as Stripe.Subscription;
+        const orgId = subscription.metadata.org_id;
+
+        let tier = "OPEN_CORE";
+        const priceId = subscription.items.data[0].price.id; 
+        if (priceId === process.env.STRIPE_PRICE_ENTERPRISE) tier = "ENTERPRISE"
+        else if (priceId === process.env.STRIPE_PRICE_STARTUP) tier = "STARTUP"
+
+        if (orgId) {
+
+            await supabaseAdmin.from("subscription").upsert({
+                org_id: orgId,
+                stripe_subscription_id: subscription.id, 
+                plan_tier: tier, 
+                status: subscription.status,
+                current_period_end: new Date(subscription.current_period_end * 1000).toISOString() 
+            })
+
+        }
+
     }
  
     // THE KILL SWITCH: Their monthly card declined
-    if (event.type ===  "invoice.payment_failed" ) {
-        
+    if (event.type ===  "invoice.payment_failed" || event.type === "customer.subscription.deleted" ) {
+        const obj = event.data.object as any;
+        const subscriptionId = obj.subscription || obj.id; 
+
+        const {data: orgs} = await supabaseAdmin.from("organizations").select("id").eq("stripe_customer_id", customerId);
+
+        if (orgs && orgs.length > 0) {
+            const org_id = orgs[0].id;
+            // Instantly revoke license in the db. 
+            await supabaseAdmin.from("licenses").update({revoked: true}).eq("org_id", org_id); 
+            await supabaseAdmin.from("organization").update({plan_tier: "OPEN_CORE"}).eq("id", org_id);
+        }
     } 
 
     return NextResponse.json({received: true});
