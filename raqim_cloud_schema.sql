@@ -23,12 +23,19 @@ CREATE TABLE organization_members (
     PRIMARY KEY (org_id, user_id)
 );
 
+CREATE TABLE subscriptions (
+    org_id UUID REFERENCES organizations(id) PRIMARY KEY,
+    stripe_subscription_id VARCHAR(255) UNIQUE,
+    plan_tier VARCHAR(50) DEFAULT 'OPEN_CORE', 
+    status VARCHAR(50) DEFAULT 'active',       
+    current_period_end TIMESTAMP WITH TIME ZONE
+);
+
 -- 4. LICENSES (The RSA JWT Tracker)
 CREATE TABLE licenses (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
     jwt_hash VARCHAR(255) NOT NULL UNIQUE,
-    plan_tier VARCHAR(50) DEFAULT 'STARTUP',
     revoked BOOLEAN DEFAULT false,
     issued_by UUID REFERENCES profiles(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
