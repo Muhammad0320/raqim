@@ -109,10 +109,6 @@ impl TelemetryEngine {
                             .set_len(0)
                             .await
                             .expect("Failed to truncate billing WAL");
-
-
-                            }
-                        }
                     }
 
                     _ => {
