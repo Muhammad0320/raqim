@@ -144,8 +144,19 @@ impl TelemetryEngine {
                         eprintln!(
                             "[FATAL] Raqim Cloud returned 402 PAYMENT REQUIRED. License Revoked "
                         );
+
+                        // Clear the JWT from RAM safely
+                        *engine.license_key.write().unwrap() = "".to_string();
+
+                        // Erase it from disc config so it doesn't try to boot with a dead key
+                        let toml_str = tokio::fs::read_to_string("raqim.toml")
+                            .await
+                            .unwrap_or_default();
+                        if let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() {
+                            doc["license_key"] = toml_edit::value("");
+                            let _ = tokio::fs::write("raqim.toml", doc.to_string()).await;
+                        }
                         let _ = event_tx.send(SystemEvent::LicenseRevoked);
-                        *engine.license_key.write().unwrap() = "REVOKED".to_string();
                     }
 
                     _ => {

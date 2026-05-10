@@ -77,17 +77,16 @@ export async function getTelemetry(orgId: string) {
   return data
 }
 
-export async function updatePlanTier(licenseId: string, newTier: string) {
+export async function getSubscriptionDetails(orgId: string) {
   const supabase = await createClient()
   const { data, error } = await supabase
-    .from('licenses')
-    .update({ plan_tier: newTier })
-    .eq('id', licenseId)
-    .select()
+    .from('subscriptions')
+    .select('*')
+    .eq('org_id', orgId)
     .single()
-
+  
   if (error) {
-    console.error('Error updating plan tier:', error)
+    console.error('Error fetching subscription details:', error)
     return null
   }
   return data

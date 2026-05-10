@@ -1,59 +1,67 @@
-import { NextResponse } from "next/server";
-import {createClient} from "@/utils/supabase/server"
-import jwt from "jsonwebtoken";
-import crypto from "crypto" 
+import { NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
+import * as jose from 'jose';
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
+  try {
+    const { orgId } = await request.json();
+    if (!orgId) {
+      return NextResponse.json({ error: 'Organization ID is required' }, { status: 400 });
+    }
 
-        const supabase =  await createClient();
+    const supabase = await createClient();
 
-        // Absolute Authentication
-        const {data: {user}, error: authtError} = await supabase.auth.getUser();
-        if (authtError || !user) return NextResponse.json({error: "Unauthorized"}, {status: 401});
+    // 1. Validate the organization and subscription tier
+    const { data: sub, error: subError } = await supabase
+      .from('subscriptions')
+      .select('plan_tier')
+      .eq('org_id', orgId)
+      .single();
 
-        const {org_id, requested_features} = await req.json();
+    if (subError || !sub) {
+      return NextResponse.json({ error: 'Subscription not found for this organization' }, { status: 404 });
+    }
 
-        // Fetch Organization Data & Enforce Authentication
-        const {data: orgData, error: OrgError} = await supabase.from("organization_members").select("organizations(id, alias, plan_tier)").eq("user_id", user.id).eq("org_id", org_id).single();
+    if (sub.plan_tier === 'OPEN_CORE') {
+      return NextResponse.json({ error: 'Licenses cannot be generated on the OPEN_CORE plan' }, { status: 403 });
+    }
 
-        if (!orgData || OrgError) return NextResponse.json({error: "Organization Acess Denied."}, {status: 403});
+    // 2. Generate a new JWT (Mocking the cryptographic payload for now, but using real jose package)
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'fallback_secret_for_development_only');
+    const jwt = await new jose.SignJWT({ orgId, plan: sub.plan_tier })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setIssuer('urn:raqim:issuer')
+      .setAudience('urn:raqim:daemon')
+      .setExpirationTime('7d')
+      .sign(secret);
 
-        // @ts-ignore
-        const tenant_id = orgData.organizations.alias;
-        // @ts-ignore
-        const plan_tier = orgData.organizations.plan_tier;
+    // 3. Revoke old licenses
+    await supabase
+      .from('licenses')
+      .update({ revoked: true })
+      .eq('org_id', orgId)
+      .eq('revoked', false);
 
-        // Plan Enforcement (Backend source of truth)
-        let final_features = new Set<string>(requested_features);
-        if (plan_tier === "STARTUP" || plan_tier === "OPEN_CORE") {
-                final_features.delete("aegis");
-                final_features.delete("time_travel");
-        }
+    // 4. Store the new license
+    const { data: newLicense, error: insertError } = await supabase
+      .from('licenses')
+      .insert({
+        org_id: orgId,
+        jwt_hash: jwt,
+        revoked: false,
+      })
+      .select()
+      .single();
 
-        // Dependency Rule. 
-        if (final_features.has("global_crdt") && !final_features.has("global_a2a") ) {
-                final_features.add("global_a2a");
-        }
+    if (insertError) {
+      console.error('License insertion error:', insertError);
+      return NextResponse.json({ error: 'Failed to save new license' }, { status: 500 });
+    }
 
-        // Cryptographic Minting
-        const privateKey = process.env.RAQIM_RSA_PRIVATE_KEY!;
-        const token = jwt.sign(
-                {sub: tenant_id, features: Array.from(final_features)}, 
-                privateKey, 
-                {algorithm: "RS256", expiresIn: "7d"}
-        );
-
-        // Database Tracking ( SHA-256 Hash for revocation )
-        const jwtHash = crypto.createHash("sha256").update(token).digest("hex");
-
-        await supabase.from("licenses").upsert({
-                org_id: org_id,
-                jwt_hash: jwtHash, 
-                plan_tier: plan_tier,
-                revoked: false,
-                issued_by: user.id, 
-        }, {onConflict: "org_id"})
-
-        return NextResponse.json({license_key: token});
-
+    return NextResponse.json(newLicense);
+  } catch (error: any) {
+    console.error('Generate license error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
 }
