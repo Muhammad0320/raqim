@@ -110,31 +110,7 @@ impl TelemetryEngine {
                             .await
                             .expect("Failed to truncate billing WAL");
 
-                        // THE ROLLING LICENSE HOT-SWAP
-                        if let Ok(json_resp) = r.json::<serde_json::Value>().await {
-                            if let Some(new_jwt) =
-                                json_resp.get("new_license").and_then(|v| v.as_str())
-                            {
-                                println!(
-                                    "[SYSTEM] Received rolling license renewal. Hot-swapping..."
-                                );
 
-                                // In-Memory Hot swap
-                                *engine.license_key.write().unwrap() = new_jwt.to_string();
-
-                                // Persistence ( Zero-Destruction Ttoml Edit )
-                                let toml_str = tokio::fs::read_to_string("raqim.toml")
-                                    .await
-                                    .unwrap_or_default();
-                                if let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() {
-                                    doc["license_key"] = toml_edit::value(new_jwt);
-                                    let _ = tokio::fs::write("raqim.toml", doc.to_string()).await;
-                                }
-
-                                // FIRE SYSTEM EVENT (wake up zenoh/argis to apply new claims)
-                                let _ = event_tx.send(SystemEvent::LicenseUpdated {
-                                    new_jwt: new_jwt.to_string(),
-                                });
                             }
                         }
                     }
