@@ -1,48 +1,73 @@
-export default function DocsPage() {
-  return (
-    <article className="prose prose-invert prose-zinc max-w-none prose-headings:font-semibold prose-a:text-blue-400">
-      <h1 className="text-4xl text-white mb-4 tracking-tight">Bring Your Own Compute (BYOC)</h1>
-      <p className="text-lg text-zinc-400 mb-8 font-light">
-        Raqim OS separates the semantic memory layer from the computation layer, allowing you to run agentic swarms wherever it makes the most sense for your architecture.
-      </p>
+import { getCachedUserTenantContext } from "@/lib/supabase/db";
+import { DynamicCodeBlock } from "@/components/docs/DynamicCodeBlock";
 
-      <div className="my-8 p-6 bg-zinc-900/30 border border-zinc-800 rounded-lg">
-        <h3 className="text-white text-lg font-medium mt-0 mb-2">The Vending Machine Model</h3>
-        <p className="text-zinc-400 mb-0 text-sm leading-relaxed">
-          While Raqim Cloud acts as a SaaS Gateway, providing coordination, telemtry, and auth, actual execution is completely decoupled. We vend cryptographic capabilities to your infrastructure.
+export default async function DocsPage() {
+  const userData = await getCachedUserTenantContext();
+
+  const pythonCode = `from raqim import RaqimClient
+
+agent = RaqimClient(
+    alias="MY_FIRST_AGENT", 
+    tenant="{{TENANT_ID}}", 
+    private_key_path="./secret.pem"
+)
+await agent.boot()`;
+
+  const bashCode = `curl -sL https://raqim.cloud/install.sh | bash -s -- --tenant {{TENANT_ID}}`;
+
+  return (
+    <article className="prose prose-invert prose-zinc max-w-none">
+      <div className="mb-12">
+        <h1 className="text-4xl font-semibold tracking-tight text-white mb-4">Quickstart</h1>
+        <p className="text-lg text-zinc-400 leading-relaxed max-w-2xl">
+          Welcome to Raqim OS. This guide will walk you through deploying your first 
+          Sovereign, Zero-Copy Agent within your dedicated tenant infrastructure.
         </p>
       </div>
 
-      <h2 className="text-2xl text-white mt-12 mb-4 tracking-tight">How it works</h2>
-      <p className="text-zinc-300 leading-relaxed mb-6">
-        When you initialize a Raqim Swarm, the orchestration layer (Raqim Cloud) distributes Ed25519 keys to the designated worker nodes. These nodes can be:
-      </p>
-      
-      <ul className="space-y-3 mb-8 text-zinc-300 list-disc pl-5">
-        <li><strong className="text-white">Local Development:</strong> Your Macbook running our Rust CLI.</li>
-        <li><strong className="text-white">Edge Nodes:</strong> Cloudflare Workers executing WASM bundles.</li>
-        <li><strong className="text-white">Enterprise VPC:</strong> Secure AWS instances isolated from the public internet.</li>
-      </ul>
+      <div className="space-y-12">
+        <section>
+          <h2 className="text-2xl font-medium tracking-tight text-zinc-100 border-b border-zinc-800/50 pb-2 mb-6">1. System Installation</h2>
+          <p className="text-zinc-400 mb-6">
+            Raqim OS operates close to the metal. To install the core daemon and the required Zenoh A2A routing utilities, run the following bootstrap script. 
+            We have automatically injected your active tenant ID into the command below.
+          </p>
+          <DynamicCodeBlock 
+            codeTemplate={bashCode} 
+            userData={userData} 
+            language="Bash" 
+          />
+        </section>
 
-      <h2 className="text-2xl text-white mt-12 mb-4 tracking-tight">Zero-Copy Architecture</h2>
-      <p className="text-zinc-300 leading-relaxed mb-6">
-        The core advantage of BYOC in Raqim is the avoidance of data serialization overhead. The CRDT brain ensures that when an agent updates a belief or memory, the state delta is propagated asynchronously without locking or deep copying. 
-      </p>
+        <section>
+          <h2 className="text-2xl font-medium tracking-tight text-zinc-100 border-b border-zinc-800/50 pb-2 mb-6">2. Initialize the Python SDK</h2>
+          <p className="text-zinc-400 mb-6">
+            Once the daemon is active, you can boot agents that bind directly to your tenant's CRDT swarm. 
+            The Python SDK (<code className="text-pink-400 bg-pink-950/30 px-1.5 py-0.5 rounded">raqim-py</code>) provides an elegant, highly concurrent asynchronous interface.
+          </p>
+          <DynamicCodeBlock 
+            codeTemplate={pythonCode} 
+            userData={userData} 
+            language="Python" 
+          />
+        </section>
 
-      <pre className="bg-black border border-zinc-800 rounded-lg p-4 my-8 overflow-x-auto">
-        <code className="text-sm font-mono text-zinc-300">
-{`// Example Python SDK initialization
-import raqim
-
-swarm = raqim.Swarm(
-    api_key="rq_live_xxxxxxxx",
-    compute="local", // BYOC mode
-    memory="crdt_cloud"
-)
-
-swarm.deploy()`}
-        </code>
-      </pre>
+        <section className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-8 mt-12">
+          <h3 className="text-xl font-medium text-white mb-3">Next Steps</h3>
+          <p className="text-zinc-400 mb-6">
+            Your agent is now connected to the global WAN. You can monitor its telemetry directly from your 
+            fleet dashboard, or dive into the core concepts to understand the zero-trust architecture.
+          </p>
+          <div className="flex gap-4">
+            <a href="/dashboard" className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium bg-white text-black rounded-lg hover:bg-zinc-200 transition-colors">
+              View Fleet Dashboard
+            </a>
+            <a href="/docs/swarm" className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium border border-zinc-700 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-colors">
+              Read about The Swarm
+            </a>
+          </div>
+        </section>
+      </div>
     </article>
   );
 }
