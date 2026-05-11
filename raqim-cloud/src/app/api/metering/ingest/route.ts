@@ -33,7 +33,6 @@ export async function POST(req:Request) {
 
         // Bulk insert into Timescale DB hypertable
         await supabaseAdmin.from("telemetry_events").insert("payload");
-
         return NextResponse.json({status: "Injested"}, {status: 201})
     } catch (err) {
         return NextResponse.json({error: "Injestion Failed"}, {status: 400})
