@@ -1,4 +1,29 @@
 import { createClient } from './server'
+import { cache } from 'react'
+
+export const getCachedUserTenantContext = cache(async () => {
+  const supabase = await createClient()
+  
+  // Mocking the active session by taking the first org for demonstration
+  const { data: orgs } = await supabase.from('organizations').select('*').limit(1)
+  const org = orgs?.[0]
+  
+  if (!org) {
+    return { alias: null, planTier: null }
+  }
+
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('plan_tier')
+    .eq('org_id', org.id)
+    .single()
+
+  return {
+    alias: org.alias,
+    planTier: sub?.plan_tier || 'OPEN_CORE'
+  }
+})
+
 
 // Utility functions for easy DB access from Server Components or Server Actions
 
