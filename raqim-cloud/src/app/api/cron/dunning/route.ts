@@ -1,6 +1,4 @@
 
-
-
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import {Resend} from "resend";
@@ -42,9 +40,7 @@ export async function GET(req: Request) {
             await resend.emails.send({ from: "billing@raqim.cloud", to: adminEmails, subject: "[ACTION REQUIRED] Raqim OS downgraded to OPEN CORE", "text": `Your 72-hour grace period expired. Premium OS features have been safely disabled. Your swarm is now running in local-loopback mode.`})
 
         }
-
     } 
 
     return NextResponse.json({processed: orgs.length});
-
 }
