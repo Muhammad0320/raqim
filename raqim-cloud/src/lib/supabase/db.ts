@@ -9,7 +9,7 @@ export const getCachedUserTenantContext = cache(async () => {
   const org = orgs?.[0]
   
   if (!org) {
-    return { alias: null, planTier: null }
+    return { alias: "JPM_CHASE_PROD", planTier: "ENTERPRISE", licenseKey: "eyJhb..." } // Default mock if DB is empty
   }
 
   const { data: sub } = await supabase
@@ -18,9 +18,17 @@ export const getCachedUserTenantContext = cache(async () => {
     .eq('org_id', org.id)
     .single()
 
+  const { data: license } = await supabase
+    .from('licenses')
+    .select('jwt_hash')
+    .eq('org_id', org.id)
+    .eq('revoked', false)
+    .single()
+
   return {
     alias: org.alias,
-    planTier: sub?.plan_tier || 'OPEN_CORE'
+    planTier: sub?.plan_tier || 'OPEN_CORE',
+    licenseKey: license?.jwt_hash || 'eyJhb...'
   }
 })
 

@@ -1,17 +1,18 @@
 import Link from "next/link";
 import { getCachedUserTenantContext } from "@/lib/supabase/db";
+import { DocsProvider } from "@/components/docs/DocsProvider";
 
 export default async function DocsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { alias, planTier } = await getCachedUserTenantContext();
+  const { alias, planTier, licenseKey } = await getCachedUserTenantContext();
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-300 flex flex-col md:flex-row font-sans selection:bg-zinc-800 selection:text-white">
-      {/* Sidebar Navigation */}
-      <aside className="w-full md:w-64 border-r border-zinc-800/50 bg-[#0a0a0c] flex-shrink-0 flex flex-col">
+    <div className="min-h-screen bg-zinc-950 text-zinc-300 font-sans selection:bg-zinc-800 selection:text-white flex flex-col md:flex-row">
+      {/* 1. Left Navigation (Sticky) */}
+      <aside className="w-full md:w-64 lg:w-72 border-r border-zinc-800/50 bg-[#0a0a0c] flex-shrink-0 flex flex-col md:sticky md:top-0 md:h-screen">
         {/* Header */}
         <div className="p-6 border-b border-zinc-800/50 flex flex-col gap-4">
           <Link href="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
@@ -34,49 +35,59 @@ export default async function DocsLayout({
         {/* Navigation Tree */}
         <nav className="p-4 space-y-6 overflow-y-auto flex-1">
           <div>
-            <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Getting Started</div>
+            <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Foundation</div>
             <div className="space-y-0.5">
-              <NavLink href="/docs" active>Quickstart</NavLink>
-              <NavLink href="/docs/installation">Installation</NavLink>
-              <NavLink href="/docs/deployment">Deployment (AWS/K8s)</NavLink>
+              <NavLink href="/docs" active>Introduction & Quickstart</NavLink>
             </div>
           </div>
 
           <div>
-            <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Core Concepts</div>
+            <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Core Systems</div>
             <div className="space-y-0.5">
-              <NavLink href="/docs/swarm">The Swarm (CRDTs)</NavLink>
-              <NavLink href="/docs/vault">The Vault (LanceDB + WAL)</NavLink>
-              <NavLink href="/docs/aegis">Aegis Firewall (Ed25519)</NavLink>
-              <NavLink href="/docs/reality-forking">Reality Forking (Time Travel)</NavLink>
+              <NavLink href="/docs/swarm">Swarm Brain</NavLink>
+              <NavLink href="/docs/aegis">Aegis Firewall</NavLink>
             </div>
           </div>
 
           <div>
-            <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">SDKs</div>
+            <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Deployment</div>
             <div className="space-y-0.5">
-              <NavLink href="/docs/python">Python SDK (raqim-py)</NavLink>
-              <NavLink href="/docs/rust">Rust WASM SDK (raqim-agent-sdk)</NavLink>
+              <NavLink href="/docs/k8s">Kubernetes (K8s)</NavLink>
+              <NavLink href="/docs/aws">AWS Architecture</NavLink>
             </div>
           </div>
 
           <div>
-            <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Architecture</div>
+            <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Physics</div>
             <div className="space-y-0.5">
-              <NavLink href="/docs/zero-trust">Zero-Trust Model</NavLink>
               <NavLink href="/docs/zero-copy">Zero-Copy TCP</NavLink>
-              <NavLink href="/docs/zenoh">Zenoh A2A Mesh</NavLink>
             </div>
           </div>
         </nav>
       </aside>
 
-      {/* Main Content Area */}
-      <main className="flex-1 min-w-0 overflow-y-auto bg-zinc-950">
-        <div className="max-w-4xl mx-auto px-8 py-12 lg:px-16 lg:py-20">
-          {children}
+      {/* 2. Center Content */}
+      <main className="flex-1 min-w-0 flex justify-center bg-zinc-950 py-12 px-6 lg:py-20 lg:px-12">
+        <div className="w-full max-w-3xl">
+          <DocsProvider 
+            tenantAlias={alias || "YOUR_TENANT_ALIAS"} 
+            licenseKey={licenseKey || "YOUR_LICENSE_KEY"}
+            planTier={planTier || "OPEN_CORE"}
+          >
+            {children}
+          </DocsProvider>
         </div>
       </main>
+
+      {/* 3. Right TOC (Sticky) */}
+      <aside className="hidden xl:block w-64 flex-shrink-0 sticky top-0 h-screen py-20 px-8 border-l border-zinc-800/50">
+        <h4 className="text-xs font-semibold text-white uppercase tracking-widest mb-4">On this page</h4>
+        <nav className="space-y-2.5 text-sm text-zinc-500">
+          <a href="#byoc" className="block hover:text-zinc-300 transition-colors">Bring-Your-Own-Compute</a>
+          <a href="#install" className="block hover:text-zinc-300 transition-colors">Daemon Installation</a>
+          <a href="#sdk" className="block hover:text-zinc-300 transition-colors">Python SDK Boot</a>
+        </nav>
+      </aside>
     </div>
   );
 }

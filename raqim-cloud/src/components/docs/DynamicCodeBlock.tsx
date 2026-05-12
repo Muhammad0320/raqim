@@ -1,19 +1,21 @@
 "use client";
 
 import React, { useState } from 'react';
+import { useDocsContext } from '@/components/docs/DocsProvider';
 
 interface DynamicCodeBlockProps {
   codeTemplate: string;
-  userData: { alias: string | null };
   language: string;
 }
 
-export function DynamicCodeBlock({ codeTemplate, userData, language }: DynamicCodeBlockProps) {
+export function DynamicCodeBlock({ codeTemplate, language }: DynamicCodeBlockProps) {
+  const { tenantAlias, licenseKey } = useDocsContext();
   const [copied, setCopied] = useState(false);
 
-  // Replace placeholders with real user data or default
-  const tenantAlias = userData.alias || "YOUR_TENANT_ALIAS";
-  const processedCode = codeTemplate.replace(/\{\{TENANT_ID\}\}/g, tenantAlias);
+  // Replace placeholders with real user data from context
+  const processedCode = codeTemplate
+    .replace(/\{\{TENANT_ALIAS\}\}/g, tenantAlias)
+    .replace(/\{\{LICENSE_KEY\}\}/g, licenseKey);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(processedCode);
@@ -22,7 +24,7 @@ export function DynamicCodeBlock({ codeTemplate, userData, language }: DynamicCo
   };
 
   return (
-    <div className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl my-6 font-mono text-sm">
+    <div className="rounded-xl overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl my-8 font-mono text-sm">
       {/* Mac OS Window Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800/50 bg-zinc-900/30">
         <div className="flex items-center space-x-2">
@@ -50,31 +52,29 @@ export function DynamicCodeBlock({ codeTemplate, userData, language }: DynamicCo
       </div>
 
       {/* Code Content */}
-      <div className="p-4 overflow-x-auto bg-[#0d0d0f] text-zinc-300">
+      <div className="p-5 overflow-x-auto bg-[#0d0d0f] text-zinc-300">
         <pre className="m-0">
           <code>
-            {/* Extremely lightweight mock syntax highlighting for aesthetics */}
             {processedCode.split('\n').map((line, i) => {
-              // Very basic heuristic formatting for Python/Bash
               let formattedLine = line;
               if (language === 'Python') {
                 formattedLine = formattedLine
                   .replace(/from|import|await/g, '<span class="text-pink-400">$&</span>')
                   .replace(/agent = /g, 'agent = ')
                   .replace(/RaqimClient/g, '<span class="text-cyan-400">RaqimClient</span>')
-                  .replace(/alias=|tenant=|private_key_path=/g, '<span class="text-purple-400">$&</span>')
+                  .replace(/alias=|tenant=|license=/g, '<span class="text-purple-400">$&</span>')
                   .replace(/"[^"]*"/g, '<span class="text-emerald-400">$&</span>');
               } else if (language === 'Bash') {
                 formattedLine = formattedLine
                   .replace(/curl|bash/g, '<span class="text-pink-400">$&</span>')
-                  .replace(/--tenant/g, '<span class="text-purple-400">$&</span>')
+                  .replace(/--tenant|--license/g, '<span class="text-purple-400">$&</span>')
                   .replace(/https:\/\/[^\s]*/g, '<span class="text-cyan-400">$&</span>');
               }
 
               return (
                 <div key={i} className="table-row">
-                  <span className="table-cell text-zinc-700 pr-4 select-none text-right">{i + 1}</span>
-                  <span className="table-cell" dangerouslySetInnerHTML={{ __html: formattedLine }} />
+                  <span className="table-cell text-zinc-700 pr-5 select-none text-right border-r border-zinc-800/50 mr-4">{i + 1}</span>
+                  <span className="table-cell pl-4" dangerouslySetInnerHTML={{ __html: formattedLine }} />
                 </div>
               );
             })}
