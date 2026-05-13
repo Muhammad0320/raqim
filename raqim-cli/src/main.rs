@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
+use md5::{Digest, Md5};
 use rand::rngs::OsRng;
-
 use reqwest::Client;
 use serde_json::json;
 use std::fs;
@@ -82,6 +82,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut csprng = OsRng;
             let signing_key = SigningKey::generate(&mut csprng);
             let public_key = signing_key.verifying_key();
+
+            // Mathematically derive the 16-byte Agent ID
+            let mut hasher = Md5::new();
+            hasher.update(public_key.to_bytes());
+            let agent_id_bytes: [u8; 16] = hasher.finalize().into();
+            let agent_hex = hex::encode(agent_id_bytes); // The true routing ID
+
             let pub_hex = hex::encode(public_key.to_bytes());
 
             let priv_path = format!("{}_private.pem", name);
