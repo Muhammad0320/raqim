@@ -90,7 +90,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let agent_hex = hex::encode(agent_id_bytes); // The true routing ID
 
             let pub_hex = hex::encode(public_key.to_bytes());
-
             let priv_path = format!("{}_private.pem", name);
 
             // Write the exact bytes needed by the PyO3/Rust SDKs
@@ -105,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("✅ Keypair generated successfully");
             println!("Private Key saved to: {}", priv_path);
+            println!("Agent Routing ID (Hex): {}", agent_hex);
             println!("\n[ACTION REQUIRED] Add this to your daemon's aegis.toml: ");
             println!(
                 "[\"{}\"]\npublic_key_hex = \"{}\"\ncapability = [\"*\"]",
