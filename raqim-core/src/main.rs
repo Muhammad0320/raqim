@@ -47,7 +47,7 @@ async fn main() {
         let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT");
 
         tokio::select! {
-            _ = sigterm.recv() => println!("\n[OS] Received SIGTERM from Kubernetes")
+            _ = sigterm.recv() => println!("\n[OS] Received SIGTERM from Kubernetes"),
             _ = sigint.recv() => println!("\n[OS] Received SIGINT (Ctrl+C) ")
         }
 
