@@ -22,7 +22,7 @@ pub struct WalEngine {
 }
 
 impl WalEngine {
-    pub async fn start(file_path: String) -> (Self, JoinHandle<()>) {
+    pub async fn start(file_path: String) -> (Arc<Self>, JoinHandle<()>) {
         println!("Bismillah. Booting io_uring Nucleus WAL Engine on dedicated OS thread...");
 
         // Bounded channel to prevent OOM crashes
@@ -107,7 +107,7 @@ impl WalEngine {
             });
         });
 
-        (Self { sender: tx, index }, handle)
+        (Arc::new(Self { sender: tx, index }), handle)
     }
 
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
