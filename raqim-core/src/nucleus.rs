@@ -16,14 +16,13 @@ use tokio::sync::mpsc;
 use tokio_uring::fs::OpenOptions;
 
 pub struct WalEngine {
-    sender: Option<mpsc::Sender<OpLog>>,
+    sender: mpsc::Sender<OpLog>,
     // The O(1) INDEX: Maps TxID -> Physical byte offset in the WAL.
     pub index: Arc<RwLock<BTreeMap<u64, u64>>>,
-    pub io_thread: Option<JoinHandle<()>>,
 }
 
 impl WalEngine {
-    pub async fn start(file_path: String) -> Self {
+    pub async fn start(file_path: String) -> (Self, JoinHandle<()>) {
         println!("Bismillah. Booting io_uring Nucleus WAL Engine on dedicated OS thread...");
 
         // Bounded channel to prevent OOM crashes
@@ -108,11 +107,7 @@ impl WalEngine {
             });
         });
 
-        Self {
-            sender: Some(tx),
-            index,
-            io_thread: Some(handle),
-        }
+        (Self { sender: tx, index }, handle)
     }
 
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.

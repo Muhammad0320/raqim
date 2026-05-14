@@ -274,4 +274,12 @@ impl GlobalNetworkBridge {
             )
         }
     }
+
+    /// Broadcast session termination to the peer
+    pub async fn shutdown(&self) {
+        println!("[ZENOH] Broadcasting session termination to the global mesh...");
+        // Close the session. This sends a 'Decl' (Declaration) to peer routers.
+        let _ = self.session.close().await;
+        println!("[ZENOH] Swarm servered cleanly. ");
+    }
 }
