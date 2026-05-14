@@ -10,15 +10,16 @@ use std::{
     fs::File,
     io::Read,
     sync::{Arc, RwLock},
-    thread,
+    thread::{self, JoinHandle},
 };
 use tokio::sync::mpsc;
 use tokio_uring::fs::OpenOptions;
 
 pub struct WalEngine {
-    sender: mpsc::Sender<OpLog>,
+    sender: Option<mpsc::Sender<OpLog>>,
     // The O(1) INDEX: Maps TxID -> Physical byte offset in the WAL.
     pub index: Arc<RwLock<BTreeMap<u64, u64>>>,
+    pub io_thread: Option<JoinHandle<()>>,
 }
 
 impl WalEngine {
@@ -32,7 +33,7 @@ impl WalEngine {
         let index_clone = index.clone();
 
         // 1. We spawn a physical OS thread entirely dedicated to the Hard Drive
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             // 2. We boot the io_uring runtime inside this specific thread
             tokio_uring::start(async move {
                 let file = OpenOptions::new()
@@ -96,14 +97,22 @@ impl WalEngine {
 
                         batch.clear();
                     } else {
-                        // The channel is closed the daemon is shutting down
+                        // Channel Closed. Sender Dropped.
+                        // The RAM queue is empty. We are safe to shut down the physical disk
+                        println!("[WAL] In-memory queue drained. Syncing final bytes to metal. ");
+                        let _ = file.sync_data().await;
+
                         break;
                     }
                 }
             });
         });
 
-        Self { sender: tx, index }
+        Self {
+            sender: Some(tx),
+            index,
+            io_thread: Some(handle),
+        }
     }
 
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
