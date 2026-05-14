@@ -434,7 +434,7 @@ impl MemoryRouter {
             snapshot_timestamp,
         ))
     }
-    
+
     /// The Unified Engine for both Resurrection (Live) and Time Travel (Isolated)
     pub async fn boot_historical_agent(
         &self,
@@ -476,8 +476,8 @@ impl MemoryRouter {
         );
 
         // Isolated Infrastructure (The Quarantine Sandbox)
-        let dummy_wal =
-            Arc::new(WalEngine::start(format!("phamtom_{}", sandbox_agent_hex).to_string()).await);
+        let (dummy_wal, _) =
+            WalEngine::start(format!("phamtom_{}", sandbox_agent_hex).to_string()).await;
         let dummy_net = Arc::new(
             GlobalNetworkBridge::new(
                 "phantom_tenant",
@@ -491,7 +491,7 @@ impl MemoryRouter {
 
         // We must route the dummy events to the React UI so the Admin can watch the fork!
         let ui_tx_clone = phantom_ui_tx.clone();
-        
+
         if is_isolated_debug {
             tokio::spawn(async move {
                 while let Ok(event) = dummy_event_rx.recv().await {
