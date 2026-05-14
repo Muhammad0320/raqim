@@ -202,7 +202,7 @@ impl WasmEngine {
                         rkyv::access_unchecked::<<AgentState as Archive>::Archived>(&temp_buffer)
                     };
 
-                    let _ = crate::execute_raqim_cascade(
+                    let res = crate::execute_raqim_cascade(
                         archived_bytes,
                         brain_clone,
                         axon_clone,
@@ -215,7 +215,12 @@ impl WasmEngine {
                         network_to_save,
                         telemetry_clone,
                     )
-                    .await?;
+                    .await;
+
+                    let _ = match res {
+                        Ok(id) => id,
+                        Err(_) => return,
+                    };
                 });
 
                 Ok(())

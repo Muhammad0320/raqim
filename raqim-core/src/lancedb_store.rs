@@ -246,6 +246,12 @@ impl LanceEngine {
 
                 ("SecurityBreach", agent_id.to_string(), m)
             }
+
+            SystemEvent::LicenseUpdated { new_jwt } => (
+                "LicenseUpdated",
+                "SYSTEM".to_string(),
+                format!(" {{ \"message\": \"{}\" }} ", "License Key was updated"),
+            ),
         };
 
         let time_arr = Arc::new(Int64Array::from(vec![timestamp]));
