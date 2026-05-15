@@ -1,0 +1,45 @@
+import { ZeroCopyDiagram, BenchmarkHUD } from '@/components/docs/PhysicsDiagrams';
+import { DynamicCodeBlock } from '@/components/docs/DynamicCodeBlock';
+
+# Altitude 4: Internal Physics
+
+<BenchmarkHUD />
+
+## The 100k Benchmark: Bypassing the Garbage Collector
+
+Raqim Cloud is architected on a foundation of absolute mechanical sympathy. To achieve a sustained ingestion rate of over 104,000 logs per second on a single node, we had to eliminate the primary bottleneck in modern systems: the garbage collector.
+
+Traditional platforms deserialize incoming JSON payloads, allocate them on the heap, and rely on sweeping algorithms to reclaim memory. This introduces unpredictable latencies and CPU overhead. Raqim fundamentally bypasses this. By utilizing memory-mapped files (`mmap`), we append bytes directly to a continuous disk sector. When a log is ingested, the kernel handles the page cache synchronization asynchronously. There are zero heap allocations in the hot path. The system operates entirely outside the boundaries of a conventional runtime, delivering sub-millisecond latencies under crushing loads.
+
+## The Zero-Copy Layout: rkyv
+
+The core enabler of our throughput is `rkyv`, a zero-copy deserialization framework. When a TCP packet arrives at the ingestion layer, we do not parse it. Instead, we cast the raw byte array directly to a Rust struct memory layout.
+
+By explicitly defining the memory layout with `#[repr(C)]`, we ensure that the byte representation on the wire identically matches the struct layout in memory. Accessing the payload takes `O(1)` time and requires 0 CPU cycles for deserialization.
+
+<DynamicCodeBlock 
+  language="Rust"
+  codeTemplate={`#[derive(Archive, Deserialize, Serialize)]
+#[repr(C)] // Enforce predictable memory layout
+pub struct IngressEnvelope {
+    pub intent_path: String,
+    pub public_key: [u8; 32],
+    pub signature: [u8; 64],
+    pub state_bytes: Vec<u8>,
+}
+// Accessing the payload takes O(1) time and 0 CPU cycles.`} 
+/>
+
+<ZeroCopyDiagram />
+
+## The Ed25519 Handshake
+
+Security at this scale requires cryptographic isolation at the socket layer. Every payload ingested into Raqim must be cryptographically signed using Ed25519 elliptic curve signatures.
+
+The `IngressEnvelope` carries both the 32-byte public key and the 64-byte signature. Upon receiving the bytes, the ingestion node performs an immediate cryptographic handshake. We do not query a database to verify agent identities. The Agent ID itself is a mathematically locked MD5 derivative of the Public Key. Because the derivation is mathematically deterministic, hackers cannot spoof Agent IDs—they would need the corresponding private key to generate a valid Ed25519 signature. This guarantees that rogue nodes can never inject unauthorized state into the swarm.
+
+## The Rolling License Matrix
+
+Raqim Cloud enforces licensing without compromising the availability of your global swarm. We employ a fault-tolerant billing state machine known as the Rolling License Matrix.
+
+The matrix operates on a continuous 24-hour heartbeat. Every node in your BYOC swarm independently verifies its cryptographic license entitlement locally. If Raqim Cloud experiences an outage and the 24-hour heartbeat cannot be renewed, the system automatically degrades into a 72-hour grace period. During this window, all localized CRDT replication, state synchronization, and append-only logging continue flawlessly. Your global swarm survives our downtime. The license matrix mathematically guarantees that the network partition of the control plane will never sever the data plane.
