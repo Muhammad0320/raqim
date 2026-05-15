@@ -6,6 +6,8 @@ import Navbar from '@/components/Navbar';
 import Hero from '@/components/Hero';
 import MemoryPhysics from '@/components/MemoryPhysics';
 import NervousSystem from '@/components/NervousSystem';
+import TemporalRouter from '@/components/TemporalRouter';
+import AegisGatekeeper from '@/components/AegisGatekeeper';
 
 const PageContainer = styled.main`
   min-height: 100vh;
@@ -32,6 +34,8 @@ export default function Home() {
       <Hero />
       <MemoryPhysics />
       <NervousSystem />
+      <TemporalRouter />
+      <AegisGatekeeper />
       <Footer>
         <p>&copy; {new Date().getFullYear()} Raqim Systems Inc. All rights reserved. Zero marketing fluff.</p>
       </Footer>

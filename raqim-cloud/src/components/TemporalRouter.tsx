@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import styled from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 const SectionContainer = styled.section`
   background-color: #09090b;
@@ -85,7 +85,7 @@ const FeatureDesc = styled.div`
   color: #71717a;
 `;
 
-const RightColumn = styled(motion.div)`
+const RightColumn = styled.div`
   display: flex;
   flex-direction: column;
   gap: 32px;
@@ -101,64 +101,38 @@ const UiShell = styled.div`
   flex-direction: column;
 `;
 
-const ShellHeader = styled.div`
-  height: 36px;
-  background: #18181b;
-  border-bottom: 1px solid #27272a;
-  display: flex;
-  align-items: center;
-  padding: 0 16px;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 0.75rem;
-  color: #71717a;
-  letter-spacing: 0.05em;
-`;
-
-const SvgContainer = styled.div`
-  padding: 24px;
-  height: 220px;
+const GraphArea = styled.div`
+  padding: 32px;
   position: relative;
-`;
-
-const SvgVisual = styled.svg`
-  width: 100%;
-  height: 100%;
+  height: 220px;
+  background: radial-gradient(circle at 50% 50%, rgba(39, 39, 42, 0.3) 0%, transparent 70%);
 `;
 
 const TerminalPanel = styled(motion.div)`
   background: #09090b;
   border-top: 1px solid #27272a;
+  padding: 0 16px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.8rem;
+  color: #e4e4e7;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 `;
 
 const TerminalHeader = styled.div`
-  padding: 8px 16px;
-  font-family: var(--font-geist-mono), monospace;
+  color: #52525b;
+  font-weight: bold;
+  margin: 12px 0;
+  letter-spacing: 0.05em;
   font-size: 0.75rem;
-  color: #f59e0b; /* amber */
-  font-weight: 600;
-  background: rgba(245, 158, 11, 0.05);
-  border-bottom: 1px solid rgba(245, 158, 11, 0.1);
-  text-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
-`;
-
-const TerminalBody = styled.div`
-  padding: 16px;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 0.875rem;
-  color: #e4e4e7;
-  line-height: 1.6;
-  min-height: 100px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 `;
 
 const TerminalLine = styled(motion.div)`
-  display: flex;
-  align-items: flex-start;
+  overflow: hidden;
+  white-space: nowrap;
+  color: #a1a1aa;
+  line-height: 1.8;
 `;
 
 const CodeContainer = styled.div`
@@ -190,88 +164,19 @@ const FunctionName = styled.span`
   color: #61afef;
 `;
 
-const TypeName = styled.span`
-  color: #e5c07b;
-`;
-
 const Variable = styled.span`
   color: #e06c75;
 `;
 
-// Helper component for typewriter effect
-const TypewriterText = ({ text, delayMs = 30 }: { text: string; delayMs?: number }) => {
-  const [displayed, setDisplayed] = useState("");
-
-  useEffect(() => {
-    let i = 0;
-    const interval = setInterval(() => {
-      if (i < text.length) {
-        setDisplayed(text.substring(0, i + 1));
-        i++;
-      } else {
-        clearInterval(interval);
-      }
-    }, delayMs);
-    return () => clearInterval(interval);
-  }, [text, delayMs]);
-
-  return <>{displayed}</>;
-};
+const StringLiteral = styled.span`
+  color: #98c379;
+`;
 
 export default function TemporalRouter() {
-  const [step, setStep] = useState(0);
-
-  useEffect(() => {
-    let mounted = true;
-    const sequence = async () => {
-      const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-      
-      while (mounted) {
-        setStep(0); // Reset
-        await delay(1000);
-        setStep(1); // Scrub cursor to 8492
-        await delay(1200);
-        setStep(2); // Click
-        await delay(300);
-        setStep(3); // Draw branch
-        await delay(800);
-        setStep(4); // Open terminal
-        await delay(600);
-        setStep(5); // Type line 1
-        await delay(2000);
-        setStep(6); // Type line 2
-        await delay(4000);
-      }
-    };
-    sequence();
-    return () => { mounted = false; };
-  }, []);
-
-  const TX_Y = 50;
-  const nodes = [
-    { id: '8490', x: 50 },
-    { id: '8491', x: 150 },
-    { id: '8492', x: 250 },
-    { id: '8493', x: 350 },
-    { id: '8494', x: 450 },
-  ];
-
-  const targetNode = nodes[2]; // 8492
-  
-  // Cursor positions based on steps
-  const cursorVariants = {
-    step0: { x: 480, y: 70, scale: 1 },
-    step1: { x: targetNode.x + 10, y: targetNode.y + 20, scale: 1 },
-    step2: { x: targetNode.x + 10, y: targetNode.y + 20, scale: 0.8 },
-    afterClick: { x: targetNode.x + 10, y: targetNode.y + 20, scale: 1, opacity: 0.5 },
-  };
-
-  const getCursorVariant = () => {
-    if (step === 0) return "step0";
-    if (step === 1) return "step1";
-    if (step === 2) return "step2";
-    return "afterClick";
-  };
+  const LOOP_DURATION = 8;
+  const nodes = [50, 150, 250, 350, 450];
+  const targetX = 250;
+  const targetY = 80;
 
   return (
     <SectionContainer>
@@ -306,123 +211,117 @@ export default function TemporalRouter() {
 
         <RightColumn>
           <UiShell>
-            <ShellHeader>RAQIM CONSOLE // MAIN_CRDT_BRANCH</ShellHeader>
-            <SvgContainer>
-              <SvgVisual viewBox="0 0 500 180" preserveAspectRatio="xMidYMid meet">
+            <GraphArea>
+              <svg width="100%" height="100%" viewBox="0 0 500 220" preserveAspectRatio="xMidYMid meet">
                 <defs>
-                  <filter id="glowAmber" x="-30%" y="-30%" width="160%" height="160%">
+                  <filter id="glowOrange" x="-50%" y="-50%" width="200%" height="200%">
                     <feGaussianBlur stdDeviation="4" result="blur" />
                     <feComposite in="SourceGraphic" in2="blur" operator="over" />
                   </filter>
-                  <filter id="glowCyanDag" x="-30%" y="-30%" width="160%" height="160%">
-                    <feGaussianBlur stdDeviation="3" result="blur" />
+                  <filter id="glowWhite" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="2" result="blur" />
                     <feComposite in="SourceGraphic" in2="blur" operator="over" />
                   </filter>
                 </defs>
 
-                {/* Main Branch Lines */}
-                <line x1="10" y1={TX_Y} x2="490" y2={TX_Y} stroke="#27272a" strokeWidth="2" />
-                
-                {/* Fork Path */}
+                {/* Main Branch Line */}
+                <line x1="20" y1={targetY} x2="480" y2={targetY} stroke="#3f3f46" strokeWidth="3" />
+
+                {/* Phantom Branch Line (Animated) */}
                 <motion.path
-                  d={`M ${targetNode.x} ${targetNode.y} L ${targetNode.x} 120 L 450 120`}
-                  fill="none"
-                  stroke="#f59e0b"
-                  strokeWidth="2"
-                  filter="url(#glowAmber)"
-                  strokeDasharray="4 4"
-                  initial={{ pathLength: 0 }}
-                  animate={{ pathLength: step >= 3 ? 1 : 0 }}
-                  transition={{ duration: 0.8, ease: "easeInOut" }}
+                  d={`M ${targetX} ${targetY} Q ${targetX} 160 ${targetX + 80} 160 L ${targetX + 160} 160`}
+                  fill="transparent"
+                  stroke="#ea580c" /* amber/orange */
+                  strokeWidth="3"
+                  strokeDasharray="200"
+                  filter="url(#glowOrange)"
+                  animate={{ strokeDashoffset: [200, 200, 0, 0, 200] }}
+                  transition={{ duration: LOOP_DURATION, times: [0, 0.1875, 0.25, 0.875, 1], repeat: Infinity }}
                 />
 
-                {/* Main Nodes */}
-                {nodes.map((node) => (
-                  <g key={node.id}>
-                    <circle cx={node.x} cy={TX_Y} r="6" fill="#18181b" stroke="#06b6d4" strokeWidth="2" />
-                    <text x={node.x} y={TX_Y - 15} fill="#a1a1aa" fontSize="10" fontFamily="monospace" textAnchor="middle">
-                      Tx: {node.id}
-                    </text>
+                {/* Main Branch Nodes */}
+                {nodes.map((x, i) => (
+                  <g key={i}>
+                    <circle cx={x} cy={targetY} r="6" fill="#18181b" stroke="#71717a" strokeWidth="2" />
+                    {x === targetX && (
+                      <motion.circle
+                        cx={x} cy={targetY} r="8" fill="none" stroke="#ffffff" strokeWidth="2" filter="url(#glowWhite)"
+                        animate={{ opacity: [0, 1, 1, 0, 0], scale: [1, 1.5, 1, 1, 1] }}
+                        transition={{ duration: LOOP_DURATION, times: [0, 0.15, 0.875, 0.9, 1], repeat: Infinity }}
+                      />
+                    )}
                   </g>
                 ))}
 
-                {/* Target Node Highlight (8492) */}
-                <motion.circle 
-                  cx={targetNode.x} cy={TX_Y} r="6" fill="#06b6d4" filter="url(#glowCyanDag)"
-                  animate={{ opacity: step >= 2 ? 1 : 0 }}
-                  transition={{ duration: 0.2 }}
+                {/* Phantom Branch Node (Animated) */}
+                <motion.circle
+                  cx={targetX + 80} cy={160} r="6" fill="#18181b" stroke="#ea580c" strokeWidth="2" filter="url(#glowOrange)"
+                  animate={{ opacity: [0, 0, 1, 1, 0] }}
+                  transition={{ duration: LOOP_DURATION, times: [0, 0.22, 0.25, 0.875, 1], repeat: Infinity }}
                 />
-
-                {/* Phantom Node */}
-                <motion.g
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: step >= 3 ? 1 : 0 }}
-                  transition={{ duration: 0.4, delay: 0.6 }}
+                <motion.text
+                  x={targetX + 95} y={164} fill="#ea580c" fontSize="10" fontFamily="monospace" filter="url(#glowOrange)"
+                  animate={{ opacity: [0, 0, 1, 1, 0] }}
+                  transition={{ duration: LOOP_DURATION, times: [0, 0.22, 0.25, 0.875, 1], repeat: Infinity }}
                 >
-                  <circle cx="450" cy="120" r="6" fill="#f59e0b" filter="url(#glowAmber)" />
-                  <text x="440" y="140" fill="#f59e0b" fontSize="10" fontFamily="monospace" textAnchor="end">
-                    phantom_fork_8492
-                  </text>
+                  phantom_fork_8492
+                </motion.text>
+
+                {/* TxID Label for Target Node */}
+                <text x={targetX - 30} y={targetY - 16} fill="#a1a1aa" fontSize="10" fontFamily="monospace">TxID: 8492</text>
+
+                {/* Cursor (Animated) */}
+                <motion.g
+                  animate={{ 
+                    x: [350, targetX + 10, targetX + 10, targetX + 10, 350],
+                    y: [targetY + 40, targetY + 10, targetY + 10, targetY + 10, targetY + 40],
+                    scale: [1, 1, 0.8, 1, 1]
+                  }}
+                  transition={{ 
+                    duration: LOOP_DURATION, 
+                    times: [0, 0.125, 0.15, 0.875, 1], 
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                >
+                  <path d="M0 0 L 12 12 L 5 12 L 5 20 L -2 16 L 0 0 Z" fill="#ffffff" stroke="#000000" strokeWidth="1" filter="url(#glowWhite)"/>
                 </motion.g>
 
-                {/* Cursor */}
-                <motion.g
-                  variants={cursorVariants}
-                  animate={getCursorVariant()}
-                  transition={{ type: "spring", stiffness: 100, damping: 20 }}
-                  style={{ transformOrigin: "top left" }}
-                >
-                  {/* Standard SVG Cursor shape */}
-                  <polygon points="0,0 15,10 6,11 0,20" fill="#ffffff" stroke="#000000" strokeWidth="1" />
-                </motion.g>
+              </svg>
+            </GraphArea>
 
-              </SvgVisual>
-            </SvgContainer>
-
-            <AnimatePresence>
-              {step >= 4 && (
-                <TerminalPanel
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.5, ease: "easeOut" }}
-                >
-                  <TerminalHeader>[ ISOLATED TELEMETRY STREAM ]</TerminalHeader>
-                  <TerminalBody>
-                    {step >= 5 && (
-                      <TerminalLine>
-                        <span style={{ color: '#f59e0b', marginRight: '8px' }}>&gt;</span>
-                        <span style={{ color: '#e4e4e7' }}>
-                          <TypewriterText text="[PHANTOM_OS] WASI Context Rebuilt. Environment Overrides Injected." delayMs={20} />
-                        </span>
-                      </TerminalLine>
-                    )}
-                    {step >= 6 && (
-                      <TerminalLine>
-                        <span style={{ color: '#f59e0b', marginRight: '8px' }}>&gt;</span>
-                        <span style={{ color: '#e4e4e7' }}>
-                          <TypewriterText text="[AGENT_HEX] Recalculating fiscal routing table..." delayMs={20} />
-                        </span>
-                      </TerminalLine>
-                    )}
-                  </TerminalBody>
-                </TerminalPanel>
-              )}
-            </AnimatePresence>
+            <TerminalPanel
+              animate={{ height: [0, 0, 100, 100, 0], opacity: [0, 0, 1, 1, 0], paddingBottom: [0, 0, 16, 16, 0] }}
+              transition={{ duration: LOOP_DURATION, times: [0, 0.25, 0.3125, 0.875, 1], repeat: Infinity, ease: "easeInOut" }}
+            >
+              <TerminalHeader>[ ISOLATED TELEMETRY STREAM ]</TerminalHeader>
+              <TerminalLine
+                animate={{ width: ["0%", "0%", "100%", "100%", "0%"] }}
+                transition={{ duration: LOOP_DURATION, times: [0, 0.3125, 0.5, 0.875, 1], repeat: Infinity, ease: "linear" }}
+              >
+                <span style={{ color: '#06b6d4' }}>[PHANTOM_OS]</span> WASI Context Rebuilt. Environment Overrides Injected.
+              </TerminalLine>
+              <TerminalLine
+                animate={{ width: ["0%", "0%", "100%", "100%", "0%"] }}
+                transition={{ duration: LOOP_DURATION, times: [0, 0.5, 0.6875, 0.875, 1], repeat: Infinity, ease: "linear" }}
+              >
+                <span style={{ color: '#ea580c' }}>[AGENT_HEX]</span> Recalculating fiscal routing table...
+              </TerminalLine>
+            </TerminalPanel>
           </UiShell>
 
           <CodeContainer>
             <Pre>
               <Comment>// Inject Deep Reality overrides (Environment Variables)</Comment>
               <br />
-              <Keyword>pub</Keyword> <Keyword>fn</Keyword> <FunctionName>build_wasi_context</FunctionName>(<Variable>fork</Variable>: <TypeName>Option</TypeName>&lt;<TypeName>ForkConfig</TypeName>&gt;) -&gt; <TypeName>WasiP1Ctx</TypeName> {'{'}
+              <Keyword>pub fn</Keyword> <FunctionName>build_wasi_context</FunctionName>(<Variable>fork</Variable>: Option&lt;ForkConfig&gt;) -&gt; WasiP1Ctx {'{'}
               <br />
-              {'    '}<Keyword>let</Keyword> <Keyword>mut</Keyword> <Variable>builder</Variable> = <TypeName>WasiCtxBuilder</TypeName>::<FunctionName>new</FunctionName>();
+              {'    '}<Keyword>let mut</Keyword> <Variable>builder</Variable> = WasiCtxBuilder::<FunctionName>new</FunctionName>();
               <br />
               <br />
-              {'    '}<Keyword>if let</Keyword> <TypeName>Some</TypeName>(<Variable>config</Variable>) = fork {'{'}
+              {'    '}<Keyword>if let</Keyword> Some(config) = fork {'{'}
               <br />
-              {'        '}<Keyword>for</Keyword> (<Variable>key</Variable>, <Variable>value</Variable>) <Keyword>in</Keyword> config.env_overrides {'{'}
+              {'        '}<Keyword>for</Keyword> (key, value) <Keyword>in</Keyword> config.env_overrides {'{'}
               <br />
               {'            '}builder.<FunctionName>env</FunctionName>(&amp;key, &amp;value); <Comment>// The agent wakes up in a new reality</Comment>
               <br />
