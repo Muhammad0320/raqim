@@ -5,6 +5,7 @@ import styled from 'styled-components';
 import Navbar from '@/components/Navbar';
 import Hero from '@/components/Hero';
 import MemoryPhysics from '@/components/MemoryPhysics';
+import NervousSystem from '@/components/NervousSystem';
 
 const PageContainer = styled.main`
   min-height: 100vh;
@@ -30,6 +31,7 @@ export default function Home() {
       <Navbar />
       <Hero />
       <MemoryPhysics />
+      <NervousSystem />
       <Footer>
         <p>&copy; {new Date().getFullYear()} Raqim Systems Inc. All rights reserved. Zero marketing fluff.</p>
       </Footer>

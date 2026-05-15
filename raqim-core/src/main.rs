@@ -444,7 +444,7 @@ async fn main() {
 
                 // If cancelled is triggered, break the infinite loop.
                 _ = cancel_token.cancelled() => {
-                    println!("[NETWORK] TCP Ingress halted. Rejecting new connections. ")
+                    println!("[NETWORK] TCP Ingress halted. Rejecting new connections. ");
                     break;
                 }
 
