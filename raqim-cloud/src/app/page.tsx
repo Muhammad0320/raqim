@@ -4,6 +4,7 @@ import React from 'react';
 import styled from 'styled-components';
 import Navbar from '@/components/Navbar';
 import Hero from '@/components/Hero';
+import MemoryPhysics from '@/components/MemoryPhysics';
 
 const PageContainer = styled.main`
   min-height: 100vh;
@@ -28,6 +29,7 @@ export default function Home() {
     <PageContainer>
       <Navbar />
       <Hero />
+      <MemoryPhysics />
       <Footer>
         <p>&copy; {new Date().getFullYear()} Raqim Systems Inc. All rights reserved. Zero marketing fluff.</p>
       </Footer>
