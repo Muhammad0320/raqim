@@ -132,8 +132,8 @@ export default function Navbar() {
       <CenterSection>
         <NavLink href="/docs">Docs</NavLink>
         <NavLink href="#architecture">Architecture</NavLink>
-        <NavLink href="#benchmarks">Benchmarks</NavLink>
-        <NavLink href="#pricing">Pricing</NavLink>
+        <NavLink href="#toolchain">Toolchain</NavLink>
+        <NavLink href="#enterprise">Enterprise</NavLink>
       </CenterSection>
 
       <RightSection>
