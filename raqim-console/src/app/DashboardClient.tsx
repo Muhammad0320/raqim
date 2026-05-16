@@ -6,7 +6,7 @@ import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'rec
 import { useEffect, useRef } from 'react';
 import { DashboardCardsData } from '@/actions/dashboard';
 import { useHardwareVitals } from '../lib/hooks/useHardwareVitals';
-
+import { LiveSemanticStream } from '../components/LiveSemanticStream';
 const getAgentColor = (hex: string) => {
   let hash = 0;
   for (let i = 0; i < hex.length; i++) {
@@ -119,49 +119,8 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-0">
 
           {/* 2. Live Semantic Stream Table */}
-          <div className="col-span-2 bg-surface-container-lowest border border-outline-variant/15 flex flex-col overflow-hidden relative shadow-[0_10px_30px_rgba(0,0,0,0.5)]">
-            <div className="bg-surface-container-high px-6 py-3 flex-shrink-0 flex justify-between items-center border-b border-outline-variant/20">
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-on-surface-variant text-sm">data_array</span>
-                <span className="font-mono text-[11px] text-on-surface-variant uppercase tracking-[0.2em] font-bold">Live Semantic Stream</span>
-              </div>
-              <span className="bg-[#00f3ff]/10 text-[#00f3ff] border border-[#00f3ff]/30 px-2 py-0.5 rounded-sm font-mono text-[9px] uppercase tracking-widest flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#00f3ff] animate-pulse"></span> Buffered
-              </span>
-            </div>
-            
-            <div className="grid grid-cols-12 gap-4 px-6 py-2 bg-surface-container border-b border-outline-variant/10 font-mono text-[9px] uppercase tracking-widest text-outline">
-              <div className="col-span-2">TX_ID</div>
-              <div className="col-span-3">AGENT</div>
-              <div className="col-span-3">NAMESPACE</div>
-              <div className="col-span-4">PAYLOAD</div>
-            </div>
-
-            <div ref={scrollRef} className="flex-1 overflow-y-auto bg-[#0a0a0a] scroll-smooth pb-4">
-              {recentThoughts.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <span className="font-mono text-xs text-outline-variant uppercase tracking-widest animate-pulse">Awaiting semantic ingress...</span>
-                </div>
-              ) : (
-                recentThoughts.map((thought) => (
-                  <div key={thought.tx_id} className="grid grid-cols-12 gap-4 px-6 py-2 border-b border-outline-variant/5 hover:bg-surface-container-low transition-colors items-center font-mono text-xs group">
-                    <div className="col-span-2 text-outline-variant opacity-60 group-hover:opacity-100 transition-opacity">
-                      {thought.tx_id.toString().padStart(6, '0')}
-                    </div>
-                    <div className="col-span-3 flex items-center gap-2 truncate">
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getAgentColor(thought.agent_hex) }}></span>
-                      <span style={{ color: getAgentColor(thought.agent_hex) }}>{thought.agent_hex}</span>
-                    </div>
-                    <div className="col-span-3 text-tertiary truncate opacity-90">
-                      {thought.intent_path}
-                    </div>
-                    <div className="col-span-4 text-on-surface-variant truncate opacity-80">
-                      {thought.text}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+          <div className="col-span-2 min-h-0">
+            <LiveSemanticStream token={token} />
           </div>
 
           {/* 3. Sidebar: Hardware Vitals & Velocity Graph */}
