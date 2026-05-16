@@ -14,6 +14,7 @@ use dashmap::DashMap;
 use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
 use std::convert::Infallible;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_stream::wrappers::BroadcastStream;
 
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
@@ -890,6 +891,50 @@ pub async fn fetch_agent_timeline(
     nodes.sort_by(|a, b| a.tx_id.cmp(&b.tx_id));
 
     Ok(Json(nodes))
+}
+
+#[derive(Serialize)]
+pub struct DashboardCards {
+    pub global_transactions: u64,
+    pub active_agents: usize,
+    pub vault_capacity: usize,
+}
+
+pub async fn dashboard_cards_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Result<Json<DashboardCards>, StatusCode> {
+    // Vault capacity (Direct from lance)
+    let total_vec = state.lance.get_total_vector_count().await.unwrap_or(0);
+
+    // Global Transactions (Direct from the Atomic counter)
+    let highest_tx = state
+        .global_tx_counter
+        .load(std::sync::atomic::Ordering::SeqCst);
+
+    // Active agents (60s Rolling window)
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    // Iterate through the Dashmap
+    let active_count = state
+        .swarm_registry
+        .active_agents
+        .iter()
+        .filter(|entry| {
+            let is_recent = now.saturating_sub(entry.last_seen_ts) <= 60;
+            let is_not_jailed = entry.status != "Quarantined";
+            is_recent && is_not_jailed
+        })
+        .count();
+
+    Ok(Json(DashboardCards {
+        global_transactions: highest_tx,
+        active_agents: active_count,
+        vault_capacity: total_vec,
+    }))
 }
 
 // Route Builder
