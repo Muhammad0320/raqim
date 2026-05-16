@@ -955,6 +955,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/swarm/ingress", post(http_ingress_endpoint))
         .route("/v1/swarm/memory", get(semantic_search_endpoint))
         // UI endpoints
+        .route("/v1/dashboard/cards", get(dashboard_cards_endpoint))
         .route("/v1/swarm/live", get(sse_firehose_endpoint))
         .route("v1/time-travel/live", get(sse_phantom_endpoint))
         .route("/v1/vault/search", post(unified_vault_search))
