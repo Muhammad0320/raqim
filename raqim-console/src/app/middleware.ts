@@ -10,7 +10,7 @@ export function middleware(request: NextRequest) {
     if (pathname.startsWith("/_next") || pathname.startsWith("/api") || pathname === "/login"  ) {return NextResponse.next(); }
 
     // Check for cryptographic passport
-    const licenseCookie = request.cookie.get('raqim_license');
+    const licenseCookie = request.cookies.get('raqim_license');
 
     if (!licenseCookie) {
         return NextResponse.redirect(new URL("/login", request.url))
@@ -18,8 +18,8 @@ export function middleware(request: NextRequest) {
 
     try {
         // Destructure the JWT (headers.payload.signature)
-        const token_parts = licenseCookie.values.split(".")
-        if (token_parts.length() === 3) throw new Error("Invalidi JWT Morphology")
+        const token_parts = licenseCookie.value.split(".")
+        if (token_parts.length === 3) throw new Error("Invalidi JWT Morphology");
             
        // Decode payload safelyin edge runtime
        const paylaodBase64 = token_parts[1].replace(/-/g, "+").replace(/_/g, "/");
