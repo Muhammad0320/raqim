@@ -4,7 +4,7 @@ import { useSwarmStore } from '../lib/store/useSwarmStore';
 import { useSwarmStream } from '../lib/hooks/useSwarmStream';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { useEffect, useRef } from 'react';
-import { DashboardCardsData } from '../../actions/dashboard';
+import { DashboardCardsData } from '@/actions/dashboard';
 import { useHardwareVitals } from '../lib/hooks/useHardwareVitals';
 
 const getAgentColor = (hex: string) => {
@@ -92,7 +92,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
               <span className="material-symbols-outlined text-outline text-sm">speed</span>
             </div>
             <div className={`font-headline text-4xl font-black relative z-10 tracking-tight transition-colors duration-200 ${currentTps > 0 ? 'text-[#00f3ff] drop-shadow-[0_0_8px_rgba(0,243,255,0.4)]' : 'text-white'}`}>
-              0 <span className="text-sm text-outline-variant font-mono">TPS</span>
+              {currentTps} <span className="text-sm text-outline-variant font-mono">TPS</span>
             </div>
             <div className="font-mono text-[10px] text-[#00f3ff] mt-2 flex items-center gap-1.5 relative z-10 opacity-80">
               <span className="material-symbols-outlined text-[12px]">bolt</span> Real-time network throughput
