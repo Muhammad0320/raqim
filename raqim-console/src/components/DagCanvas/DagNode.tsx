@@ -1,5 +1,6 @@
 import { Handle, Position, NodeProps } from '@xyflow/react';
 import { UiThought } from '../../lib/store/useSwarmStore';
+import styled from 'styled-components';
 
 export interface TimelineNode {
     tx_id: number;
@@ -7,6 +8,95 @@ export interface TimelineNode {
     agent_status: string;
     payload_preview: string;
 }
+
+const NodeWrapper = styled.div<{ $isFuture: boolean; $glow: string; $borderCol: string }>`
+  background-color: #18181b;
+  border: 1px solid ${props => props.$borderCol};
+  padding: 12px;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 224px;
+  box-shadow: ${props => props.$glow};
+  transition: all 0.3s;
+  
+  ${props => props.$isFuture && `
+    opacity: 0.3;
+    filter: grayscale(100%);
+  `}
+`;
+
+const NodeHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #27272a;
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+`;
+
+const DisplayId = styled.span<{ $color: string }>`
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  color: ${props => props.$color};
+`;
+
+const IconSpan = styled.span<{ $color: string }>`
+  font-size: 14px;
+  color: ${props => props.$color};
+`;
+
+const PayloadPreview = styled.span`
+  font-family: monospace;
+  font-size: 12px;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const NodeFooter = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+`;
+
+const AgentStatus = styled.span`
+  font-family: monospace;
+  font-size: 10px;
+  color: #d4d4d8;
+  font-weight: bold;
+  background-color: rgba(39, 39, 42, 0.5);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(63, 63, 70, 0.5);
+`;
+
+const Timestamp = styled.span`
+  font-family: monospace;
+  font-size: 9px;
+  color: #52525b;
+`;
+
+const CustomHandle = styled(Handle)`
+  width: 6px;
+  height: 16px;
+  border-radius: 0;
+  background-color: #3f3f46;
+  border: 0;
+  
+  &.react-flow__handle-left {
+    left: -4px;
+  }
+  
+  &.react-flow__handle-right {
+    right: -4px;
+  }
+`;
 
 export function DagNode({ data }: NodeProps) {
   const thought = data.thought as UiThought;
@@ -35,33 +125,26 @@ export function DagNode({ data }: NodeProps) {
   }
 
   // The physics of time
-  const opacity = isFuture ? 'opacity-30 grayscale' : 'opacity-100';
   const glow = isActive ? `0 0 20px ${statusColor}` : 'none';
   const borderCol = isActive ? statusColor : (isFuture ? '#27272a' : '#3f3f46');
   
   return (
-    <div 
-      className={`bg-zinc-900 border p-3 rounded-md flex flex-col gap-1.5 w-56 ${opacity} transition-all duration-300`}
-      style={{ 
-        borderColor: borderCol,
-        boxShadow: glow 
-      }}
-    >
-      <Handle type="target" position={Position.Left} className="w-1.5 h-4 rounded-none bg-zinc-700 border-0 !left-[-4px]" />
+    <NodeWrapper $isFuture={isFuture} $glow={glow} $borderCol={borderCol}>
+      <CustomHandle type="target" position={Position.Left} />
       
-      <div className="flex justify-between items-center border-b border-zinc-800 pb-1.5 mb-1">
-          <span className="font-mono text-[10px] font-bold tracking-widest" style={{ color: statusColor }}>{displayId}</span>
-          <span className="material-symbols-outlined text-[14px]" style={{ color: statusColor }}>{icon}</span>
-      </div>
+      <NodeHeader>
+          <DisplayId $color={statusColor}>{displayId}</DisplayId>
+          <IconSpan className="material-symbols-outlined" $color={statusColor}>{icon}</IconSpan>
+      </NodeHeader>
       
-      <span className="font-mono text-xs text-white truncate">{nodeData.payload_preview}</span>
+      <PayloadPreview>{nodeData.payload_preview}</PayloadPreview>
       
-      <div className="flex justify-between items-center mt-1">
-         <span className="font-mono text-[10px] text-zinc-300 font-bold bg-zinc-800/50 px-1.5 py-0.5 rounded border border-zinc-700/50">{nodeData.agent_status}</span>
-         <span className="font-mono text-[9px] text-zinc-600">{nodeData.timestamp}</span>
-      </div>
+      <NodeFooter>
+         <AgentStatus>{nodeData.agent_status}</AgentStatus>
+         <Timestamp>{nodeData.timestamp}</Timestamp>
+      </NodeFooter>
       
-      <Handle type="source" position={Position.Right} className="w-1.5 h-4 rounded-none bg-zinc-700 border-0 !right-[-4px]" />
-    </div>
+      <CustomHandle type="source" position={Position.Right} />
+    </NodeWrapper>
   );
 }
