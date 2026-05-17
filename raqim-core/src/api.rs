@@ -469,6 +469,7 @@ pub async fn agent_alias_endpoint(
 pub struct UnifiedSearchQuery {
     pub query: String,
     pub namespace: Option<String>,
+    pub include_wal: Option<bool>,
 }
 
 pub async fn unified_vault_search(
@@ -481,12 +482,17 @@ pub async fn unified_vault_search(
         .lance
         .semantic_search(&params.query, params.namespace.as_deref(), 50);
     let wal_future = async {
-        state.wal.lexical_scan(
-            &params.query,
-            params.namespace.as_deref(),
-            50,
-            &state.config.wal_path,
-        )
+        // Only hit the disk if the user explicitely requested the WAL inclusion
+        if params.include_wal.unwrap_or(true) {
+            state.wal.lexical_scan(
+                &params.query,
+                params.namespace.as_deref(),
+                50,
+                &state.config.wal_path,
+            )
+        } else {
+            Ok(vec![])
+        }
     };
 
     let (lance_res, wal_res) = tokio::join!(lance_future, wal_future);
