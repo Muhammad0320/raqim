@@ -141,7 +141,8 @@ impl AegisGateKeeper {
                     self.trigger_quarantine(
                         agent_hex,
                         intent_path,
-                        "AEGIS Blocked Namespace Violation",
+                        "NAMESPACE_BREACH",
+                        "Attempted execution via unauthorized channel",
                     );
                     return false;
                 }
@@ -158,7 +159,8 @@ impl AegisGateKeeper {
             self.trigger_quarantine(
                 agent_hex,
                 intent_path,
-                "AEGIS Unauthorized Capability Access",
+                "NAMESPACE_BREACH",
+                "Attempted execution via unauthorized channel",
             );
             return false;
         }
@@ -168,14 +170,14 @@ impl AegisGateKeeper {
     }
 
     /// Locks down the agent globally across the OS
-    pub fn trigger_quarantine(&self, agent_hex: &str, target: &str, reason: &str) {
+    pub fn trigger_quarantine(&self, agent_hex: &str, target: &str, v_type: &str, reason: &str) {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
         let record = QuarantineRecord {
             agent_hex: agent_hex.to_string(),
-            violation_type: "AEGIS_INTERDICTION".to_string(),
+            violation_type: v_type.to_string(),
             attemped_path: target.to_string(),
             payload_preview: reason.to_string(),
             timestamp,
@@ -189,7 +191,7 @@ impl AegisGateKeeper {
         let _ = self.tx.send(SystemEvent::AegisInterdiction {
             agent_id: agent_hex.to_string(),
             attempted_path: target.to_string(),
-            rule_broken: "Strict Enforcement".to_string(),
+            rule_broken: v_type.to_string(),
             payload: reason.to_string(),
         });
 
@@ -217,6 +219,7 @@ impl AegisGateKeeper {
                     self.trigger_quarantine(
                         sender_hex,
                         target_capability,
+                        "NAMESPACE_BREACH",
                         "A2A Blocked Namespace Violation",
                     );
                     return false;
@@ -235,6 +238,7 @@ impl AegisGateKeeper {
         self.trigger_quarantine(
             sender_hex,
             target_capability,
+            "NAMESPACE_BREACH",
             "A2A Unauthorized Capability Access",
         );
         false
