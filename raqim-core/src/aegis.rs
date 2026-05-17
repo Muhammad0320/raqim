@@ -271,7 +271,12 @@ impl AegisGateKeeper {
         }
 
         // If the key is missing, invalid, or signature is spoofed quarantine them.
-        self.trigger_quarantine(agent_hex, "Global", "Cryptographic Spoofing detected");
+        self.trigger_quarantine(
+            agent_hex,
+            "Global",
+            "CRYPTO_SPOOF",
+            "Invalid Ed25519 Signature.",
+        );
         false
     }
 }

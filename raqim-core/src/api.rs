@@ -574,7 +574,7 @@ async fn lift_qurantine_and_resurrect(
         .is_some()
     {
         // Also update the Ram process table so the Topology page knows it's alive again.
-        // TODO: Update.
+        // TODO: Update the  namespace
         state
             .swarm_registry
             .touch_agent(&payload.agent_hex, "Unknown", "Rebooting", "Unknown");
@@ -935,6 +935,14 @@ pub async fn dashboard_cards_endpoint(
         active_agents: active_count,
         vault_capacity: total_vec,
     }))
+}
+
+#[derive(Serialize)]
+pub struct AegisMetricsData {
+    pub total_quarantined: usize,
+    pub recent_interdictions: usize,
+    pub signarure_spoofs: usize,
+    pub namespace_breaches: usize,
 }
 
 // Route Builder
