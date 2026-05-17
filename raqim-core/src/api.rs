@@ -454,12 +454,6 @@ pub async fn sse_phantom_endpoint(
     Sse::new(stream).keep_alive(KeepAlive::new())
 }
 
-#[derive(Deserialize)]
-pub struct UnifiedSearchQuery {
-    pub query: String,
-    pub namespace: Option<String>,
-}
-
 pub async fn agent_alias_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
@@ -469,6 +463,12 @@ pub async fn agent_alias_endpoint(
         map.insert(entry.key().clone().to_string(), entry.value().alias.clone());
     }
     axum::Json(map)
+}
+
+#[derive(Deserialize)]
+pub struct UnifiedSearchQuery {
+    pub query: String,
+    pub namespace: Option<String>,
 }
 
 pub async fn unified_vault_search(
