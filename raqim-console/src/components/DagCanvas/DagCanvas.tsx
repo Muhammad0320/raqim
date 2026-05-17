@@ -4,6 +4,27 @@ import { ReactFlow, Background, Controls, Node, Edge, BackgroundVariant, useNode
 import '@xyflow/react/dist/style.css';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { DagNode } from './DagNode';
+import styled from 'styled-components';
+
+const CanvasWrapper = styled.div`
+  width: 100%;
+  height: 100%;
+
+  .react-flow__controls {
+    background-color: #18181b;
+    border: 1px solid #27272a;
+    fill: #a1a1aa;
+    
+    button {
+      border-bottom: 1px solid #27272a;
+      background: transparent;
+      
+      &:hover {
+        background: #27272a;
+      }
+    }
+  }
+`;
 
 const nodeTypes = {
   thought: DagNode,
@@ -74,7 +95,7 @@ export function DagCanvas() {
   }, [thoughts, thoughtOrder, activeTxId, setNodes, setEdges]);
 
   return (
-    <div className="w-full h-full">
+    <CanvasWrapper>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -84,8 +105,8 @@ export function DagCanvas() {
         fitView
       >
         <Background gap={24} size={1} color="#27272a" variant={BackgroundVariant.Dots} />
-        <Controls className="bg-zinc-900 border-zinc-800 fill-zinc-400" showInteractive={false} />
+        <Controls showInteractive={false} />
       </ReactFlow>
-    </div>
+    </CanvasWrapper>
   );
 }
