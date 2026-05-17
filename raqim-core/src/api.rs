@@ -945,6 +945,44 @@ pub struct AegisMetricsData {
     pub namespace_breaches: usize,
 }
 
+pub async fn aegis_metics_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Result<Json<AegisMetricsData>, StatusCode> {
+    let mut metrics = AegisMetricsData {
+        total_quarantined: 0,
+        recent_interdictions: 0,
+        signarure_spoofs: 0,
+        namespace_breaches: 0,
+    };
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let ten_minutes_ago = now.saturating_sub(600);
+
+    // Safely iterate the dashmap shards.
+    for entry in state.aegis.quarantine_blocklist.iter() {
+        metrics.total_quarantined += 1;
+        let record = entry.value();
+
+        // Check if it happens 10 minutes ago
+        if record.timestamp >= ten_minutes_ago {
+            metrics.recent_interdictions += 1;
+        }
+
+        // Tally strict violation types
+        match record.violation_type.as_str() {
+            "CRYPTO_SPOOF" => metrics.signarure_spoofs += 1,
+            "NAMESPACE_BREACH" => metrics.namespace_breaches += 1,
+            _ => {}
+        }
+    }
+
+    Ok(Json(metrics))
+}
+
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
@@ -968,5 +1006,6 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("v1/time-travel/live", get(sse_phantom_endpoint))
         .route("/v1/vault/search", post(unified_vault_search))
         .route("/v1/vault/telemetry", get(vault_telemetry_endpoint))
+        .route("/v1/aegis/metrics", get(aegis_metics_endpoint))
         .with_state(state)
 }
