@@ -17,6 +17,8 @@ use raqim_core::state::SwarmState;
 use raqim_core::telemetry::TelemetryEngine;
 use raqim_core::utils::parse_agent_id;
 use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
+use rkyv::CheckBytes;
+use rkyv::validation::validators::DefaultValidator;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::AtomicU64;
@@ -455,6 +457,7 @@ async fn main() {
                         Err(_) => continue
                     };
 
+
                 println!("External Agent connected from: {}", addr);
 
                 let task_telemetry = telemetry.clone();
@@ -487,6 +490,32 @@ async fn main() {
                     let mut payload_buf = vec![0u8; payload_len];
                     if socket.read_exact(&mut payload_buf).await.is_err() {
                         return;
+                    }
+
+                                    // Validate the verifier
+                let mut validator = DefaultValidator::new(&payload_buf);
+
+                // Mathematically verify the mem layout BEFORE casting
+
+                    if let Ok(archived_ingress) = rkyv::check_bytes::<<IngressEnvelope as rkyv::Archive>::Archived>(&payload_buf, &mut validator) {
+
+                        let path_intent = archived_ingress.intent_path.as_str();
+                        let state_slice = archived_ingress.state_bytes.as_slice();
+
+                        // verify the inner state payload
+                        let mut state_validator = DefaultValidator::new(state_slice);
+
+                        if let Ok(archived_state) = rkyv::check_bytes::<<AgentState as rkyv::Archive>::Archived>(state_slice, &mut state_validator) {
+
+
+
+                        } else {
+                            eprintln!("[SECURITY] Malformed AgentState memory layout. Packet dropped. ");
+                        }
+
+
+                    } else {
+                        eprintln!("[SECURITY] Malformed IngressEnvelope. Possible Fuzzing Attack. Drropped ");
                     }
 
                     // Zero copy payload read
