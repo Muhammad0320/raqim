@@ -442,146 +442,148 @@ async fn main() {
     loop {
         tokio::select! {
 
-                // If cancelled is triggered, break the infinite loop.
-                _ = cancel_token.cancelled() => {
-                    println!("[NETWORK] TCP Ingress halted. Rejecting new connections. ");
-                    break;
-                }
+                    // If cancelled is triggered, break the infinite loop.
+                    _ = cancel_token.cancelled() => {
+                        println!("[NETWORK] TCP Ingress halted. Rejecting new connections. ");
+                        break;
+                    }
 
-            // Otherwise, Accept connections normally.
-            accpet_res = listener.accept() = {
+                // Otherwise, Accept connections normally.
+                accpet_res = listener.accept() = {
 
-                let (mut socket, addr) = match accpet_res {
-                    Ok(res) => res,
-                    Err(_) => continue
-                };
+                    let (mut socket, addr) = match accpet_res {
+                        Ok(res) => res,
+                        Err(_) => continue
+                    };
 
-            println!("External Agent connected from: {}", addr);
+                println!("External Agent connected from: {}", addr);
 
-            let task_telemetry = telemetry.clone();
-            let task_brain = brain.clone();
-            let task_axon = axon.clone();
-            let task_cortex_tx = cortex_tx.clone();
-            let task_wal = wal.clone();
-            let global_publisher = global_net.clone();
-            let task_tx_couter = tx_counter.clone();
-            let task_event_tx = event_tx.clone();
-            let task_aegis = aegis.clone();
-            let task_ui_tx = ui_tx.clone();
-            let task_registry = registry.clone();
+                let task_telemetry = telemetry.clone();
+                let task_brain = brain.clone();
+                let task_axon = axon.clone();
+                let task_cortex_tx = cortex_tx.clone();
+                let task_wal = wal.clone();
+                let global_publisher = global_net.clone();
+                let task_tx_couter = tx_counter.clone();
+                let task_event_tx = event_tx.clone();
+                let task_aegis = aegis.clone();
+                let task_ui_tx = ui_tx.clone();
+                let task_registry = registry.clone();
 
-            // Spawn into the joinset
-             tcp_workers.spawn(async move {
-                //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
-                let mut len_buf = [0u8; 4];
-                if socket.read_exact(&mut len_buf).await.is_err() {
-                    return;
-                }
-                let payload_len = u32::from_le_bytes(len_buf) as usize;
-
-                // Prevent malicious massive memory allocation attacks ( Max 1mb per thought )
-                if payload_len > 1024 * 1024 {
-                    return;
-                }
-
-                // Read the exact payload bytes
-                let mut payload_buf = vec![0u8; payload_len];
-                if socket.read_exact(&mut payload_buf).await.is_err() {
-                    return;
-                }
-
-                // Zero copy payload read
-                let archived_ingress = unsafe {
-                    rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&payload_buf)
-                };
-
-                let path_intent = archived_ingress.intent_path.as_str();
-
-                // ZERO-COPY SLICE EXTRACTION
-                let state_slice = archived_ingress.state_bytes.as_slice();
-
-                // ZERO COPY CAST
-                let archived_state = unsafe {
-                    rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(&state_slice)
-                };
-
-                let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
-                let text = archived_state.text.as_str().to_string();
-                // 1. Checking aegis first before doing any expensive math or hitting the wal.
-                if !task_aegis.enforce_aegis_policy(&agent_hex, path_intent) {
-                    eprintln!(
-                        "[AEGIS] Dropped Unauthorized TCP packets from {}",
-                        &agent_hex
-                    );
-                    return;
-                }
-
-                // TRUE CRYPTOGRAPHIC VERIFIICATION (using the exact slice)
-                let mut sig_bytes = [0u8; 64];
-                sig_bytes.copy_from_slice(archived_ingress.signature.as_slice());
-
-                if !task_aegis.verify_agent_signature(&agent_hex, state_slice, &sig_bytes) {
-                    eprintln!(" [SECURITY] Invalid Ed25519 signature. Dropping TCP packet.");
-                    return;
-                }
-
-                let mut alias = "Unknown".to_string();
-                if path_intent == "/system/handshake" {
-                    if text.starts_with("ALIAS=") {
-                        let alias = text.replace("ALIAS=", "").trim().to_string();
-                        // We do not execute a cascade for handshake. We just register and drop
-                        task_registry.touch_agent(&agent_hex, &path_intent, "Connected", &alias);
-
+                // Spawn into the joinset
+                 tcp_workers.spawn(async move {
+                    //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
+                    let mut len_buf = [0u8; 4];
+                    if socket.read_exact(&mut len_buf).await.is_err() {
                         return;
                     }
-                } else {
-                    // O(1) Ram lookup and keep the alias active for normal thought
-                    if let Some(agent_proc) = task_registry.active_agents.get(&agent_hex) {
-                        alias = agent_proc.alias.clone();
+                    let payload_len = u32::from_le_bytes(len_buf) as usize;
+
+                    // Prevent malicious massive memory allocation attacks ( Max 1mb per thought )
+                    if payload_len > 1024 * 1024 {
+                        return;
                     }
-                }
 
-                // --- The Raqim Cascade ---
-                let res = execute_raqim_cascade(
-                    &archived_state,
-                    task_brain,
-                    task_axon,
-                    task_wal,
-                    task_cortex_tx,
-                    global_publisher,
-                    task_tx_couter,
-                    task_event_tx,
-                    Vec::new(),
-                    Vec::new(),
-                    task_telemetry,
-                )
-                .await;
+                    // Read the exact payload bytes
+                    let mut payload_buf = vec![0u8; payload_len];
+                    if socket.read_exact(&mut payload_buf).await.is_err() {
+                        return;
+                    }
 
-                // Update RAM process Table (O(1) nanoseconds lock)
-                task_registry.touch_agent(
-                    agent_hex.clone().as_str(),
-                    archived_ingress.intent_path.as_str(),
-                    "Active",
-                    &alias,
-                );
+                    // Zero copy payload read
+                    let archived_ingress = unsafe {
+                        rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&payload_buf)
+                    };
 
-                let tx_id = match res {
-                    Ok(id) => id,
-                    Err(_) => return,
-                };
+                    let path_intent = archived_ingress.intent_path.as_str();
 
-                let ui_payload = UiEvent::ThoughtCommited {
-                    agent_hex: agent_hex.clone(),
-                    intent_path: path_intent.to_string(),
-                    tx_id,
-                    text,
-                };
+                    // ZERO-COPY SLICE EXTRACTION
+                    let state_slice = archived_ingress.state_bytes.as_slice();
 
-                let _ = task_ui_tx.send(ui_payload);
+                    // ZERO COPY CAST
+                    let archived_state = unsafe {
+                        rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(&state_slice)
+                    };
 
-                println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
-            });
-        },
+                    let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
+                    let text = archived_state.text.as_str().to_string();
+                    // 1. Checking aegis first before doing any expensive math or hitting the wal.
+                    if !task_aegis.enforce_aegis_policy(&agent_hex, path_intent) {
+                        eprintln!(
+                            "[AEGIS] Dropped Unauthorized TCP packets from {}",
+                            &agent_hex
+                        );
+                        return;
+                    }
+
+                    // TRUE CRYPTOGRAPHIC VERIFIICATION (using the exact slice)
+                    let mut sig_bytes = [0u8; 64];
+                    sig_bytes.copy_from_slice(archived_ingress.signature.as_slice());
+
+                    if !task_aegis.verify_agent_signature(&agent_hex, state_slice, &sig_bytes) {
+                        eprintln!(" [SECURITY] Invalid Ed25519 signature. Dropping TCP packet.");
+                        return;
+                    }
+
+                    let mut alias = "Unknown".to_string();
+                    if path_intent == "/system/handshake" {
+                        if text.starts_with("ALIAS=") {
+                            let alias = text.replace("ALIAS=", "").trim().to_string();
+                            // We do not execute a cascade for handshake. We just register and drop
+                            task_registry.touch_agent(&agent_hex, &path_intent, "Connected", &alias);
+
+                            return;
+                        }
+                    } else {
+                        // O(1) Ram lookup and keep the alias active for normal thought
+                        if let Some(agent_proc) = task_registry.active_agents.get(&agent_hex) {
+                            alias = agent_proc.alias.clone();
+                        }
+                    }
+
+                    // --- The Raqim Cascade ---
+                    let res = execute_raqim_cascade(
+                        &archived_state,
+                        task_brain,
+                        task_axon,
+                        task_wal,
+                        task_cortex_tx,
+                        global_publisher,
+                        task_tx_couter,
+                        task_event_tx,
+                        Vec::new(),
+                        Vec::new(),
+                        task_telemetry,
+                    )
+                    .await;
+
+                    // Update RAM process Table (O(1) nanoseconds lock)
+                    task_registry.touch_agent(
+                        agent_hex.clone().as_str(),
+                        archived_ingress.intent_path.as_str(),
+                        "Active",
+                        &alias,
+                    );
+
+                    let tx_id = match res {
+                        Ok(id) => id,
+                        Err(_) => return,
+                    };
+
+                    let ui_payload = UiEvent::ThoughtCommited {
+                        agent_hex: agent_hex.clone(),
+                        intent_path: path_intent.to_string(),
+                        tx_id,
+                        text,
+                    };
+
+                    let _ = task_ui_tx.send(ui_payload);
+
+                    println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
+
+                });
+
+            }
         }
     }
 
