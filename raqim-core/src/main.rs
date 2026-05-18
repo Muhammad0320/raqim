@@ -448,7 +448,7 @@ async fn main() {
                     }
 
                 // Otherwise, Accept connections normally.
-                accpet_res = listener.accept() = {
+                accpet_res = listener.accept() => {
 
                     let (mut socket, addr) = match accpet_res {
                         Ok(res) => res,
