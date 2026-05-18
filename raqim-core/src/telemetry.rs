@@ -142,8 +142,9 @@ impl TelemetryEngine {
                 match res {
                     Ok(r) if r.status().is_success() => {
                         if let Ok(json_res) = r.json::<serde_json::Value>().await {
-                            if let Some(new_jwt) =
-                                json_res.get("new_license").and_then(|v| v.as_str())
+                            if let Some(new_jwt) = json_res
+                                .get("new_license")
+                                .and_then(|v: &serde_json::Value| v.as_str())
                             {
                                 println!("[SYSTEM] 24h Heartbeat: Rolling license renewed.");
 

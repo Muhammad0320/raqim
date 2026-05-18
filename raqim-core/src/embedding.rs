@@ -88,7 +88,7 @@ impl EmbeddingProvider for OpenAIProvider {
             .ok_or_else(|| anyhow::anyhow!("Invalid OpenAI Response"))?;
         let floats: Vec<f32> = embedding_array
             .iter()
-            .map(|v| v.as_f64().unwrap() as f32)
+            .map(|v: &serde_json::Value| v.as_f64().unwrap() as f32)
             .collect();
 
         Ok(floats)
