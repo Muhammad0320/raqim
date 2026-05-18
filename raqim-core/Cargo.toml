@@ -14,7 +14,7 @@ iceoryx2 = "0.8.1"
 loro = "1.0"
 
 # The Nucleus Async Runtime
-tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
+tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "signal"] }
 
 blake3 =  "1.5"
 
