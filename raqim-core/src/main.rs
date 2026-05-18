@@ -507,33 +507,7 @@ async fn main() {
 
                         if let Ok(archived_state) = rkyv::check_bytes::<<AgentState as rkyv::Archive>::Archived>(state_slice, &mut state_validator) {
 
-
-
-                        } else {
-                            eprintln!("[SECURITY] Malformed AgentState memory layout. Packet dropped. ");
-                        }
-
-
-                    } else {
-                        eprintln!("[SECURITY] Malformed IngressEnvelope. Possible Fuzzing Attack. Drropped ");
-                    }
-
-                    // Zero copy payload read
-                    let archived_ingress = unsafe {
-                        rkyv::access_unchecked::<<IngressEnvelope as rkyv::Archive>::Archived>(&payload_buf)
-                    };
-
-                    let path_intent = archived_ingress.intent_path.as_str();
-
-                    // ZERO-COPY SLICE EXTRACTION
-                    let state_slice = archived_ingress.state_bytes.as_slice();
-
-                    // ZERO COPY CAST
-                    let archived_state = unsafe {
-                        rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(&state_slice)
-                    };
-
-                    let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
+                                             let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
                     let text = archived_state.text.as_str().to_string();
                     // 1. Checking aegis first before doing any expensive math or hitting the wal.
                     if !task_aegis.enforce_aegis_policy(&agent_hex, path_intent) {
@@ -608,6 +582,28 @@ async fn main() {
                     let _ = task_ui_tx.send(ui_payload);
 
                     println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
+
+
+                        } else {
+                            eprintln!("[SECURITY] Malformed AgentState memory layout. Packet dropped. ");
+                        }
+
+
+                    } else {
+                        eprintln!("[SECURITY] Malformed IngressEnvelope. Possible Fuzzing Attack. Drropped ");
+                    }
+
+
+                    let path_intent = archived_ingress.intent_path.as_str();
+
+                    // ZERO-COPY SLICE EXTRACTION
+                    let state_slice = archived_ingress.state_bytes.as_slice();
+
+                    // ZERO COPY CAST
+                    let archived_state = unsafe {
+                        rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(&state_slice)
+                    };
+
 
                 });
 
