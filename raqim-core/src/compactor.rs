@@ -141,12 +141,12 @@ impl WalCompactor {
 
     async fn trigger_safe_compaction(&self) {
         // Ask the WAL engine the physically rotate the file and give us the archived filename
-        let (reply_tx, reply_rx) = oneshot::channel();
+        let (reply_tx, reply_rx) = oneshot::channel::<String>();
 
         // Fire the command to io_uring thread
-        if self.cmd_tx.send(WalCommand::Rotate(reply_tx)).await.is_ok() {
+        if self.cmd_tx.send(WalCommand::Rotate(reply_tx)).is_ok() {
             // Wait for the WAL to confirm it has released the file descriptor
-            if let Ok(archived_filename) = reply_tx.await {
+            if let Ok(archived_filename) = reply_rx.await {
                 println!(
                     "[COMPACTOR] WAL successfully rotated to {}. Compacting to lanceDB...",
                     archived_filename
@@ -159,7 +159,11 @@ impl WalCompactor {
                     "[COMPACTOR] Segment {} assimilated and erased. ",
                     archived_filename
                 );
+            } else {
+                eprintln!("[COMPACTOR FATAL] WAL Engine dropped the Rotation Channel ");
             }
+        } else {
+            eprintln!("[COMPACTOR FATAL] Failed to send Rotate command to WalEngine ");
         }
     }
 }
