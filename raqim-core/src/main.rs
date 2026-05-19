@@ -498,7 +498,7 @@ async fn main() {
                         eprintln!("[AEGIS] TCP Dropped: Malformed Memory layout (IngressEnvelope): {}", e);
                         return;
                     }
-                }
+                };
 
 
                         let path_intent = archived_ingress.intent_path.as_str();
@@ -511,11 +511,9 @@ async fn main() {
                         eprintln!("[AEGIS] TCP Dropped: Malformed Memory layout (AgentState): {} ", e);
                         return;
                     }
-                }
+                };
 
                         // verify the inner state payload
-                        let mut state_validator = DefaultValidator::new(state_slice);
-
 
                     let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
                     let text = archived_state.text.as_str().to_string();
