@@ -1,10 +1,8 @@
 use std::time::Instant;
 
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::SigningKey;
 use raqim_core::AgentState;
 use tokio::{io::AsyncWriteExt, net::TcpStream};
-
-use tokio::io::AsyncWriteExt;
 
 #[tokio::main]
 async fn main() {
