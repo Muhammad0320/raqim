@@ -500,9 +500,8 @@ async fn main() {
                     }
                 };
 
-
-                        let path_intent = archived_ingress.intent_path.as_str();
-                        let state_slice = archived_ingress.state_bytes.as_slice();
+                let path_intent = archived_ingress.intent_path.as_str();
+                let state_slice = archived_ingress.state_bytes.as_slice();
 
 
                 let archived_state = match rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(&state_slice) {

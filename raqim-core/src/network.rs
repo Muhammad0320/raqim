@@ -100,9 +100,19 @@ impl GlobalNetworkBridge {
                 let payload_bytes = sample.payload().to_bytes();
 
                 // 2. We cast pointer directly over ZENOH network buffer!
-                let archived_log = unsafe {
-                    rkyv::access_unchecked::<<OpLog as Archive>::Archived>(&payload_bytes)
-                };
+                let archived_log =
+                    match rkyv::access::<<OpLog as rkyv::Archive>::Archived, rkyv::rancor::Error>(
+                        &payload_bytes,
+                    ) {
+                        Ok(valid_archive) => valid_archive,
+                        Err(e) => {
+                            eprintln!(
+                                "[AEGIS] TCP  Dropped. Malformed memory layout (OpLog): {}",
+                                e
+                            );
+                            return;
+                        }
+                    };
 
                 // Cryptographic verification on Raw pounter
                 if axon.verify_foreign_thoughts(archived_log) {
