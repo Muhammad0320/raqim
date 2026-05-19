@@ -1,3 +1,4 @@
+use md5::{Digest, Md5};
 use std::time::Instant;
 
 use ed25519_dalek::{Signer, SigningKey};
@@ -12,15 +13,25 @@ async fn main() {
     let concurrency = 32;
     let rounds_per_thread = total_rounds / concurrency;
 
-    // The key
-    let secret_key_bytes = [0u8; 32];
-    let signing_key = SigningKey::from_bytes(&secret_key_bytes);
-    let agent_hex = "".to_string();
+    // DETERMINISTIC KEY GENERATION
+    // A fixed 32-bytes seed so the keys never change bet
+    let secret_seed = [42u8; 32];
+    let signing_key = SigningKey::from_bytes(&secret_seed);
+    let verifying_key = signing_key.verifying_key();
+    let pub_key_bytes = verifying_key.to_bytes();
+
+    // Derive agent_hex from public key
+    let mut hasher = Md5::new();
+    hasher.update(self.pub_key_bytes);
+    let agent_id: [u8; 16] = hasher.finalize().into();
+
+    let agent_hex = hex::encode(agent_id);
+
+    println!("[SEIGE] DETERMINISTIC Agent Hex: {}", agent_hex);
+    println!("[SIEGE] Public Key Hex: {}", hex::encode(pub_key_bytes));
 
     // Forge the Magazine in RAM
     let mut magazine: Vec<Vec<u8>> = Vec::with_capacity(total_rounds);
-
-    let agent_id = [0u8; 16];
 
     for i in 0..total_rounds {
         // Prebuild the exact AgenttState struct
