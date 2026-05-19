@@ -4,7 +4,7 @@ use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
-use md5::Md5;
+use md5::{Digest, Md5};
 use raqim_core::api::WsMessage;
 use serde_json::{Value, json};
 use std::fs;
