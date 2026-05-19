@@ -1,5 +1,4 @@
 use crate::{OpLog, SystemEvent, lancedb_store::LanceEngine, nucleus::WalCommand};
-use futures::{SinkExt, channel::mpsc};
 use rkyv::Archive;
 use std::{
     fs::{self, File},
@@ -7,7 +6,7 @@ use std::{
     sync::Arc,
 };
 use tokio::{
-    sync::{broadcast::Sender, oneshot},
+    sync::{broadcast::Sender, mpsc, oneshot},
     time::{Duration, interval},
 };
 

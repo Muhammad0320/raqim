@@ -119,7 +119,7 @@ impl WalEngine {
 
                             // Generate archived filename based on unix timestamp
                             let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
-                            let archived_name = format!("{fp_clone}_{timestamp}.dat");
+                            let archived_name = format!("{fp_clone}_{timestamp}.wal");
 
                             // Rename the physical file
                             std::fs::rename(&fp_clone, &archived_name).unwrap();
