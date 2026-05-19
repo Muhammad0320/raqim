@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # The Zero-copy Data plane
-rkyv = { version = "0.8.15", features = ["validation"] }
+rkyv = { version = "0.8.15" }
 
 # The shared memory substrate
 iceoryx2 = "0.8.1"

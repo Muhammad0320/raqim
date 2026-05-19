@@ -594,15 +594,6 @@ async fn main() {
                     }
 
 
-                    let path_intent = archived_ingress.intent_path.as_str();
-
-                    // ZERO-COPY SLICE EXTRACTION
-                    let state_slice = archived_ingress.state_bytes.as_slice();
-
-                    // ZERO COPY CAST
-                    let archived_state = unsafe {
-                        rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(&state_slice)
-                    };
 
 
                 });
