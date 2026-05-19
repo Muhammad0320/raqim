@@ -17,8 +17,7 @@ use raqim_core::state::SwarmState;
 use raqim_core::telemetry::TelemetryEngine;
 use raqim_core::utils::parse_agent_id;
 use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
-use rkyv::CheckBytes;
-use rkyv::validation::validators::DefaultValidator;
+
 use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::AtomicU64;
@@ -492,22 +491,33 @@ async fn main() {
                         return;
                     }
 
-                                    // Validate the verifier
-                let mut validator = DefaultValidator::new(&payload_buf);
 
-                // Mathematically verify the mem layout BEFORE casting
+                let archived_ingress = match rkyv::access::<<IngressEnvelope as rkyv::Archive>::Archived, rkyv::rancor::Error>(&payload_buf) {
+                    Ok(valid_archived) => valid_archived,
+                    Err(e) => {
+                        eprintln!("[AEGIS] TCP Dropped: Malformed Memory layout (IngressEnvelope): {}", e);
+                        return;
+                    }
+                }
 
-                    if let Ok(archived_ingress) = rkyv::check_bytes::<<IngressEnvelope as rkyv::Archive>::Archived>(&payload_buf, &mut validator) {
 
                         let path_intent = archived_ingress.intent_path.as_str();
                         let state_slice = archived_ingress.state_bytes.as_slice();
 
+
+                let archived_state = match rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(&state_slice) {
+                    Ok(valid_state) => valid_state,
+                    Err(e) => {
+                        eprintln!("[AEGIS] TCP Dropped: Malformed Memory layout (AgentState): {} ", e);
+                        return;
+                    }
+                }
+
                         // verify the inner state payload
                         let mut state_validator = DefaultValidator::new(state_slice);
 
-                        if let Ok(archived_state) = rkyv::check_bytes::<<AgentState as rkyv::Archive>::Archived>(state_slice, &mut state_validator) {
 
-                                             let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
+                    let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
                     let text = archived_state.text.as_str().to_string();
                     // 1. Checking aegis first before doing any expensive math or hitting the wal.
                     if !task_aegis.enforce_aegis_policy(&agent_hex, path_intent) {
@@ -583,15 +593,6 @@ async fn main() {
 
                     println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
 
-
-                        } else {
-                            eprintln!("[SECURITY] Malformed AgentState memory layout. Packet dropped. ");
-                        }
-
-
-                    } else {
-                        eprintln!("[SECURITY] Malformed IngressEnvelope. Possible Fuzzing Attack. Drropped ");
-                    }
 
 
 
