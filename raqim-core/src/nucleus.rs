@@ -11,14 +11,20 @@ use std::{
     io::Read,
     sync::{Arc, RwLock},
     thread::{self, JoinHandle},
+    time::SystemTime,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_uring::fs::OpenOptions;
 
 pub struct WalEngine {
     sender: mpsc::Sender<OpLog>,
+    cmd_sender: mpsc::Sender<WalCommand>,
     // The O(1) INDEX: Maps TxID -> Physical byte offset in the WAL.
     pub index: Arc<RwLock<BTreeMap<u64, u64>>>,
+}
+
+pub enum WalCommand {
+    Rotate(oneshot::Sender<String>),
 }
 
 impl WalEngine {
@@ -28,14 +34,17 @@ impl WalEngine {
         // Bounded channel to prevent OOM crashes
         let (tx, mut rx) = mpsc::channel::<OpLog>(100_000);
 
+        let (cmd_tx, cmd_rx) = mpsc::channel::<WalCommand>(10);
+
         let index = Arc::new(RwLock::new(BTreeMap::new()));
         let index_clone = index.clone();
+        let fp_clone = file_path.clone();
 
         // 1. We spawn a physical OS thread entirely dedicated to the Hard Drive
         let handle = thread::spawn(move || {
             // 2. We boot the io_uring runtime inside this specific thread
             tokio_uring::start(async move {
-                let file = OpenOptions::new()
+                let mut file = OpenOptions::new()
                     .create(true)
                     .read(true)
                     .write(true)
@@ -51,9 +60,12 @@ impl WalEngine {
                 let mut batch = Vec::new();
 
                 loop {
-                    // Wait for the first thought to arrive.
-                    if let Some(log) = rx.recv().await {
-                        batch.push(log);
+                    tokio::select! {
+                        // Path A: We receive a network thought
+
+                        Some(log) = rx.recv() => {
+
+                              batch.push(log);
 
                         // Drain the channel of any other pending thoughts for batching
                         while let Ok(log) = rx.try_recv() {
@@ -95,19 +107,47 @@ impl WalEngine {
                         }
 
                         batch.clear();
-                    } else {
-                        // Channel Closed. Sender Dropped.
-                        // The RAM queue is empty. We are safe to shut down the physical disk
-                        println!("[WAL] In-memory queue drained. Syncing final bytes to metal. ");
-                        let _ = file.sync_data().await;
 
-                        break;
+                        }
+
+                        Some(WalCommand::Rotate(reply_tx)) = cmd_rx.recv() => {
+
+                            println!("[WAL_ENGINE] Halting I/O. Rotating WAL segment...");
+
+                            // 1. Force final sync on the current file
+                            let _ = file.sync_data().await;
+
+                            // Generate archived filename based on unix timestamp
+                            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+                            let archived_name = format!("{fp_clone}_{timestamp}.dat");
+
+                            // Rename the physical file
+                            std::fs::rename(&fp_clone, &archived_name).unwrap();
+
+                            // Open a fresh active file & reset offset
+                            file = OpenOptions::new().create(true).read(true).write(true).open(&fp_clone).await.unwrap();
+                            current_offset = 0;
+
+                            // Tell the compactor the achived file is ready
+                            let _ = reply_tx.send(archived_name);
+                            println!("[WAL_ENGINE] Rotation complete. I/O resumed.");
+
+                        }
+
+
                     }
                 }
             });
         });
 
-        (Arc::new(Self { sender: tx, index }), handle)
+        (
+            Arc::new(Self {
+                sender: tx,
+                cmd_sender: cmd_tx,
+                index,
+            }),
+            handle,
+        )
     }
 
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
