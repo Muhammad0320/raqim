@@ -107,7 +107,7 @@ impl GlobalNetworkBridge {
                         Ok(valid_archive) => valid_archive,
                         Err(e) => {
                             eprintln!(
-                                "[AEGIS] TCP  Dropped. Malformed memory layout (OpLog): {}",
+                                "[AEGIS] Packet Dropped. Malformed memory layout (OpLog): {}",
                                 e
                             );
                             return;

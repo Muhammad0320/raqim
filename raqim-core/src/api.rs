@@ -722,12 +722,31 @@ pub async fn http_ingress_endpoint(
 ) -> Result<StatusCode, StatusCode> {
     // Zero copy access the IngressEnvelope
     let ingress_envelope =
-        unsafe { rkyv::access_unchecked::<<IngressEnvelope as Archive>::Archived>(&body) };
+        match rkyv::access::<<IngressEnvelope as rkyv::Archive>::Archived, rkyv::rancor::Error>(
+            &body,
+        ) {
+            Ok(valid_archived) => valid_archived,
+            Err(e) => {
+                eprintln!(
+                    "Invalid body. Malformed memory layout (IngressEnvelope): {}",
+                    e
+                );
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        };
 
     let state_bytes = ingress_envelope.state_bytes.as_slice();
 
     let archived_state =
-        unsafe { rkyv::access_unchecked::<<AgentState as rkyv::Archive>::Archived>(state_bytes) };
+        match rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(
+            state_bytes,
+        ) {
+            Ok(valid_state) => valid_state,
+            Err(e) => {
+                eprintln!("Invalid body. Malformed memory layout (AgentState): {}", e);
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        };
 
     let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
     let path_intent = ingress_envelope.intent_path.as_str();
