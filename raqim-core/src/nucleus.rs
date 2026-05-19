@@ -34,7 +34,7 @@ impl WalEngine {
         // Bounded channel to prevent OOM crashes
         let (tx, mut rx) = mpsc::channel::<OpLog>(100_000);
 
-        let (cmd_tx, cmd_rx) = mpsc::channel::<WalCommand>(10);
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<WalCommand>(10);
 
         let index = Arc::new(RwLock::new(BTreeMap::new()));
         let index_clone = index.clone();

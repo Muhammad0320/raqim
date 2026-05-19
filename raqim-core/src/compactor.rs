@@ -1,4 +1,4 @@
-use crate::{OpLog, SystemEvent, lancedb_store::LanceEngine};
+use crate::{OpLog, SystemEvent, lancedb_store::LanceEngine, nucleus::WalCommand};
 use rkyv::Archive;
 use std::{
     fs::{self, File},
@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 use tokio::{
-    sync::broadcast::Sender,
+    sync::{broadcast::Sender, oneshot},
     time::{Duration, interval},
 };
 
@@ -14,14 +14,20 @@ pub struct WalCompactor {
     wal_path: String,
     lance_engine: Arc<LanceEngine>,
     tx: Sender<SystemEvent>,
+    cmd_tx: oneshot::Sender<WalCommand>,
 }
 
 impl WalCompactor {
-    pub fn new(wal_path: &str, lance_engine: Arc<LanceEngine>, tx: Sender<SystemEvent>) -> Self {
+    pub fn new(
+        wal_path: &str,
+        lance_engine: Arc<LanceEngine>,
+        tx: Sender<SystemEvent, cmd_tx: oneshot::Sender<WalCommand>>,
+    ) -> Self {
         Self {
             wal_path: wal_path.to_string(),
             lance_engine,
             tx,
+            cmd_tx,
         }
     }
 
@@ -132,5 +138,27 @@ impl WalCompactor {
         });
     }
 
-    async fn trigger_safe_compaction(&self) {}
+    async fn trigger_safe_compaction(&self) {
+        // Ask the WAL engine the physically rotate the file and give us the archived filename
+        let (reply_tx, reply_rx) = oneshot::channel::<String>();
+
+        // Fire the command to io_uring thread
+        if self.cmd_tx.send(WalCommand::Rotate(reply_tx)).await.is_ok() {
+            // Wair for the WAL to confirm it has released the file descriptor
+            if let Ok(archived_filename) = reply_tx.await {
+                println!(
+                    "[COMPACTOR] WAL successfully rotated to {}. Compacting to lanceDB...",
+                    archived_filename
+                );
+
+                // Safe to compact
+                self.execute_compaction(&archived_filename).await;
+
+                println!(
+                    "[COMPACTOR] Segment {} assimilated and erased. ",
+                    archived_filename
+                );
+            }
+        }
+    }
 }
