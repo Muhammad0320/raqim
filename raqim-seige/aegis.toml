@@ -1,5 +1,5 @@
-["SIEGE_COMMANDER_HEX_ID"]
-alias = "benchmark_engine"
+["b7774e1d3e23297a7e172a8cb9219323"]
+alias = "seige_engine"
 public_key_hex = "..."
-allowed_namespace = ["*"]
-capability = ["/benchmark/*"]
+allowed_namespace = ["/siege/*"]
+blocked_namespace = []
