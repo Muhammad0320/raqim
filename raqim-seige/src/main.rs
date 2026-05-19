@@ -60,7 +60,7 @@ async fn main() {
             state_bytes: state_bytes,
         };
 
-        let payload_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&signature)
+        let payload_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope)
             .unwrap()
             .into_vec();
 
