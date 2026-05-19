@@ -41,7 +41,7 @@ impl WalCompactor {
                             if let Ok(metadata) = fs::metadata(&self.wal_path) {
                                 if metadata.len() >= one_gb {
                                     println!("WAL threshold (1GB) breached! Emergency compaction... ");
-                                    self.execute_compaction().await;
+                                    self.trigger_safe_compaction().await;
                                 }
                             }
 
@@ -50,7 +50,7 @@ impl WalCompactor {
                         _ = daily_interval.tick() => {
 
                             println!("24-hour cycle reached. Routine compaction...");
-                            self.execute_compaction().await;
+                            self.trigger_safe_compaction().await;
                         },
 
                 }
@@ -58,9 +58,7 @@ impl WalCompactor {
         });
     }
 
-    async fn execute_compaction(&self) {
-        let processing_path = format!("{}.processing", &self.wal_path);
-
+    async fn execute_compaction(&self, processing_path: &str) {
         // 1. Lock and Rename WAL (Nucleus will seamlessly create a new one)
         if fs::rename(&self.wal_path, &processing_path).is_err() {
             return;
@@ -133,4 +131,6 @@ impl WalCompactor {
             archived_count: logs_to_archive.len(),
         });
     }
+
+    async fn trigger_safe_compaction(&self) {}
 }

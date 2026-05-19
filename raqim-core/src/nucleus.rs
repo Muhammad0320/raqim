@@ -11,7 +11,7 @@ use std::{
     io::Read,
     sync::{Arc, RwLock},
     thread::{self, JoinHandle},
-    time::SystemTime,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{mpsc, oneshot};
 use tokio_uring::fs::OpenOptions;
