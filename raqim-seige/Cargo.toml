@@ -4,3 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tokio = { version = "1.37", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
+ed25519-dalek = "2.2.0"

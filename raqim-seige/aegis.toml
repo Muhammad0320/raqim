@@ -1,0 +1,5 @@
+["SIEGE_COMMANDER_HEX_ID"]
+alias = "benchmark_engine"
+public_key_hex = "..."
+allowed_namespace = ["*"]
+capability = ["/benchmark/*"]
