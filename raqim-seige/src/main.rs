@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use ed25519_dalek::SigningKey;
-use raqim_core::AgentState;
+use ed25519_dalek::{Signer, SigningKey};
+use raqim_core::{AgentState, IngressEnvelope};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 #[tokio::main]
@@ -34,7 +34,22 @@ async fn main() {
         };
 
         // Serialize via rkyv
-        let payload_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&state)
+        let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&state)
+            .unwrap()
+            .into_vec();
+
+        // Sign the exact bytes
+        let signature = signing_key.sign(&state_bytes);
+
+        // Build the IngressEnvelope
+        let envelope = IngressEnvelope {
+            intent_path: "/siege/test".to_string(),
+            public_key: [0u8; 32],
+            signature: signature.to_bytes(),
+            state_bytes: state_bytes,
+        };
+
+        let payload_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&signature)
             .unwrap()
             .into_vec();
 

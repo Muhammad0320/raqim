@@ -191,7 +191,12 @@ async fn main() {
     });
 
     // The Autonomous compactor (WAL reaper)
-    let compactor = WalCompactor::new(&config.wal_path, lance_engine.clone(), event_tx.clone());
+    let compactor = WalCompactor::new(
+        &config.wal_path,
+        lance_engine.clone(),
+        event_tx.clone(),
+        wal.cmd_sender.clone(),
+    );
     compactor.start_daemon();
 
     // The Local cortex actor

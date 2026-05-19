@@ -18,7 +18,7 @@ use tokio_uring::fs::OpenOptions;
 
 pub struct WalEngine {
     sender: mpsc::Sender<OpLog>,
-    cmd_sender: mpsc::Sender<WalCommand>,
+    pub cmd_sender: mpsc::Sender<WalCommand>,
     // The O(1) INDEX: Maps TxID -> Physical byte offset in the WAL.
     pub index: Arc<RwLock<BTreeMap<u64, u64>>>,
 }
