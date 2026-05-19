@@ -22,7 +22,7 @@ async fn main() {
 
     // Derive agent_hex from public key
     let mut hasher = Md5::new();
-    hasher.update(self.pub_key_bytes);
+    hasher.update(pub_key_bytes);
     let agent_id: [u8; 16] = hasher.finalize().into();
 
     let agent_hex = hex::encode(agent_id);
@@ -55,7 +55,7 @@ async fn main() {
         // Build the IngressEnvelope
         let envelope = IngressEnvelope {
             intent_path: "/siege/test".to_string(),
-            public_key: [0u8; 32],
+            public_key: pub_key_bytes,
             signature: signature.to_bytes(),
             state_bytes: state_bytes,
         };

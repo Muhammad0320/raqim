@@ -1,4 +1,5 @@
 use crate::{OpLog, SystemEvent, lancedb_store::LanceEngine, nucleus::WalCommand};
+use futures::{SinkExt, channel::mpsc};
 use rkyv::Archive;
 use std::{
     fs::{self, File},
@@ -14,7 +15,7 @@ pub struct WalCompactor {
     wal_path: String,
     lance_engine: Arc<LanceEngine>,
     tx: Sender<SystemEvent>,
-    cmd_tx: oneshot::Sender<WalCommand>,
+    cmd_tx: mpsc::Sender<WalCommand>,
 }
 
 impl WalCompactor {
@@ -22,7 +23,7 @@ impl WalCompactor {
         wal_path: &str,
         lance_engine: Arc<LanceEngine>,
         tx: Sender<SystemEvent>,
-        cmd_tx: oneshot::Sender<WalCommand>,
+        cmd_tx: mpsc::Sender<WalCommand>,
     ) -> Self {
         Self {
             wal_path: wal_path.to_string(),
@@ -144,7 +145,7 @@ impl WalCompactor {
         let (reply_tx, reply_rx) = oneshot::channel::<String>();
 
         // Fire the command to io_uring thread
-        if self.cmd_tx.send(WalCommand::Rotate(reply_tx)).is_ok() {
+        if self.cmd_tx.send(WalCommand::Rotate(reply_tx)).await.is_ok() {
             // Wait for the WAL to confirm it has released the file descriptor
             if let Ok(archived_filename) = reply_rx.await {
                 println!(

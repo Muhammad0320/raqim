@@ -19,7 +19,7 @@ pub struct CliArgs {
     pub aegis_path: Option<String>,
 
     #[arg(short, long)]
-    pub public_key_path: Option<String>,
+    pub node_public_key_hex: Option<String>,
 
     #[arg(short, long)]
     pub embedder_type: Option<String>,
@@ -52,7 +52,7 @@ pub struct RaqimConfig {
     pub table_name: String,
     pub tenant_id: String,
     pub license_key: String,
-    pub public_key_path: String,
+    pub node_public_key_hex: String,
     pub embedder_type: String,
     pub openai_api_key: String,
     pub dims: i32,
@@ -70,7 +70,8 @@ impl Default for RaqimConfig {
             table_name: "agent_history".to_string(),
             tenant_id: "open_core_local".to_string(),
             license_key: "dev_move".to_string(),
-            public_key_path: "public_key.pem".to_string(),
+            node_public_key_hex: "0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
             embedder_type: "bge".to_string(),
             openai_api_key: "".to_string(),
             dims: 384,
@@ -110,8 +111,8 @@ impl RaqimConfig {
             config.wal_path = w;
         }
 
-        if let Some(p_key) = args.public_key_path {
-            config.public_key_path = p_key;
+        if let Some(p_key) = args.node_public_key_hex {
+            config.node_public_key_hex = p_key;
         }
 
         if let Some(e_type) = args.embedder_type {
