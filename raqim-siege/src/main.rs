@@ -1,8 +1,8 @@
 use md5::{Digest, Md5};
+use raqim_siege::{AgentState, AgentStatus, IngressEnvelope};
 use std::time::Instant;
 
 use ed25519_dalek::{Signer, SigningKey};
-use raqim_core::{AgentState, IngressEnvelope};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 #[tokio::main]
@@ -40,7 +40,7 @@ async fn main() {
             transaction_id: i as u64,
             namespace: "/siege/test".to_string(),
             timestamp: 0,
-            status: raqim_core::AgentStatus::Idle,
+            status: AgentStatus::Idle,
             text: format!("Seige Payload: {}", i),
         };
 
