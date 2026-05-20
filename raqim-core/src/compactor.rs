@@ -114,7 +114,7 @@ impl WalCompactor {
                 {
                     match self.lance_engine.embedder.embed(&semantic_payload).await {
                         Ok(vec_data) => {
-                            logs_to_archive.push(log);
+                            logs_to_archive.push(log.clone());
                             vector.push(vec_data);
                         }
                         Err(e) => eprintln!(

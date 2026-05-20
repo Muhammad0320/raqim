@@ -18,7 +18,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_stream::wrappers::BroadcastStream;
 
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
-use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use std::result::Result::{Err, Ok};
 use std::sync::atomic::AtomicU64;
