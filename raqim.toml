@@ -1,7 +1,0 @@
-[daemon]
-topic = "raqim"
-wal_path = "./production.wal"
-
-[storage]
-lance_path = "./production_semantic.lancedb"
-table_name = "agent_history"
