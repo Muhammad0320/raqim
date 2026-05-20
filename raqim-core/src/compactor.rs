@@ -109,15 +109,27 @@ impl WalCompactor {
                 );
 
                 // Call the Pluggable Embedder ( This is CPU bound, but we're off the TCP path )
-                match self.lance_engine.embedder.embed(&semantic_payload).await {
-                    Ok(vec_data) => {
-                        logs_to_archive.push(log);
-                        vector.push(vec_data);
+                // PATH A
+                #[cfg(feature = "native-embedding")]
+                {
+                    match self.lance_engine.embedder.embed(&semantic_payload).await {
+                        Ok(vec_data) => {
+                            logs_to_archive.push(log);
+                            vector.push(vec_data);
+                        }
+                        Err(e) => eprintln!(
+                            "[COMPACTOR WARNING] Failed to embed TxID {}: {} ",
+                            log.state.transaction_id, e
+                        ),
                     }
-                    Err(e) => eprintln!(
-                        "[COMPACTOR WARNING] Failed to embed TxID {}: {} ",
-                        log.state.transaction_id, e
-                    ),
+                }
+
+                // Path B:
+                #[cfg(feature = "mock-embedding")]
+                {
+                    let vec_data = vec![0.0f32; 384];
+                    logs_to_archive.push(log);
+                    vector.push(vec_data);
                 }
             }
 
