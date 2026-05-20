@@ -9,6 +9,7 @@ native-embedding = ["dep:fastembed"]
 mock-embedding = []
 
 [dependencies]
+fastembed = { version = "5.12", optional = true }
 # The Zero-copy Data plane
 rkyv = { version = "0.8.15", features = ["bytecheck"] }
 
@@ -36,7 +37,6 @@ anyhow = "1.0"
 
 datafusion = "35.0"
 
-fastembed = {version = "5.12", optional = true }
 
 futures = "0.3"
 clap = { version = "4.5", features = ["derive", "env"] } # For CLI parsing
