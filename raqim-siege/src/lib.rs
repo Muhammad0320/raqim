@@ -1,3 +1,5 @@
+use rkyv::{Archive, Deserialize, Serialize};
+
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct IngressEnvelope {
     pub intent_path: String,  // "raqim_finance/ledger" ( Checked by Aegis )
