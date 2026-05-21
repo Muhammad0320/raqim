@@ -127,7 +127,7 @@ impl WalCompactor {
                 // Path B:
                 #[cfg(feature = "mock-embedding")]
                 {
-                    let vec_data = vec![0.0f32; 384];
+                    let vec_data = vec![0.0f32; 768];
                     logs_to_archive.push(log);
                     vector.push(vec_data);
                 }

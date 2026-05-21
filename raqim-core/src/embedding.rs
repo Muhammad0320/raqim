@@ -1,7 +1,9 @@
 use async_trait::async_trait;
-use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 use serde_json::json;
 use std::sync::{Arc, Mutex};
+
+#[cfg(feature = "native-embedding")]
+use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 
 /// The Enterprise Interface. Allows swapping local FastEmbed for remote OpenAI/Voyage API calls
 
@@ -11,11 +13,17 @@ pub trait EmbeddingProvider: Send + Sync {
     fn dimension(&self) -> i32;
 }
 
+// ================================
+// PATH A: NATIVE EMBEDDING ENGINE
+// ================================
+
 /// The Open-Core Default: BGE-Base-EN-v1.5 (768 dims)
+#[cfg(feature = "native-embedding")]
 pub struct LocalBgeProvider {
     model: Mutex<TextEmbedding>,
 }
 
+#[cfg(feature = "native-embedding")]
 impl LocalBgeProvider {
     pub fn new() -> Self {
         println!("[SYSTEM] initializing BGE-Base-EN-v1.5 Semantic Engine... ");
@@ -30,6 +38,7 @@ impl LocalBgeProvider {
     }
 }
 
+#[cfg(feature = "native-embedding")]
 #[async_trait]
 impl EmbeddingProvider for LocalBgeProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error> {
@@ -50,6 +59,32 @@ impl EmbeddingProvider for LocalBgeProvider {
 
     fn dimension(&self) -> i32 {
         768 // Bge-Base dimension size
+    }
+}
+
+// ========================================
+// PATH B: HIGH-THROUGHTPUT BENCHMARK MOCK
+// ========================================
+#[cfg(feature = "mock-embedding")]
+pub struct LocalBgeProvider;
+
+#[cfg(feature = "mock-embedding")]
+impl LocalBgeProvider {
+    pub fn new() -> Self {
+        print!("[BENCHMARK PROFILE] Spawning Zero-Overhead Mock Semantic Engine... ");
+        Self {}
+    }
+}
+
+#[cfg(feature = "mock-embedding")]
+#[async_trait]
+impl EmbeddingProvider for LocalBgeProvider {
+    async fn embed(&self, _text: &str) -> Result<Vec<f32>, anyhow::Error> {
+        Ok(vec![0.0f32; 768])
+    }
+
+    fn dimension(&self) -> i32 {
+        768
     }
 }
 
