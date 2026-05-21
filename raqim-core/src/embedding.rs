@@ -72,7 +72,7 @@ pub struct LocalBgeProvider;
 impl LocalBgeProvider {
     pub fn new() -> Self {
         print!("[BENCHMARK PROFILE] Spawning Zero-Overhead Mock Semantic Engine... ");
-        Self {}
+        Self
     }
 }
 
