@@ -3,6 +3,38 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+#[derive(Deserialize)]
+struct RaqimTomlProxy {
+    daemon: DaemonSection,
+    storage: StorageSection,
+    identity: IdentitySection,
+}
+
+#[derive(Deserialize)]
+struct DaemonSection {
+    topic: String,
+    wal_path: String,
+    aegis_path: String,
+    port: Option<u16>,
+    dims: Option<i32>,
+    limit: Option<usize>,
+    embedder_type: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct StorageSection {
+    lance_path: Option<String>,
+    table_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct IdentitySection {
+    tenant_id: String,
+    node_pub_key_hex: String,
+    license_key: String,
+    openai_api_key: Option<String>,
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Raqim Daemon configuration")]
 pub struct CliArgs {
@@ -91,7 +123,37 @@ impl RaqimConfig {
             let content =
                 fs::read_to_string(config_path).expect("[FATAL] Failed to read raqim.toml");
 
-            toml::from_str(&content).expect("[FATAL] Invalid TOML syntax in raqim.toml")
+            // Parse into sectional proxy structure
+            let proxy: RaqimTomlProxy = toml::from_str(&content)
+                .expect("[FATAL] Invalid TOML structural layout in raqim.toml ");
+
+            RaqimConfig {
+                topic: proxy.daemon.topic,
+                wal_path: proxy.daemon.wal_path,
+                lance_path: proxy
+                    .storage
+                    .lance_path
+                    .unwrap_or_else(|| "./production_semantic.lancedb".to_string()),
+                aegis_path: proxy.daemon.aegis_path,
+                table_name: proxy
+                    .storage
+                    .table_name
+                    .unwrap_or_else(|| "agent_history".to_string()),
+                tenant_id: proxy.identity.tenant_id,
+                license_key: proxy.identity.license_key,
+                node_public_key_hex: proxy.identity.node_pub_key_hex,
+                embedder_type: proxy
+                    .daemon
+                    .embedder_type
+                    .unwrap_or_else(|| "bge".to_string()),
+                openai_api_key: proxy
+                    .identity
+                    .openai_api_key
+                    .unwrap_or_else(|| "".to_string()),
+                dims: proxy.daemon.dims.unwrap_or(384),
+                limit: proxy.daemon.limit.unwrap_or(5),
+                port: proxy.daemon.port.unwrap_or(8080),
+            }
         } else {
             let default_cfg = Self::default();
             let toml_string = toml::to_string(&default_cfg).unwrap();
