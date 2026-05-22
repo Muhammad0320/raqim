@@ -135,7 +135,7 @@ async fn main() {
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain = Arc::new(SwarmState::new(&config.topic));
     let axon = Arc::new(AxonGateKeeper::new());
-    let aegis = AegisGateKeeper::new("aegis.toml", event_tx.clone(), ui_tx.clone());
+    let aegis = AegisGateKeeper::new(&config.aegis_path, event_tx.clone(), ui_tx.clone());
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
         GlobalNetworkBridge::new(&verified_tenat_id, &config.topic, aegis.clone(), allow_wan).await,
@@ -155,14 +155,8 @@ async fn main() {
         _ => Box::new(LocalBgeProvider::new()),
     };
 
-    let lance_engine = Arc::new(
-        LanceEngine::new(
-            &format!("{}_semantic.lancedb", &config.topic),
-            "agent_history",
-            embedder,
-        )
-        .await,
-    );
+    let lance_engine =
+        Arc::new(LanceEngine::new(&config.lance_path, &config.table_name, embedder).await);
 
     // THE BOOTSTRAP PROTOCOL
     let (lance_highest_tx, _valut_capacity) =

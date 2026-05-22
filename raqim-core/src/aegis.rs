@@ -46,8 +46,8 @@ pub struct AegisGateKeeper {
 }
 
 impl AegisGateKeeper {
-    pub fn new(config_path: &str, tx: Sender<SystemEvent>, ui_tx: Sender<UiEvent>) -> Arc<Self> {
-        let initial_config = Self::parse_toml(&config_path);
+    pub fn new(aegis_path: &str, tx: Sender<SystemEvent>, ui_tx: Sender<UiEvent>) -> Arc<Self> {
+        let initial_config = Self::parse_toml(&aegis_path);
 
         let gatekeeper = Arc::new(Self {
             policies: RwLock::new(initial_config),
@@ -57,7 +57,7 @@ impl AegisGateKeeper {
         });
 
         // Spawn a dedicated bg thread for the C-level fs watcher
-        let path_string = config_path.to_string();
+        let path_string = aegis_path.to_string();
         let gk_clone = gatekeeper.clone();
 
         // 3. The Async Tokio task that actually swaps the memory.
