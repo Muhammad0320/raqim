@@ -62,10 +62,9 @@ impl WalEngine {
                         // Path A: We receive a network thought
 
                         msg = rx.recv() => {
-
                             match msg  {
 
-                                Some(log) = rx.recv() => {
+                                Some(log) => {
 
                               batch.push(log);
 
@@ -119,11 +118,9 @@ impl WalEngine {
                         }
 
                         cmd = cmd_rx.recv() => {
-
-                                match cmd {
-
+                            match cmd {
                                                             // Path B: Command to rotate.
-                        Some(WalCommand::Rotate(reply_tx)) = cmd_rx.recv() => {
+                                Some(WalCommand::Rotate(reply_tx)) => {
 
                             println!("[WAL_ENGINE] Halting I/O. Rotating WAL segment...");
 
@@ -147,13 +144,10 @@ impl WalEngine {
 
                         }
 
-                        None => break,
-
-                                }
+                                None => break,
+                            }
 
                         }
-
-
 
                     }
                 }
