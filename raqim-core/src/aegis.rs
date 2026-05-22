@@ -200,8 +200,8 @@ impl AegisGateKeeper {
         let _ = self.ui_tx.send(UiEvent::AegisAlert { record });
 
         eprintln!(
-            "\n[AEGIS RED ALERT] Unauthorized access attempts by {} on path: {} ",
-            agent_hex, target
+            "\n[AEGIS RED ALERT] Unauthorized access attempts by {} on path: {}, Violation Type: {}, Reason: {} ",
+            agent_hex, target, v_type, reason
         );
     }
 

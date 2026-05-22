@@ -7,7 +7,7 @@ use std::{
 };
 use tokio::{
     sync::{broadcast::Sender, mpsc, oneshot},
-    time::{Duration, Instant, interval, interval_at},
+    time::{Duration, Instant, interval_at},
 };
 
 pub struct WalCompactor {
