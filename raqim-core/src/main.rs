@@ -33,15 +33,9 @@ use wasmtime_wasi::WasiCtxBuilder;
 #[tokio::main]
 async fn main() {
     // CRYPTO BOUNDARY LOCK: Resolve JWT feature unification ambiguity
-    #[cfg(feature = "aws_lc_rs")]
-    {
-        let _ = jsonwebtoken::crypto::CryptoProvider::aws_lc_rs().install_default();
-    }
-
-    #[cfg(feature = "rust_crypto")]
-    {
-        let _ = jsonwebtoken::crypto::CryptoProvider::rust_crypto().install_default();
-    }
+    jsonwebtoken::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .ok();
 
     let config = Arc::new(RaqimConfig::load_or_bootstrap());
 
