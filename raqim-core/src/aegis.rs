@@ -30,6 +30,7 @@ pub struct AegisPolicy {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(transparent)]
 pub struct AegisManifest {
     pub policies: HashMap<String, AegisPolicy>,
 }

@@ -510,8 +510,7 @@ async fn main() {
                     aligned_state_buf.extend_from_slice(state_slice);
 
                     // Validates the memory layout over the aligned buffer allocation
-                    let archived_state = match rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(&payload_buf) {
-
+                    let archived_state = match rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(&aligned_state_buf) {
                         Ok(valid_state) => valid_state,
                         Err(e) => {
                             eprintln!("[AEGIS ERROR] TCP Dropped: Misaligned/Malformed Inner Payload (AgentState): {} ", e);
