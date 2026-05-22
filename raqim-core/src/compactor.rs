@@ -7,7 +7,7 @@ use std::{
 };
 use tokio::{
     sync::{broadcast::Sender, mpsc, oneshot},
-    time::{Duration, interval},
+    time::{Duration, Instant, interval, interval_at},
 };
 
 pub struct WalCompactor {
@@ -37,8 +37,14 @@ impl WalCompactor {
             println!("Bismillah. WAL compactor Daemon Active. Monitoring Disk...");
 
             let one_gb: u64 = 1024 * 1024 * 1024;
-            let mut check_interval = interval(Duration::from_secs(60));
-            let mut daily_interval = interval(Duration::from_secs(24 * 60 * 60));
+            let mut check_interval = interval_at(
+                Instant::now() + Duration::from_secs(60),
+                Duration::from_secs(60),
+            );
+            let mut daily_interval = interval_at(
+                Instant::now() + Duration::from_secs(24 * 60 * 60),
+                Duration::from_secs(24 * 60 * 60),
+            );
 
             loop {
                 tokio::select! {
