@@ -2,6 +2,7 @@ use jsonwebtoken::{Validation, decode};
 use raqim_core::aegis::AegisGateKeeper;
 use raqim_core::api::{ApiState, EnterpriseClaim, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
+
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
@@ -503,16 +504,24 @@ async fn main() {
                 let state_slice = archived_ingress.state_bytes.as_slice();
 
 
-                let archived_state = match rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(&state_slice) {
-                    Ok(valid_state) => valid_state,
-                    Err(e) => {
-                        eprintln!("[AEGIS] TCP Dropped: Malformed Memory layout (AgentState): {} ", e);
-                        return;
-                    }
-                };
+                // ===== REALIGNMENT: Force the sub-slice onto machine word boundaries ==========
 
-                        // verify the inner state payload
+                    let mut aligned_state_buf: rkyv::util::AlignedVec<16> = rkyv::util::AlignedVec::new();
+                    aligned_state_buf.extend_from_slice(state_slice);
 
+                    // Validates the memory layout over the aligned buffer allocation
+                    let archived_state = match rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(&payload_buf) {
+
+                        Ok(valid_state) => valid_state,
+                        Err(e) => {
+                            eprintln!("[AEGIS ERROR] TCP Dropped: Misaligned/Malformed Inner Payload (AgentState): {} ", e);
+                            return;
+                        }
+                    };
+
+                    // ===========================
+
+                    // verify the inner state payload
                     let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
                     let text = archived_state.text.as_str().to_string();
                     // 1. Checking aegis first before doing any expensive math or hitting the wal.
