@@ -32,11 +32,6 @@ use wasmtime_wasi::WasiCtxBuilder;
 
 #[tokio::main]
 async fn main() {
-    // CRYPTO BOUNDARY LOCK: Resolve JWT feature unification ambiguity
-    jsonwebtoken::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .ok();
-
     let config = Arc::new(RaqimConfig::load_or_bootstrap());
 
     println!("Bismillah. Booting Raqim Daemon on port {}...", config.port);
