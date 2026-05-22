@@ -44,7 +44,15 @@ impl TelemetryEngine {
 
     /// Starts the isolated OS background thread for resilient billing
     pub fn start_sinker_daemon(engine: Arc<Self>) {
-        tokio::spawn(async move {
+        // Execute the outside loop inside a dedicated background worker
+        tokio::task::spawn_blocking(move || {
+            // Initialize a private, single-threaded basic runtime exclusively to run the billing sink out-of-band.
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+
+            rt.block_on(async move {
             let client = Client::new();
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
 
@@ -118,6 +126,7 @@ impl TelemetryEngine {
                     }
                 }
             }
+        });
         });
     }
 

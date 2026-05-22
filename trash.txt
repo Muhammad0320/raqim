@@ -1,52 +1,76 @@
-                    if let Some(log) = rx.recv().await {
-                        batch.push(log);
+        tokio::spawn(async move {
+            let client = Client::new();
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
 
-                        // Drain the channel of any other pending thoughts for batching
-                        while let Ok(log) = rx.try_recv() {
-                            batch.push(log);
-                        }
+            // We open the local billing WAL in append-only mode to survive network outages.
+            let mut billing_wal = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("production.billing.wal")
+                .await
+                .expect("Failed to open billing WAL");
 
-                        // Record the offset for the first tx_id in this batch
-                        let first_txid = batch[0].state.transaction_id;
-                        {
-                            let mut idx = index_clone.write().unwrap();
-                            idx.insert(first_txid, current_offset);
-                        }
+            loop {
+                interval.tick().await;
 
-                        // Zero-copy serialize the entire batch instantly
-                        let bytes = to_bytes::<rkyv::rancor::Error>(&batch)
-                            .expect("Failed to serrialize batch")
-                            .into_vec();
+                // 1. Swap the current counter to 0. This ensures we never double-count even if the thread lags.
+                let crdt_merges = engine.crdt_merges.swap(0, Ordering::SeqCst);
+                let a2a_bytes = engine.a2a_bytes_routed.swap(0, Ordering::SeqCst);
+                let time_travels = engine.time_travel_queries.swap(0, Ordering::SeqCst);
 
-                        // Frame it: Calculate the 4-byte length prefix (Little Endian format)
-                        let len_prefix = (bytes.len() as u32).to_le_bytes().to_vec();
+                if crdt_merges == 0 && a2a_bytes == 0 && time_travels == 0 {
+                    continue;
+                }
 
-                        //  --- THE LINE-BY-LINE PHYSICS OF IO_URING ---
+                let timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
 
-                        // We pass OWNERSHIP of the  `len_prefix` to the kernel
-                        let (res, _returnerd_len_buf) =
-                            file.write_at(len_prefix, current_offset).await;
-                        let written_len = res.expect("WAL length write Error") as u64;
-                        current_offset += written_len;
+                // 2. Construct the Stripe-compatible JSON payload
+                let payload = format!(
+                    r#"{{"tenant": "{}", "timestamp": {}, "crdt_merges": {}, "a2a_bytes": {}, "time_travels": {}   }}"#,
+                    engine.tenant_id, timestamp, crdt_merges, a2a_bytes, time_travels
+                );
+                // 3. Persistence first: Write to local-disk before attempting network
+                let log_entry = format!("{}\n", payload);
+                if let Err(e) = billing_wal.write_all(log_entry.as_bytes()).await {
+                    eprintln!("[TELEMETRY FATAL] Failed to write to biling wal: {} ", e);
+                    continue; // 
+                }
 
-                        // We pass the OWNERSHIP of the `payload` to the kernel
-                        let (res, _returnerd_payload_buf) =
-                            file.write_at(bytes, current_offset).await;
-                        let written_payload = res.expect("WAL paylaod write error") as u64;
-                        current_offset += written_payload;
+                let _ = billing_wal.sync_data().await;
 
-                        // 5. Force to metal (fsync).
-                        if let Err(e) = file.sync_data().await {
-                            eprintln!("WAL io_uring Sync Error: {}", e);
-                        }
+                // Read the entire WAL file For it might contain failed batches
+                let pending_data = tokio::fs::read_to_string("production.billing.wal")
+                    .await
+                    .unwrap_or_default();
+                let current_jwt = engine.license_key.read().unwrap().clone();
 
-                        batch.clear();
-                    } else {
-                        // Channel Closed. Sender Dropped.
-                        // The RAM queue is empty. We are safe to shut down the physical disk
-                        println!("[WAL] In-memory queue drained. Syncing final bytes to metal. ");
-                        let _ = file.sync_data().await;
+                // 4. Ship to Cloud: Send the usage data to Raqim cloud API
+                let res = client
+                    .post("https://api.Raqim.cloud/v1/metering/injest")
+                    .header("Authorization", format!("Bearer {}", current_jwt))
+                    .header("Content-Type", "application/x-ndjson") // NDJSON for multiple lines
+                    .body(pending_data)
+                    .send()
+                    .await;
 
-                        break;
+                match res {
+                    Ok(r) if r.status().is_success() => {
+                        println!("[TELEMETRY] Successfully synced 60s usage to Raqim cloud");
+                        billing_wal
+                            .set_len(0)
+                            .await
+                            .expect("Failed to truncate billing WAL");
                     }
-                
+
+                    _ => {
+                        eprintln!(
+                            "[TELEMETRY WARNING] Cloud API unreachable. Data safely preserved in billing.wal for next retry."
+                        );
+                    }
+                }
+            }
+        });
+    
