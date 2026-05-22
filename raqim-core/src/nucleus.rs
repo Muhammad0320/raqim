@@ -33,7 +33,6 @@ impl WalEngine {
 
         // Bounded channel to prevent OOM crashes
         let (tx, mut rx) = mpsc::channel::<OpLog>(100_000);
-
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<WalCommand>(10);
 
         let index = Arc::new(RwLock::new(BTreeMap::new()));
@@ -56,14 +55,17 @@ impl WalEngine {
                 // We must query the OS for the current file_size to know where to start writing.
                 let metadata = std::fs::metadata(&file_path).expect("Failed to stat WAL file");
                 let mut current_offset = metadata.len();
-
                 let mut batch = Vec::new();
 
                 loop {
                     tokio::select! {
                         // Path A: We receive a network thought
 
-                        Some(log) = rx.recv() => {
+                        msg = rx.recv() => {
+
+                            match msg  {
+
+                                Some(log) = rx.recv() => {
 
                               batch.push(log);
 
@@ -110,6 +112,17 @@ impl WalEngine {
 
                         }
 
+                                None => break
+
+                            }
+
+                        }
+
+                        cmd = cmd_rx.recv() => {
+
+                                match cmd {
+
+                                                            // Path B: Command to rotate.
                         Some(WalCommand::Rotate(reply_tx)) = cmd_rx.recv() => {
 
                             println!("[WAL_ENGINE] Halting I/O. Rotating WAL segment...");
@@ -133,6 +146,13 @@ impl WalEngine {
                             println!("[WAL_ENGINE] Rotation complete. I/O resumed.");
 
                         }
+
+                        None => break,
+
+                                }
+
+                        }
+
 
 
                     }
