@@ -138,7 +138,14 @@ impl AegisGateKeeper {
         if let Some(policy) = policies.get(agent_hex) {
             // Check explicit Blocks (e.g., "raqim_finance/*")
             for blocked in &policy.blocked_namespaces {
-                if intent_path.starts_with(blocked) {
+                let is_breach = if blocked.ends_with("*") {
+                    // Zero-copy slice
+                    intent_path.starts_with(&blocked[..blocked.len() - 1])
+                } else {
+                    intent_path == blocked
+                };
+
+                if is_breach {
                     self.trigger_quarantine(
                         agent_hex,
                         intent_path,
@@ -151,7 +158,13 @@ impl AegisGateKeeper {
 
             // Check explicit allows
             for allowed in &policy.allowed_namespaces {
-                if intent_path.starts_with(allowed) {
+                let is_authorized = if allowed.ends_with("*") {
+                    intent_path.starts_with(allowed[..allowed.len() - 1])
+                } else {
+                    intent_path == allowed
+                };
+
+                if is_authorized {
                     return true;
                 }
             }
