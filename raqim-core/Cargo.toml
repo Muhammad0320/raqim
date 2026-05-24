@@ -52,6 +52,7 @@ notify = "8.2.0"
 jsonwebtoken = { version = "10.3.0", default-features = false, features = ["rust_crypto", "use_pem"] }
 serde_json = "1.0.149"
 ed25519-dalek = "2.2.0"
+parking_lot = "0.12"
 dashmap = "6.1.0"
 
 axum = { version = "0.7.9", features = ["ws", "macros", "multipart"] }
