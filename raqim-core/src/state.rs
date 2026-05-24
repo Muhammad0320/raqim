@@ -1,7 +1,7 @@
 use crate::{AgentState, AgentStatus};
 use dashmap::DashMap;
-use loro::{LoroDoc, LoroList, LoroMap};
-use parking_lot::{RwLock, lock_api::RwLock};
+use loro::{ImportStatus, LoroDoc, LoroList, LoroMap};
+use parking_lot::RwLock;
 use std::{borrow::Cow, sync::Arc};
 
 // An Isolated Swarm Domain Document protected by an independent, low-overhead read/write lock.
@@ -101,7 +101,7 @@ impl SwarmState {
         delta: &[u8],
     ) -> Result<ImportStatus, loro::LoroError> {
         // parses the binary data and merges it into out local graph.
-        self.doc.import(delta)
+        self.doc.read().import(delta)
     }
 }
 
