@@ -159,7 +159,7 @@ impl AegisGateKeeper {
             // Check explicit allows
             for allowed in &policy.allowed_namespaces {
                 let is_authorized = if allowed.ends_with("*") {
-                    intent_path.starts_with(allowed[..allowed.len() - 1])
+                    intent_path.starts_with(&allowed[..allowed.len() - 1])
                 } else {
                     intent_path == allowed
                 };

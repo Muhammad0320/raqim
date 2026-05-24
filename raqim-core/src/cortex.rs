@@ -67,7 +67,7 @@ pub fn listen_for_local_thoughts(
 
         let subscriber = cortex
             .create_subscriber()
-            .expect("Failed to create lcoal subscriber");
+            .expect("Failed to create local subscriber");
 
         println!("Cortx Data Plane: Listening for zero-copy local thoughts...");
 

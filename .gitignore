@@ -3,3 +3,4 @@
 Cargo.lock
 trash.txt
 /production_semantic.lancedb
+*.wal
