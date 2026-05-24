@@ -1,7 +1,7 @@
 use crate::{AgentState, AgentStatus};
 use dashmap::DashMap;
 use loro::{LoroDoc, LoroList, LoroMap};
-use parking_lot::RwLock;
+use parking_lot::{RwLock, lock_api::RwLock};
 use std::{borrow::Cow, sync::Arc};
 
 // An Isolated Swarm Domain Document protected by an independent, low-overhead read/write lock.
@@ -33,49 +33,9 @@ impl SwarmState {
         }));
 
         Self {
-            doc: Arc::new(Mutex::new(doc)),
+            doc: RwLock::new(doc),
             root_timeline_map,
         }
-    }
-
-    /// Updates the state and returns a microscopic DELTA [u8] byte array
-    pub fn update_agent_state(&self, agent_id_hex: &str, state: &AgentState) -> Vec<u8> {
-        // 1. Capture the vector version of the CRDT *before* we changes.
-        // A mathematical vector clock ( e.g Node A is at tick 5, Node B is at tick 2. )
-
-        let previous_vv = self.doc.oplog_vv();
-
-        // 2. Locate or create a specific mmap for this agent id. let
-        let agent_memory = self
-            .state_map
-            .insert_container(agent_id_hex, LoroMap::new())
-            .expect("Loro allocation error: Failed to create agent memory map");
-
-        // Mutate the state. Loro tracks these changes in its internal OpLog.
-        agent_memory
-            .insert("transaction_id", state.transaction_id as i64)
-            .unwrap();
-        agent_memory.insert("timestamp", state.timestamp).unwrap();
-        agent_memory.insert("text", state.text.clone()).unwrap();
-
-        let status_str = match state.status {
-            AgentStatus::Idle => "IDLE",
-            AgentStatus::Reasoning => "REASONING",
-            AgentStatus::Halted => "HALTED",
-            AgentStatus::ToolExecution => "TOOL_EXEC",
-        };
-        agent_memory.insert("status", status_str).unwrap();
-
-        // 4. Commit the txn to the local CRDT
-        self.doc.commit();
-
-        // 5. TRUE DELTA EXPORT: We tell loro to export ONLY the bytes that changed since the `previous_frontier`.
-        // Ultimately creating a tiny [u8] payload
-        self.doc
-            .export(loro::ExportMode::Updates {
-                from: Cow::Borrowed(&previous_vv),
-            })
-            .expect("Failed to export CRDT delta")
     }
 
     /// Appends a new thought securely to an agent's timeline array without risk of deletion or amnesia
@@ -85,7 +45,7 @@ impl SwarmState {
         state: &AgentState,
     ) -> Result<Vec<u8>, anyhow::Error> {
         // Acquire an exclusive write lock ONLY for this specific swarm document
-        let mut dock_lock = self.doc.write();
+        let dock_lock = self.doc.write();
 
         let previous_vv = dock_lock.oplog_vv();
 
