@@ -19,8 +19,10 @@ use crate::api::ForkConfig;
 use crate::api::UiEvent;
 use crate::axon::AxonGateKeeper;
 use crate::network::GlobalNetworkBridge;
+use crate::registry::SwarmRegistry;
 use crate::sandbox::SandboxContent;
 use crate::sandbox::WasmEngine;
+use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{
     OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
@@ -37,7 +39,7 @@ pub struct MemoryRouter {
     telemetry: Arc<TelemetryEngine>,
     aegis: Arc<AegisGateKeeper>,
     axon: Arc<AxonGateKeeper>,
-    brain: Arc<SwarmState>,
+    brain: Arc<SwarmStateRegistry>,
     lance_engine: Arc<LanceEngine>,
     wasm_engine: Arc<WasmEngine>,
     wal_engine: Arc<WalEngine>,
@@ -53,7 +55,7 @@ impl MemoryRouter {
         telemetry: Arc<TelemetryEngine>,
         aegis: Arc<AegisGateKeeper>,
         axon: Arc<AxonGateKeeper>,
-        brain: Arc<SwarmState>,
+        brain: Arc<SwarmStateRegistry>,
         lance_engine: Arc<LanceEngine>,
         wasm_engine: Arc<WasmEngine>,
         wal_engine: Arc<WalEngine>,
@@ -521,9 +523,10 @@ impl MemoryRouter {
         };
 
         let target_brain = if is_isolated_debug {
-            Arc::new(SwarmState::new(format!("phantom_{}", agent_hex).as_str()))
+            SwarmStateRegistry::new().get_or_create_brain(format!("phantom_{}", agent_hex).as_str())
         } else {
-            self.brain.clone()
+            // TODO: Critical error
+            self.brain.get_or_create_brain("namespace")
         };
 
         // 3. Cure Schizophrenia ( Syncing the CRDT )

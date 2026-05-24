@@ -118,7 +118,7 @@ impl SwarmStateRegistry {
         }
     }
 
-    pub fn get_or_create_bain(&self, namespace: &str) -> Arc<SwarmState> {
+    pub fn get_or_create_brain(&self, namespace: &str) -> Arc<SwarmState> {
         if let Some(state) = self.shards.get(namespace) {
             return state.value().clone();
         }

@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 
+use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{
     axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine, state::SwarmState,
@@ -85,7 +86,7 @@ pub struct IngressEnvelope {
 
 pub async fn execute_raqim_cascade(
     archive_state: &rkyv::Archived<AgentState>, // True Zero Copy
-    brain: Arc<SwarmState>,
+    brain: Arc<SwarmStateRegistry>,
     axon: Arc<AxonGateKeeper>,
     wal: Arc<WalEngine>,
     cortex_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
@@ -129,7 +130,10 @@ pub async fn execute_raqim_cascade(
     };
 
     //
-    let delta = brain.update_agent_state(&agent_hex, &enriched_state);
+    let delta = brain
+        .get_or_create_brain(&enriched_state.namespace.clone())
+        .append_agent_thought(&agent_hex, &enriched_state)
+        .unwrap();
     telemetry.record_crdt_merge();
 
     // Contruct the raw log

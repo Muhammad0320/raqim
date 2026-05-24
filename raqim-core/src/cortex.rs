@@ -6,7 +6,7 @@ use iceoryx2::prelude::*;
 use tokio::sync::broadcast::Sender;
 
 use crate::axon::AxonGateKeeper;
-use crate::state::SwarmState;
+use crate::state::SwarmStateRegistry;
 use crate::{OpLog, SystemEvent};
 
 pub struct CortexDataPlane {
@@ -56,7 +56,7 @@ impl CortexDataPlane {
 /// The uncomprormising local listener. Runs in a dedicated background thread.
 pub fn listen_for_local_thoughts(
     topic_name: String,
-    brain: Arc<SwarmState>,
+    brain: Arc<SwarmStateRegistry>,
     axon: Arc<AxonGateKeeper>,
     tx: Sender<SystemEvent>,
 ) {
@@ -84,6 +84,7 @@ pub fn listen_for_local_thoughts(
                 // The Circuit Breaker
                 if axon.verify_foreign_thoughts(&archived_log) {
                     brain
+                        .get_or_create_brain(&archived_log.state.namespace)
                         .assimilate_foreign_thought(&archived_log.delta.as_slice())
                         .expect("FATAL: failed to assimilate thought");
                     println!(
