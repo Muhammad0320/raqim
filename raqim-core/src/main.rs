@@ -14,7 +14,7 @@ use raqim_core::network::GlobalNetworkBridge;
 use raqim_core::nucleus::WalEngine;
 use raqim_core::registry::SwarmRegistry;
 use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
-use raqim_core::state::SwarmState;
+use raqim_core::state::{SwarmState, SwarmStateRegistry};
 use raqim_core::telemetry::TelemetryEngine;
 use raqim_core::utils::parse_agent_id;
 use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
@@ -134,7 +134,8 @@ async fn main() {
 
     // ===============================
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
-    let brain = Arc::new(SwarmState::new(&config.topic));
+    let brain_shard = Arc::new(SwarmStateRegistry::new());
+
     let axon = Arc::new(AxonGateKeeper::new());
     let aegis = AegisGateKeeper::new(&config.aegis_path, event_tx.clone(), ui_tx.clone());
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
@@ -198,7 +199,7 @@ async fn main() {
     let topic_clone = &config.topic;
     listen_for_local_thoughts(
         topic_clone.to_string(),
-        brain.clone(),
+        brain_shard.clone(),
         axon.clone(),
         event_tx.clone(),
     );
@@ -220,7 +221,7 @@ async fn main() {
         telemetry.clone(),
         aegis.clone(),
         axon.clone(),
-        brain.clone(),
+        brain_shard.clone(),
         lance_engine.clone(),
         wasm_engine.clone(),
         wal.clone(),
@@ -230,7 +231,7 @@ async fn main() {
         event_tx.clone(),
     ));
 
-    let w_brain = brain.clone();
+    let w_brain = brain_shard.clone();
     let w_axon = axon.clone();
     let w_wal = wal.clone();
     let w_lance = lance_engine.clone();

@@ -25,9 +25,7 @@ use tokio::sync::broadcast::Sender;
 
 use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
-use crate::{
-    axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine, state::SwarmState,
-};
+use crate::{axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine};
 
 // The fundamental unit of our Flight Recorder.
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
@@ -129,7 +127,6 @@ pub async fn execute_raqim_cascade(
         text: archive_state.text.as_str().to_string(), // Extract text from pointer
     };
 
-    //
     let delta = brain
         .get_or_create_brain(&enriched_state.namespace.clone())
         .append_agent_thought(&agent_hex, &enriched_state)
