@@ -1,12 +1,14 @@
 use crate::{AgentState, AgentStatus};
-use loro::{LoroList, LoroMap};
-use parking_lot::Mutex;
+use dashmap::DashMap;
+use loro::{LoroDoc, LoroList, LoroMap};
+use parking_lot::RwLock;
 use std::{borrow::Cow, sync::Arc};
 
-// ARC, becaue multiple (threads) agents will hold pointers to this document in memory
+// An Isolated Swarm Domain Document protected by an independent, low-overhead read/write lock.
 pub struct SwarmState {
-    inner_doc: Arc<Mutex<LoroDoc>>,
-    root_timeline: LoroMap,
+    // This lock ONLY protects this specific namespace
+    doc: RwLock<LoroDoc>,
+    root_timeline_map: LoroMap,
 }
 
 impl SwarmState {
@@ -31,8 +33,8 @@ impl SwarmState {
         }));
 
         Self {
-            inner_doc: Arc::new(Mutex::new(doc)),
-            root_timeline: root_timeline_map,
+            doc: Arc::new(Mutex::new(doc)),
+            root_timeline_map,
         }
     }
 
@@ -82,19 +84,18 @@ impl SwarmState {
         agent_id_hex: &str,
         state: &AgentState,
     ) -> Result<Vec<u8>, anyhow::Error> {
-        // Acquire an absolute exclusive lock over a document transaction scope.
-        // This physically stop parallel threads from colliding on insert boundaries
-        let dock_lock = self.inner_doc.lock();
+        // Acquire an exclusive write lock ONLY for this specific swarm document
+        let mut dock_lock = self.doc.write();
 
         let previous_vv = dock_lock.oplog_vv();
 
         // Checks if a timeline array already exists for this agent_id token
-        let agent_timeline = match self.root_timeline.get(agent_id_hex) {
+        let agent_timeline = match self.root_timeline_map.get(agent_id_hex) {
             Some(loro::ValueOrContainer::Container(container)) => container.into_list().unwrap(),
 
             _ => {
                 // If this is the agent's first block, initialize a clean timeline list container
-                self.root_timeline
+                self.root_timeline_map
                     .insert_container(agent_id_hex, LoroList::new())
                     .map_err(|_| {
                         anyhow::anyhow!(
@@ -144,22 +145,26 @@ impl SwarmState {
     }
 }
 
-/// The global manager that maps incoming thought packets to their respective Swarm Brain Shards
-pub struct SwarmBrainRegistry {
-    // Maps Swarm Namespace -> Dedicated SwarmBrain Shard
-    shards: Mutex<HashMap<String, Arc<SwarmBrain>>>,
+// The Global Enterprise Registry.
+pub struct SwarmStateRegistry {
+    // Threads looking up different namespaces will hit different bucket with zero locking interference.
+    shards: DashMap<String, Arc<SwarmState>>,
 }
 
-impl SwarmRegistry {
+impl SwarmStateRegistry {
     pub fn new() -> Self {
         Self {
-            shards: Mutex::new(HashMap::new()),
+            shards: DashMap::new(),
         }
     }
 
     pub fn get_or_create_bain(&self, namespace: &str) -> Arc<SwarmState> {
-        let mut lock = self.shards.lock();
-        lock.entry(namespace.to_string())
+        if let Some(state) = self.shards.get(namespace) {
+            return state.value().clone();
+        }
+
+        self.shards
+            .entry(namespace.to_string())
             .or_insert_with(|| Arc::new(SwarmState::new(namespace)))
             .clone()
     }
