@@ -35,7 +35,7 @@ use crate::health::SystemHealth;
 use crate::lancedb_store::LanceEngine;
 use crate::nucleus::WalEngine;
 use crate::registry::SwarmRegistry;
-use crate::state::{SwarmState, SwarmStateRegistry};
+use crate::state::SwarmStateRegistry;
 use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge, telemetry::TelemetryEngine,
@@ -790,7 +790,6 @@ pub async fn http_ingress_endpoint(
         // Pass
         let res = execute_raqim_cascade(
             &state,
-            task_brain,
             task_axon,
             task_wal,
             task_cortex,

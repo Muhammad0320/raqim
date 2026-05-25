@@ -535,7 +535,7 @@ impl MemoryRouter {
 
         let target_brain = if is_isolated_debug {
             let phantom_namespace = format!("phantom_{}_{}", real_namespace, sandbox_agent_hex);
-            SwarmStateRegistry::new().get_or_create_brain(&phantom_namespace)
+            self.brain.get_or_create_brain(&phantom_namespace)
         } else {
             self.brain.get_or_create_brain(real_namespace)
         };
@@ -580,7 +580,6 @@ impl MemoryRouter {
         let content = SandboxContent {
             axon: self.axon.clone(),
             aegis: self.aegis.clone(),
-            brain: target_brain.clone(),
             wal: active_wal.clone(),
             cortex_tx: self.cortex_tx.clone(),
             global_net: active_net.clone(),

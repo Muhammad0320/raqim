@@ -84,7 +84,6 @@ pub struct IngressEnvelope {
 
 pub async fn execute_raqim_cascade(
     archive_state: &rkyv::Archived<AgentState>, // True Zero Copy
-    brain: Arc<SwarmStateRegistry>,
     axon: Arc<AxonGateKeeper>,
     wal: Arc<WalEngine>,
     cortex_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
@@ -127,10 +126,11 @@ pub async fn execute_raqim_cascade(
         text: archive_state.text.as_str().to_string(), // Extract text from pointer
     };
 
-    let delta = brain
+    let delta = SwarmStateRegistry::new()
         .get_or_create_brain(&enriched_state.namespace.clone())
         .append_agent_thought(&agent_hex, &enriched_state)
         .unwrap();
+
     telemetry.record_crdt_merge();
 
     // Contruct the raw log
@@ -202,4 +202,5 @@ pub enum SystemEvent {
     LicenseUpdated {
         new_jwt: String,
     },
+
 }
