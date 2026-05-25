@@ -452,6 +452,17 @@ impl MemoryRouter {
             .rebuild_agent_timeline(agent_hex, fetch_target, self.wal_engine.clone())
             .await?;
 
+        // Fallback boundary: if there's no history on history on disk, this operation is invalid.
+        if historical_oplog.is_empty() {
+            return Err(anyhow::anyhow!(
+                "CRITICAL: Agent {} has no immutable memory on disk. Rollback aborted.",
+                agent_hex
+            ));
+        }
+
+        // Dynamic namespace discovery
+        let real_namespace = &historical_oplog[0].state.namespace;
+
         // Extract flight recorded data
         let mut recovered_seeds = Vec::new();
         let mut recovered_networks = Vec::new();
@@ -523,10 +534,10 @@ impl MemoryRouter {
         };
 
         let target_brain = if is_isolated_debug {
-            SwarmStateRegistry::new().get_or_create_brain(format!("phantom_{}", agent_hex).as_str())
+            let phantom_namespace = format!("phantom_{}_{}", real_namespace, sandbox_agent_hex);
+            SwarmStateRegistry::new().get_or_create_brain(&phantom_namespace)
         } else {
-            // TODO: Critical error
-            self.brain.get_or_create_brain("namespace")
+            self.brain.get_or_create_brain(real_namespace)
         };
 
         // 3. Cure Schizophrenia ( Syncing the CRDT )

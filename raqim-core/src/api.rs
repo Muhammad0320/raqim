@@ -35,7 +35,7 @@ use crate::health::SystemHealth;
 use crate::lancedb_store::LanceEngine;
 use crate::nucleus::WalEngine;
 use crate::registry::SwarmRegistry;
-use crate::state::SwarmState;
+use crate::state::{SwarmState, SwarmStateRegistry};
 use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge, telemetry::TelemetryEngine,
@@ -140,7 +140,7 @@ pub struct ApiState {
 
     pub mem_router: Arc<MemoryRouter>,
     pub axon: Arc<AxonGateKeeper>,
-    pub brain: Arc<SwarmState>,
+    pub brain: Arc<SwarmStateRegistry>,
     pub aegis: Arc<AegisGateKeeper>,
     pub decoding_key: Arc<DecodingKey>,
     pub global_net: Arc<GlobalNetworkBridge>,

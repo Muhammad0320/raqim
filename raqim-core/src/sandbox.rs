@@ -11,6 +11,7 @@ use crate::api::ForkConfig;
 use crate::lancedb_store::LanceEngine;
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
+use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, SystemEvent};
 use crate::{AgentState, axon::AxonGateKeeper, state::SwarmState};
@@ -24,7 +25,6 @@ use wasmtime::*;
 pub struct SandboxContent {
     pub axon: Arc<AxonGateKeeper>,
     pub aegis: Arc<AegisGateKeeper>,
-    pub brain: Arc<SwarmState>,
     pub wal: Arc<WalEngine>,
     pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub global_net: Arc<GlobalNetworkBridge>,
@@ -162,7 +162,6 @@ impl WasmEngine {
                     .to_vec();
 
                 let layers = caller.data();
-                let brain_clone = layers.brain.clone();
                 let axon_clone = layers.axon.clone();
                 let wal_clone = layers.wal.clone();
                 let cortex_tx_clone = layers.cortex_tx.clone();
@@ -204,7 +203,6 @@ impl WasmEngine {
 
                     let res = crate::execute_raqim_cascade(
                         archived_bytes,
-                        brain_clone,
                         axon_clone,
                         wal_clone,
                         cortex_tx_clone,
