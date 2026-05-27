@@ -1,76 +1,243 @@
-        tokio::spawn(async move {
-            let client = Client::new();
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
 
-            // We open the local billing WAL in append-only mode to survive network outages.
-            let mut billing_wal = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("production.billing.wal")
-                .await
-                .expect("Failed to open billing WAL");
+#[derive(Deserialize, Debug, Clone)]
+pub struct AegisPolicy {
+    pub public_key_hex: String,
+    pub allowed_namespaces: Vec<String>,
+    pub blocked_namespaces: Vec<String>,
+}
 
-            loop {
-                interval.tick().await;
+#[derive(Deserialize, Debug)]
+#[serde(transparent)]
+pub struct AegisManifest {
+    pub policies: HashMap<String, AegisPolicy>,
+}
 
-                // 1. Swap the current counter to 0. This ensures we never double-count even if the thread lags.
-                let crdt_merges = engine.crdt_merges.swap(0, Ordering::SeqCst);
-                let a2a_bytes = engine.a2a_bytes_routed.swap(0, Ordering::SeqCst);
-                let time_travels = engine.time_travel_queries.swap(0, Ordering::SeqCst);
 
-                if crdt_merges == 0 && a2a_bytes == 0 && time_travels == 0 {
-                    continue;
-                }
 
-                let timestamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs();
 
-                // 2. Construct the Stripe-compatible JSON payload
-                let payload = format!(
-                    r#"{{"tenant": "{}", "timestamp": {}, "crdt_merges": {}, "a2a_bytes": {}, "time_travels": {}   }}"#,
-                    engine.tenant_id, timestamp, crdt_merges, a2a_bytes, time_travels
-                );
-                // 3. Persistence first: Write to local-disk before attempting network
-                let log_entry = format!("{}\n", payload);
-                if let Err(e) = billing_wal.write_all(log_entry.as_bytes()).await {
-                    eprintln!("[TELEMETRY FATAL] Failed to write to biling wal: {} ", e);
-                    continue; // 
-                }
 
-                let _ = billing_wal.sync_data().await;
+pub struct AegisGateKeeper {
+    // AEGIS ENGINE: Maps an Agent's Hex ID to their specific security policy.
+    policies: RwLock<HashMap<String, AegisPolicy>>,
 
-                // Read the entire WAL file For it might contain failed batches
-                let pending_data = tokio::fs::read_to_string("production.billing.wal")
-                    .await
-                    .unwrap_or_default();
-                let current_jwt = engine.license_key.read().unwrap().clone();
+    // TRUE CONCURRENCY: Dashmaps shards the locks. O(1) reads without blocking writers.
+    pub quarantine_blocklist: DashMap<String, QuarantineRecord>,
+    tx: Sender<SystemEvent>,
 
-                // 4. Ship to Cloud: Send the usage data to Raqim cloud API
-                let res = client
-                    .post("https://api.Raqim.cloud/v1/metering/injest")
-                    .header("Authorization", format!("Bearer {}", current_jwt))
-                    .header("Content-Type", "application/x-ndjson") // NDJSON for multiple lines
-                    .body(pending_data)
-                    .send()
-                    .await;
+    ui_tx: Sender<UiEvent>,
+}
 
+impl AegisGateKeeper {
+    pub fn new(aegis_path: &str, tx: Sender<SystemEvent>, ui_tx: Sender<UiEvent>) -> Arc<Self> {
+        let initial_config = Self::parse_toml(&aegis_path);
+
+        let gatekeeper = Arc::new(Self {
+            policies: RwLock::new(initial_config),
+            quarantine_blocklist: DashMap::new(),
+            tx,
+            ui_tx,
+        });
+
+        // Spawn a dedicated bg thread for the C-level fs watcher
+        let path_string = aegis_path.to_string();
+        let gk_clone = gatekeeper.clone();
+
+        // 3. The Async Tokio task that actually swaps the memory.
+        std::thread::spawn(move || {
+            let (tx, rx) = channel();
+            let mut watcher =
+                notify::recommended_watcher(tx).expect("Failed to bind os file to watcher");
+            watcher
+                .watch(
+                    std::path::Path::new(&path_string),
+                    RecursiveMode::NonRecursive,
+                )
+                .unwrap();
+
+            // This thread blocks efficiently until the OS sends a file modifiication event.
+            for res in rx {
                 match res {
-                    Ok(r) if r.status().is_success() => {
-                        println!("[TELEMETRY] Successfully synced 60s usage to Raqim cloud");
-                        billing_wal
-                            .set_len(0)
-                            .await
-                            .expect("Failed to truncate billing WAL");
+                    Ok(event) => {
+                        // We only care if the file content were actually modified
+                        if let EventKind::Modify(_) = event.kind {
+                            println!("[AEGIS] Modification detected. Hot reloadidng ACL...");
+
+                            // Parse the updated file
+                            let new_policies = Self::parse_toml(&path_string);
+
+                            //  FAIL-SAFE: Only apply if the new file actually parsed correctly
+                            if !new_policies.is_empty() {
+                                // Obtain write lock, swap the mappig, instantly release the lock
+                                let mut write_lock = gk_clone.policies.write().unwrap();
+                                *write_lock = new_policies;
+                                println!("[AEGIS] ACL Hot-Reloaded Successfully.")
+                            }
+                        }
                     }
 
-                    _ => {
-                        eprintln!(
-                            "[TELEMETRY WARNING] Cloud API unreachable. Data safely preserved in billing.wal for next retry."
-                        );
-                    }
+                    Err(e) => eprintln!("[AEGIS] Watcher Error: {:?}", e),
                 }
             }
         });
-    
+
+        gatekeeper
+    }
+
+    /// Reads and deserialize the TOML file from the physical disk
+    fn parse_toml(path: &str) -> HashMap<String, AegisPolicy> {
+        match fs::read_to_string(&path) {
+            Ok(content) => match toml::from_str::<AegisManifest>(&content) {
+                Ok(manifest) => manifest.policies,
+                Err(e) => {
+                    eprintln!(
+                        "[AEGIS FATAL] Failed to parse aegis.toml: {}. Defaulting to lockdown. ",
+                        e
+                    );
+                    HashMap::new() // 
+                }
+            },
+            Err(_) => {
+                eprintln!("[AEGIS WARNING] aegis.toml not found system is open to attack.");
+                HashMap::new()
+            }
+        }
+    }
+
+    /// The Semantic Interdiction Switch. Returns TRUE if allowed, FALSE if malicious.
+    pub fn enforce_aegis_policy(&self, agent_hex: &str, intent_path: &str) -> bool {
+        // Check quarantine first (0(1) instant rejection )
+        if self.quarantine_blocklist.contains_key(agent_hex) {
+            eprintln!(
+                "[AEGIS] PARALYSED AGENT {} ATTEMPTED ACTION. DROPPED. ",
+                agent_hex
+            );
+            return false;
+        }
+
+        // 2. Evaluate Semantic Namespace policy.
+        let policies = self.policies.read().unwrap();
+        if let Some(policy) = policies.get(agent_hex) {
+            // Check explicit Blocks (e.g., "raqim_finance/*")
+            for blocked in &policy.blocked_namespaces {
+                let is_breach = if blocked.ends_with("*") {
+                    // Zero-copy slice
+                    intent_path.starts_with(&blocked[..blocked.len() - 1])
+                } else {
+                    intent_path == blocked
+                };
+
+                if is_breach {
+                    self.trigger_quarantine(
+                        agent_hex,
+                        intent_path,
+                        "NAMESPACE_BREACH",
+                        "Attempted execution via unauthorized channel",
+                    );
+                    return false;
+                }
+            }
+
+            // Check explicit allows
+            for allowed in &policy.allowed_namespaces {
+                let is_authorized = if allowed.ends_with("*") {
+                    intent_path.starts_with(&allowed[..allowed.len() - 1])
+                } else {
+                    intent_path == allowed
+                };
+
+                if is_authorized {
+                    return true;
+                }
+            }
+
+            // Default Deny if not explicitly allowed
+            self.trigger_quarantine(
+                agent_hex,
+                intent_path,
+                "NAMESPACE_BREACH",
+                "Attempted execution via unauthorized channel",
+            );
+            return false;
+        }
+
+        //  In strict mode, default is false. For dev it's true
+        true
+    }
+
+
+    /// Evaluates if an agent is authorized to communicate with a specific service capability
+    pub fn enforce_a2a_policy(&self, sender_hex: &str, target_capability: &str) -> bool {
+        if self.quarantine_blocklist.contains_key(sender_hex) {
+            return false;
+        }
+
+        let policies = self.policies.read().unwrap();
+
+        if let Some(policy) = policies.get(sender_hex) {
+            // 1. Checks Explicit Blocks first
+            for blocked in &policy.blocked_namespaces {
+                if target_capability.starts_with(blocked) {
+                    self.trigger_quarantine(
+                        sender_hex,
+                        target_capability,
+                        "NAMESPACE_BREACH",
+                        "A2A Blocked Namespace Violation",
+                    );
+                    return false;
+                }
+            }
+
+            // Checks if the agents allowed namespace covers the target capability
+            for allowed in &policy.allowed_namespaces {
+                if target_capability.starts_with(allowed) {
+                    return true;
+                }
+            }
+        }
+
+        // Zero-Trust Default Deny
+        self.trigger_quarantine(
+            sender_hex,
+            target_capability,
+            "NAMESPACE_BREACH",
+            "A2A Unauthorized Capability Access",
+        );
+        false
+    }
+
+    /// Universally verifies any crytographic payload at the network edge
+    pub fn verify_agent_signature(
+        &self,
+        agent_hex: &str,
+        payload: &[u8],
+        signature_bytes: &[u8; 64],
+    ) -> bool {
+        let policies = self.policies.read().unwrap();
+
+        if let Some(policy) = policies.get(agent_hex) {
+            // Decode the expected public_key from the TOML
+            let pub_key_bytes = hex::decode(&policy.public_key_hex).unwrap_or_default();
+
+            if let Ok(public_key) =
+                VerifyingKey::from_bytes(pub_key_bytes.as_slice().try_into().unwrap_or(&[0; 32]))
+            {
+                let signature =
+                    Signature::from_bytes(signature_bytes.try_into().unwrap_or(&[0; 64]));
+
+                // Mathematically prove that sender owns this privage key
+                if public_key.verify(payload, &signature).is_ok() {
+                    return true;
+                }
+            }
+        }
+
+        // If the key is missing, invalid, or signature is spoofed quarantine them.
+        self.trigger_quarantine(
+            agent_hex,
+            "Global",
+            "CRYPTO_SPOOF",
+            "Invalid Ed25519 Signature.",
+        );
+        false
+    }
+}
