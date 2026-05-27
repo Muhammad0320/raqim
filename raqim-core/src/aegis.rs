@@ -160,6 +160,85 @@ impl AegisGateKeeper {
             return Err(anyhow::anyhow!(" Capability Certificate has expired "));
         }
 
-        // 4.
+        // 4. LINEAGE VERIFICATION: Verify token validity agains the Master Swarm Key
+        let mut cert_unsigned_payload = cert.clone();
+        cert_unsigned_payload.master_signature = [0u8; 64];
+        let serialized_raw = postcard::to_allocvec(&cert_unsigned_payload)?;
+
+        let master_sig = Signature::from_bytes(&cert.master_signature);
+        if self
+            .master_public_key
+            .verify(&serialized_raw, &master_sig)
+            .is_err()
+        {
+            self.trigger_quarantine(
+                &cert.agent_hex,
+                intent_path,
+                "CRYPTO_SPOOF",
+                "Forged Swarm Lineage Token",
+            );
+            return Err(anyhow::anyhow!(
+                "Lineage Audit Failure: Forged Master Signature"
+            ));
+        }
+
+        // 5. AUTHENTICITY VERIFICATION: Verify payload integrity against individual Agent Key.
+        let agent_verifying_key = VerifyingKey::from_bytes(agent_pub_bytes)?;
+        let packet_sig = Signature::from_bytes(packet_sig_bytes);
+        if agent_verifying_key.verify(payload, &packet_sig).is_err() {
+            self.trigger_quarantine(
+                &cert.agent_hex,
+                &intent_path,
+                "CRYPTO_SPOOF",
+                "Invalid Agent Frame Signature",
+            );
+            return Err(anyhow::anyhow!(
+                "Integrity Audit Failure: Mismatched Agent Handshake "
+            ));
+        }
+
+        // 6. POLICY ENFORCEMENT: Evaluate the dynamically accepted namespace claims
+        for blocked in &cert.blocked_namespaces {
+            let match_found = if blocked.ends_with("*") {
+                intent_path.starts_with(&blocked[..blocked.len() + 1])
+            } else {
+                intent_path == blocked
+            };
+
+            if match_found {
+                self.trigger_quarantine(
+                    &cert.agent_hex,
+                    intent_path,
+                    "NAMESPACE_BREACH",
+                    "Atempted interaction inside expicitely blocked domain",
+                );
+                return Err(anyhow::anyhow!(
+                    "Access Denied: Namespace explicitely blocked"
+                ));
+            }
+        }
+
+        for allowed in &cert.allowed_namespaces {
+            let match_found = if allowed.ends_with("*") {
+                intent_path.starts_with(&allowed[..allowed.len() - 1])
+            } else {
+                allowed == intent_path
+            };
+
+            if match_found {
+                return Ok(cert.agent_hex);
+            }
+        }
+
+        // Default Deny Fallback
+        self.trigger_quarantine(
+            &cert.agent_hex,
+            intent_path,
+            "NAMESPACE_BREACH",
+            "No explicit allowance match withing token permissions",
+        );
+        Err(anyhow::anyhow!(
+            "Access Denied: Default Deny Policy Tripped"
+        ))
     }
 }
