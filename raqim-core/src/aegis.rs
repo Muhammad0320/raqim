@@ -3,7 +3,7 @@ use crate::api::UiEvent;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::mpsc::channel;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
@@ -13,7 +13,29 @@ use std::{
 };
 use tokio::sync::broadcast::Sender;
 
-#[derive(serde::Serialize, Clone, Debug)]
+/// The Internal Token packed inside every agent's SDK bundle
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CapabilityCertificate {
+    pub agent_hex: String,
+    pub group_name: String,
+    pub allowed_namespaces: Vec<String>,
+    pub blocked_namespaces: Vec<String>,
+    pub expiration_timestamp: u64,
+    pub master_signature: [u8; 64], // Signed by Swarm Master Key
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct AegisGroupPolicy {
+    pub allowed_namespaces: Vec<String>,
+    pub blocked_namespaces: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct AegisGroupManifest {
+    pub groups: HashMap<String, AegisGroupPolicy>,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct QuarantineRecord {
     pub agent_hex: String,
     pub violation_type: String,
@@ -293,5 +315,4 @@ impl AegisGateKeeper {
         );
         false
     }
-
 }
