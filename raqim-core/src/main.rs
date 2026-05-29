@@ -596,10 +596,6 @@ async fn main() {
 
                     println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
 
-
-
-
-
                 });
 
             }

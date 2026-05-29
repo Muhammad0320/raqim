@@ -1,6 +1,7 @@
 use crate::SystemEvent;
 use crate::api::UiEvent;
 use dashmap::DashMap;
+use datafusion::parquet::data_type::AsBytes;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,7 +19,7 @@ pub struct CapabilityCertificate {
     pub allowed_namespaces: Vec<String>,
     pub blocked_namespaces: Vec<String>,
     pub expiration_timestamp: u64,
-    pub master_signature: [u8; 64], // Signed by Swarm Master Key
+    pub master_signature: Vec<u8>, // Signed by Swarm Master Key
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -158,10 +159,10 @@ impl AegisGateKeeper {
 
         // 4. LINEAGE VERIFICATION: Verify token validity agains the Master Swarm Key
         let mut cert_unsigned_payload = cert.clone();
-        cert_unsigned_payload.master_signature = [0u8; 64];
+        cert_unsigned_payload.master_signature = Vec::new();
         let serialized_raw = postcard::to_allocvec(&cert_unsigned_payload)?;
 
-        let master_sig = Signature::from_bytes(&cert.master_signature);
+        let master_sig = Signature::from_bytes(&cert.master_signature.as_bytes());
         if self
             .master_public_key
             .verify(&serialized_raw, &master_sig)
