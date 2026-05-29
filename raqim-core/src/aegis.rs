@@ -2,14 +2,10 @@ use crate::SystemEvent;
 use crate::api::UiEvent;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use jsonwebtoken::signature::digest::typenum::Gr;
-use notify::{EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use std::sync::mpsc::channel;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     collections::HashMap,
-    fs,
     sync::{Arc, RwLock},
 };
 use tokio::sync::broadcast::Sender;

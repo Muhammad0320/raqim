@@ -305,7 +305,6 @@ async fn main() {
                         // When an agent connects or boots, we retreive or initialize its specific tracker
                         let content = SandboxContent {
                             axon: a_clone,
-                            brain: b_clone,
                             wal: w_clone,
                             cortex_tx: c_clone,
                             global_net: g_clone,
@@ -561,7 +560,6 @@ async fn main() {
                     // --- The Raqim Cascade ---
                     let res = execute_raqim_cascade(
                         &archived_state,
-                        task_brain,
                         task_axon,
                         task_wal,
                         task_cortex_tx,
