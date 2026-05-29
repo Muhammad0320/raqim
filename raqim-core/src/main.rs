@@ -518,28 +518,20 @@ async fn main() {
                         }
                     };
 
-                    // ===========================
+                    let agent_pub_key: [u8; 32] = archived_ingress.public_key.try_into().unwrap_or([0; 32]);
+                    let mut packet_sig = [0u8; 32];
+                    packet_sig.copy_from_slice( archived_ingress.signature.as_slice() );
 
-                    // verify the inner state payload
-                    let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
+                    // UNIFIED PERIMETER: Validates lineage, check signature, and checks the namespace instantly
+                    let agent_hex = match task_aegis.verify_and_authorize_ingress(archived_ingress.capability_cert.as_slice(), &agent_pub_key, state_slice,  &packet_sig, path_intent ) {
+                        Ok(verified_hex) => verified_hex,
+                        Err(err) =>  {
+                            eprintln!("[AEGIS INTERDICTION] Inbound TCP packet dropped: {} ", err);
+                            return;
+                        }
+                    }
+
                     let text = archived_state.text.as_str().to_string();
-                    // 1. Checking aegis first before doing any expensive math or hitting the wal.
-                    if !task_aegis.enforce_aegis_policy(&agent_hex, path_intent) {
-                        eprintln!(
-                            "[AEGIS] Dropped Unauthorized TCP packets from {}",
-                            &agent_hex
-                        );
-                        return;
-                    }
-
-                    // TRUE CRYPTOGRAPHIC VERIFIICATION (using the exact slice)
-                    let mut sig_bytes = [0u8; 64];
-                    sig_bytes.copy_from_slice(archived_ingress.signature.as_slice());
-
-                    if !task_aegis.verify_agent_signature(&agent_hex, state_slice, &sig_bytes) {
-                        eprintln!(" [SECURITY] Invalid Ed25519 signature. Dropping TCP packet.");
-                        return;
-                    }
 
                     let mut alias = "Unknown".to_string();
                     if path_intent == "/system/handshake" {
