@@ -195,19 +195,21 @@ impl GlobalNetworkBridge {
         let sender_hex = hex::encode(envelope.sender_id.clone());
 
         // 1. AEGIS INTERCEPTION: Does this agent have clearance this question?
-        if !aegis.enforce_a2a_policy(sender_hex.as_str(), &envelope.target_capability) {
-            return Err(anyhow::anyhow!(
-                "[AEGIS INTERDICTION] Unauthorized A2A Communucation"
-            ));
-        }
+        let mut packet_sig = [0u8; 64];
+        packet_sig.copy_from_slice(envelope.signature.as_slice());
 
-        if !aegis.verify_agent_signature(
-            sender_hex.as_str(),
+        let sender_pub_bytes: [u8; 32] = [0; 32];
+
+        if let Err(e) = aegis.verify_and_authorize_ingress(
+            envelope.sender_capability_cert.as_slice(),
+            &sender_pub_bytes,
             &envelope.payload,
-            &envelope.signature,
+            &packet_sig,
+            &envelope.target_capability,
         ) {
             return Err(anyhow::anyhow!(
-                "[AEGIS INTERDICTION] Cryptograpic Spoofing detected"
+                "[AEGIS INTERDICTION]: A2A Transmission Violation: {} ",
+                e
             ));
         }
 

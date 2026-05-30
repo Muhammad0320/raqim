@@ -137,7 +137,12 @@ async fn main() {
     let brain_shard = Arc::new(SwarmStateRegistry::new());
 
     let axon = Arc::new(AxonGateKeeper::new());
-    let aegis = AegisGateKeeper::new(&config.aegis_path, event_tx.clone(), ui_tx.clone());
+    let aegis = AegisGateKeeper::new(
+        &config.aegis_path,
+        &config.master_public_key_hex,
+        event_tx.clone(),
+        ui_tx.clone(),
+    );
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
         GlobalNetworkBridge::new(&verified_tenat_id, &config.topic, aegis.clone(), allow_wan).await,
@@ -505,7 +510,6 @@ async fn main() {
 
 
                 // ===== REALIGNMENT: Force the sub-slice onto machine word boundaries ==========
-
                     let mut aligned_state_buf: rkyv::util::AlignedVec<16> = rkyv::util::AlignedVec::new();
                     aligned_state_buf.extend_from_slice(state_slice);
 
