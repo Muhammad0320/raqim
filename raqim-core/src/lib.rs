@@ -71,7 +71,8 @@ pub struct A2AEnvelope {
     pub sender_id: [u8; 16],
     pub target_capability: String,
     pub payload: Vec<u8>,
-    pub signature: [u8; 64], // using ed25519
+    pub signature: [u8; 64],
+    pub sender_capability_cert: Vec<u8>,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]

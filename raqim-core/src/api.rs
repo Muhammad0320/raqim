@@ -747,31 +747,22 @@ pub async fn http_ingress_endpoint(
             }
         };
 
-    let agent_hex = hex::encode(archived_state.agent_id.unwrap().as_slice());
     let path_intent = ingress_envelope.intent_path.as_str();
 
     // O(1) Aegis Policy Check.
-    if !state.aegis.enforce_aegis_policy(&agent_hex, path_intent) {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    let mut packet_sig = [0u8; 64];
+    packet_sig.copy_from_slice(ingress_envelope.signature.as_slice());
 
-    let mut sig_bytes = [0u8; 64];
-    sig_bytes.clone_from_slice(ingress_envelope.signature.as_slice());
-    // Crytographic Perimeter
-    if !state
-        .aegis
-        .verify_agent_signature(&agent_hex, state_bytes, &sig_bytes)
-    {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    // The True Zero-Copy Spawn.
-    let task_brain = state.brain.clone();
-    let task_axon = state.axon.clone();
-    let task_wal = state.wal.clone();
-    let task_cortex = state.cortex_tx.clone();
-    let task_net = state.global_net.clone();
-    let task_counter_tx = state.global_tx_counter.clone();
+    let agent_hex = match state.aegis.verify_and_authorize_ingress(
+        &ingress_envelope.capability_cert.as_slice(),
+        &ingress_envelope.public_key,
+        &state_bytes,
+        &packet_sig,
+        &path_intent,
+    ) {
+        Ok(hex) => hex,
+        Err(_) => return Err(StatusCode::UNAUTHORIZED),
+    };
     let task_telemetry = state.telemetry.clone();
     let task_event = state.event_tx.clone();
 
