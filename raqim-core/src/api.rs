@@ -56,8 +56,9 @@ pub enum WsMessage {
         capability: String,
         question: Vec<u8>,
         sender_hex: String,
-        public_key: Vec<u8>,
+        public_key: String,
         signature: Vec<u8>,
+        capability_cert: String,
     },
 
     // Daemon -> python: "Someone is asking you a question"
@@ -317,12 +318,26 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
             sender_hex,
             public_key,
             signature,
+            capability_cert,
         } => {
             let os_state_clone = os_state.clone();
             let conn_clone = conn.clone();
 
             tokio::spawn(async move {
-                // Construct Envelope.
+                // Decode Raw bytes from Hex Containers
+
+                let cert_bytes = match hex::decode(&capability_cert) {
+                    Ok(b) => b,
+                    Err(_) => return,
+                };
+
+                let mut public_key_bytes = [0u8; 32];
+                if Ok(b) = hex::decode(&public_key) {
+                    if b.len() == 32 {
+                        public_key_bytes.copy_from_slice(&b);
+                    }
+                }
+
                 let mut sender_id_bytes = [0u8; 16];
                 if let Ok(decoded) = hex::decode(&sender_hex) {
                     if decoded.len() == 16 {
@@ -335,11 +350,32 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     sig_bytes.copy_from_slice(&signature)
                 }
 
+                // Perform Pre-Flight Verification before wrapping into network layer.
+                if let Err(e) = os_state_clone.aegis.verify_and_authorize_ingress(
+                    &cert_bytes,
+                    &public_key_bytes,
+                    &question,
+                    &sig_bytes,
+                    &capability,
+                ) {
+                    let err = WsMessage::Error {
+                        message: format!("[AEGIS Gate block]  "),
+                    };
+                    let _ = conn_clone
+                        .downstream_tx
+                        .send(Message::Text(serde_json::to_string(&err).unwrap()))
+                        .await;
+                    return;
+                }
+
                 let envelope = A2AEnvelope {
                     sender_id: sender_id_bytes,
+                    sender_public_key: public_key_bytes,
                     target_capability: capability.clone(),
                     payload: question.clone(),
+
                     signature: sig_bytes,
+                    sender_capability_cert: cert_bytes,
                 };
 
                 // Start the stopwatch

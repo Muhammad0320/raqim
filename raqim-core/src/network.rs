@@ -180,7 +180,7 @@ impl GlobalNetworkBridge {
                     &packet_signature,
                     &archievd_envelope.target_capability.as_str(),
                 ) {
-                    Ok(verified_agent_hex) => {
+                    Ok(_) => {
                         // Execution approved. Invoke the inner WASM guest application runtime logic.
                         let answer_bytes = response_handler(question_payload);
 
