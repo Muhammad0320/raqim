@@ -165,15 +165,42 @@ impl GlobalNetworkBridge {
 
                 // Extract the raw question bytes
                 let question_payload = archievd_envelope.payload.as_slice();
-                let sender_hex = hex::encode(archievd_envelope.sender_id.as_slice());
 
-                // ZERO-TRUST: Verify the signature of the question
-                let sig_array: &[u8; 64] =
-                    archievd_envelope.signature.as_slice().try_into().unwrap();
+                let mut packet_signature = [0u8; 64];
+                packet_signature.copy_from_slice(archievd_envelope.signature.as_slice());
 
-                if !aegis.verify_agent_signature(&sender_hex, question_payload, sig_array) {
-                    println!("[AEGIS INTERDICTION] Cryptographic Spoofing detected.");
-                    continue;
+                let mut agent_public_key = [0u8; 32];
+                agent_public_key.copy_from_slice(archievd_envelope.sender_public_key.as_slice());
+
+                // UNIFIED PERIMETER AUDIT: Validates lineage token, proved the signature authenticity and checks path
+                match aegis.verify_and_authorize_ingress(
+                    archievd_envelope.sender_capability_cert.as_slice(),
+                    &agent_public_key,
+                    question_payload,
+                    &packet_signature,
+                    &archievd_envelope.target_capability.as_str(),
+                ) {
+                    Ok(verified_agent_hex) => {
+                        // Execution approved. Invoke the inner WASM guest application runtime logic.
+                        let answer_bytes = response_handler(question_payload);
+
+                        // Deliver the result frame back down the query link
+                        if let Err(e) = query.reply(query.key_expr(), answer_bytes).await {
+                            eprintln!(
+                                "[A2A Network Warning] Failed to deliver RPC answer frame: {}",
+                                e
+                            );
+                        }
+                    }
+
+                    Err(interdiction_reason) => {
+                        eprintln!(
+                            "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Reason: {}",
+                            interdiction_reason
+                        );
+
+                        continue;
+                    }
                 }
 
                 // Executes the agent's internal logic  to generate answer
