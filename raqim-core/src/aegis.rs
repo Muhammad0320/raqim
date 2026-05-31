@@ -162,7 +162,13 @@ impl AegisGateKeeper {
         cert_unsigned_payload.master_signature = Vec::new();
         let serialized_raw = postcard::to_allocvec(&cert_unsigned_payload)?;
 
-        let master_sig = Signature::from_bytes(&cert.master_signature.as_bytes());
+        let master_sig_array: &[u8; 64] = cert
+            .master_signature
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid Master Signature block lengnth"))?;
+
+        let master_sig = Signature::from_bytes(master_sig_array);
         if self
             .master_public_key
             .verify(&serialized_raw, &master_sig)

@@ -765,6 +765,11 @@ pub async fn http_ingress_endpoint(
     };
     let task_telemetry = state.telemetry.clone();
     let task_event = state.event_tx.clone();
+    let task_axon = state.axon.clone();
+    let task_wal = state.wal.clone();
+    let task_cortex = state.cortex_tx.clone();
+    let task_net = state.global_net.clone();
+    let task_counter_tx = state.global_tx_counter.clone();
 
     let body_clone = body.clone();
 

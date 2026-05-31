@@ -1,3 +1,4 @@
+use ed25519_dalek::{Signer, SigningKey};
 use std::result::Result;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -32,8 +33,12 @@ pub struct SandboxContent {
     pub event_tx: Sender<SystemEvent>,
     pub wasi: WasiP1Ctx,
     pub lance: Arc<LanceEngine>,
-    pub agent_hex: String,
     pub telemetry: Arc<TelemetryEngine>,
+
+    // Agent credentials
+    pub agent_hex: String,
+    pub agent_private_key: SigningKey,
+    pub capability_cert_bytes: Vec<u8>,
 
     // LIVE MODE: We collect seeds and HTTP responses as they happen
     pub live_seeds: Vec<u64>,
@@ -342,12 +347,29 @@ impl WasmEngine {
 
                 let content = caller.data_mut();
 
+                // Cryptographically sign the Out-bound RPC payload bytes
+                let agent_signing_key = &content.agent_private_key;
+                let packet_signature = agent_signing_key.sign(&payload_bytes);
+
+                // Extract the matching Public Verification Key bytes
+                let agent_public_bytes = agent_signing_key.verifying_key().to_bytes();
+
+                // Derive a true 16-byte raw identity.
+                let mut sender_id = [0u8; 16];
+                if let Ok(id_bytes) = hex::decode(&content.agent_hex) {
+                    if id_bytes.len() == 16 {
+                        sender_id.copy_from_slice(&id_bytes);
+                    }
+                }
+
                 // Construct the Envelope
                 let envelope = A2AEnvelope {
-                    sender_id: content.agent_hex.as_bytes().try_into().unwrap_or([0; 16]),
+                    sender_id,
+                    sender_public_key: agent_public_bytes,
                     target_capability: capability.clone(),
                     payload: payload_bytes,
-                    signature: [0; 64],
+                    sender_capability_cert: content.capability_cert_bytes.clone(),
+                    signature: packet_signature.to_bytes(),
                 };
 
                 // Execute the actual RPC call (block_in_place because WASM calls are sync)
