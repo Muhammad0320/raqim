@@ -69,6 +69,7 @@ pub struct OpLog {
 #[rkyv(compare(PartialEq))]
 pub struct A2AEnvelope {
     pub sender_id: [u8; 16],
+    pub sender_public_key: [u8; 32],
     pub target_capability: String,
     pub payload: Vec<u8>,
     pub signature: [u8; 64],
