@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::axon::AxonGateKeeper;
-use crate::state::SwarmState;
+use crate::state::{SwarmState, SwarmStateRegistry};
 use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, OpLog, SystemEvent};
 use rkyv::{Archive, to_bytes};
@@ -78,7 +78,7 @@ impl GlobalNetworkBridge {
     /// Listens for foreign thoughts from the global network
     pub async fn listen_for_foreign_thoughts(
         &self,
-        brain: Arc<SwarmState>,
+        brain_registry: Arc<SwarmStateRegistry>,
         axon: Arc<AxonGateKeeper>,
         tx: Sender<SystemEvent>,
     ) {
@@ -95,8 +95,6 @@ impl GlobalNetworkBridge {
             let subscriber = session_clone.declare_subscriber(key_expr).await.unwrap();
 
             while let Ok(sample) = subscriber.recv_async().await {
-                // 1. Zenoh payload can be fragmented in memory (chunked) .contiguous() forces Zenoh to yield a single flat memory slice &[u8].
-                // IF it's already flat (most cases). this const zero CPU cycles.
                 let payload_bytes = sample.payload().to_bytes();
 
                 // 2. We cast pointer directly over ZENOH network buffer!
@@ -110,18 +108,28 @@ impl GlobalNetworkBridge {
                                 "[AEGIS] Packet Dropped. Malformed memory layout (OpLog): {}",
                                 e
                             );
-                            return;
+                            continue;
                         }
                     };
 
                 // Cryptographic verification on Raw pounter
                 if axon.verify_foreign_thoughts(archived_log) {
-                    if let Err(e) = brain.assimilate_foreign_thought(archived_log.delta.as_slice())
+                    let target_namespace = archived_log.state.namespace.as_str();
+
+                    // Retreive or spin up highly isolated, independent, Loro document shard.
+                    let target_brain = brain_registry.get_or_create_brain(target_namespace);
+
+                    if let Err(e) =
+                        target_brain.assimilate_foreign_thought(archived_log.delta.as_slice())
                     {
-                        eprintln!("CRDT Assimilation Failed: {} ", e);
+                        eprintln!(
+                            "[CRDT SHARD ERROR]: Shard '{}' assimilation failed: {} ",
+                            target_namespace, e
+                        );
                     } else {
                         println!(
-                            "Assimlated foreign thoughts from Agent: {}",
+                            " [ CRDT SHARD SUCCESS ] Assimlated foreign thoughts into '{}' from Agent: {} ",
+                            target_namespace
                             hex::encode(archived_log.agent_id.as_slice())
                         )
                     }

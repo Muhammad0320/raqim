@@ -238,7 +238,7 @@ async fn main() {
         event_tx.clone(),
     ));
 
-    let w_brain = brain_shard.clone();
+    let w_brain_shard = brain_shard.clone();
     let w_axon = axon.clone();
     let w_wal = wal.clone();
     let w_lance = lance_engine.clone();
@@ -309,7 +309,7 @@ async fn main() {
                         let hasher = Md5::new();
                         hasher.update(pub_key_bytes);
                         let agent_id_byte: [u8; 16] = hasher.finalize().into();
-                        let agent_hex = hex::encode(agent_id_bytes);
+                        let agent_hex = hex::encode(agent_id_byte);
 
                         println!(
                             "[ORCHESTRATOR] Deploying Certified Identity Node: [Hex: {}] [Alias: {}] ",
@@ -325,7 +325,7 @@ async fn main() {
 
                         // We must clone the layers for the specific execution
                         let a_clone = w_axon.clone();
-                        let b_clone = w_brain.clone();
+                        let b_clone = w_brain_shard.clone();
                         let w_clone = w_wal.clone();
                         let c_clone = w_cortex_tx.clone();
                         let g_clone = w_global_net.clone();
@@ -377,14 +377,13 @@ async fn main() {
                         let current_tx = w_tx_couter.load(std::sync::atomic::Ordering::SeqCst);
                         let w_engine_clone = w_wasm_engine.clone();
                         let wasm_bytes_clonen = wasm_bytes.clone();
-                        let mut tracker_clone = agent_tracker.clone();
 
                         // Execute the untrusted logic in the safe WASM execution cell
                         tokio::spawn(async move {
                             if let Err(e) = w_wasm_engine.execute_agent(
                                 &wasm_bytes_clonen,
                                 content,
-                                &mut tracker_clone,
+                                &mut agent_tracker,
                                 current_tx,
                                 None,
                             ) {
@@ -432,7 +431,7 @@ async fn main() {
     // 2 Background Listeners (Zenoh Global network)
     let global_net_clone = global_net.clone();
     let global_axon = axon.clone();
-    let global_brain = brain.clone();
+    let global_brain = brain_shard.clone();
     let global_tx = event_tx.clone();
     tokio::spawn(async move {
         global_net_clone
@@ -450,7 +449,7 @@ async fn main() {
         global_net: global_net.clone(),
         telemetry: telemetry.clone(),
         axon: axon.clone(),
-        brain: brain.clone(),
+        brain: brain_shard.clone(),
         lance: lance_engine.clone(),
         cortex_tx: cortex_tx.clone(),
         global_tx_counter: tx_counter.clone(),
@@ -504,7 +503,7 @@ async fn main() {
                 println!("External Agent connected from: {}", addr);
 
                 let task_telemetry = telemetry.clone();
-                let task_brain = brain.clone();
+                let task_brain = brain_shard.clone();
                 let task_axon = axon.clone();
                 let task_cortex_tx = cortex_tx.clone();
                 let task_wal = wal.clone();
@@ -562,7 +561,7 @@ async fn main() {
                     };
 
                     let agent_pub_key: [u8; 32] = archived_ingress.public_key.try_into().unwrap_or([0; 32]);
-                    let mut packet_sig = [0u8; 32];
+                    let mut packet_sig = [0u8; 64];
                     packet_sig.copy_from_slice( archived_ingress.signature.as_slice() );
 
                     // UNIFIED PERIMETER: Validates lineage, check signature, and checks the namespace instantly
@@ -572,7 +571,7 @@ async fn main() {
                             eprintln!("[AEGIS INTERDICTION] Inbound TCP packet dropped: {} ", err);
                             return;
                         }
-                    }
+                    };
 
                     let text = archived_state.text.as_str().to_string();
 
