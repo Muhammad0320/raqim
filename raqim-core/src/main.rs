@@ -223,6 +223,23 @@ async fn main() {
     let global_tracker: Arc<Mutex<HashMap<String, CheckPointTracker>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
+    // The Cryptographic Re-reinstantiation method.
+
+    // Decode the private hex string into raw heap bytes
+    let secret_key_bytes = hex::decode(&config.master_private_key_hex)
+        .expect("FATAL: The Master Private Key inside raqim.toml is not a valid hex format");
+
+    // Ensure it conforms exactlu to standard Ed25519 length bounds
+    let secret_array: &[u8; 32] = secret_key_bytes
+        .as_slice()
+        .try_into()
+        .expect("FATAL: Master Secret Key must be exactly 32-byte (64 characters) long");
+
+    let master_sigining_key = SigningKey::from_bytes(secret_array);
+    println!("[SECURITY] Swarm Master Private Key re-instantiated into secure kernel memory ");
+
+    // =====
+
     let mem_router = Arc::new(MemoryRouter::new(
         config.clone(),
         telemetry.clone(),
@@ -236,9 +253,9 @@ async fn main() {
         global_net.clone(),
         tx_counter.clone(),
         event_tx.clone(),
+        master_sigining_key,
     ));
 
-    let w_brain_shard = brain_shard.clone();
     let w_axon = axon.clone();
     let w_wal = wal.clone();
     let w_lance = lance_engine.clone();
@@ -306,7 +323,7 @@ async fn main() {
 
                         // Compute the Agent ID Hex directly from the valid public key bytes.
                         let pub_key_bytes = agent_private_key.verifying_key().to_bytes();
-                        let hasher = Md5::new();
+                        let mut hasher = Md5::new();
                         hasher.update(pub_key_bytes);
                         let agent_id_byte: [u8; 16] = hasher.finalize().into();
                         let agent_hex = hex::encode(agent_id_byte);
@@ -325,7 +342,6 @@ async fn main() {
 
                         // We must clone the layers for the specific execution
                         let a_clone = w_axon.clone();
-                        let b_clone = w_brain_shard.clone();
                         let w_clone = w_wal.clone();
                         let c_clone = w_cortex_tx.clone();
                         let g_clone = w_global_net.clone();
@@ -381,7 +397,7 @@ async fn main() {
                         // Execute the untrusted logic in the safe WASM execution cell
                         tokio::spawn(async move {
                             if let Err(e) = w_wasm_engine.execute_agent(
-                                &wasm_bytes_clonen,
+                                &wasm_bytes_clone,
                                 content,
                                 &mut agent_tracker,
                                 current_tx,
@@ -503,7 +519,6 @@ async fn main() {
                 println!("External Agent connected from: {}", addr);
 
                 let task_telemetry = telemetry.clone();
-                let task_brain = brain_shard.clone();
                 let task_axon = axon.clone();
                 let task_cortex_tx = cortex_tx.clone();
                 let task_wal = wal.clone();

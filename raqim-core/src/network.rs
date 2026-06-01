@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::axon::AxonGateKeeper;
-use crate::state::{SwarmState, SwarmStateRegistry};
+use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, OpLog, SystemEvent};
 use rkyv::{Archive, to_bytes};
@@ -129,7 +129,7 @@ impl GlobalNetworkBridge {
                     } else {
                         println!(
                             " [ CRDT SHARD SUCCESS ] Assimlated foreign thoughts into '{}' from Agent: {} ",
-                            target_namespace
+                            target_namespace,
                             hex::encode(archived_log.agent_id.as_slice())
                         )
                     }
