@@ -5,7 +5,7 @@ use futures::StreamExt;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
-use rand::rngs::OsRng;
+use rand_core::OsRng;
 use rkyv::{Archive, Archived};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
