@@ -1,12 +1,18 @@
 use arrow_array::Array;
+use ed25519_dalek::Signer;
+use ed25519_dalek::SigningKey;
 use futures::StreamExt;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
+use rand::rngs::OsRng;
 use rkyv::{Archive, Archived};
+use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use std::u64;
 use std::{fs::File, sync::Arc};
 use tokio::sync::broadcast;
@@ -15,6 +21,7 @@ use tokio::sync::mpsc;
 
 use crate::AgentStatus;
 use crate::aegis::AegisGateKeeper;
+use crate::aegis::CapabilityCertificate;
 use crate::api::ForkConfig;
 use crate::api::UiEvent;
 use crate::axon::AxonGateKeeper;
@@ -45,6 +52,7 @@ pub struct MemoryRouter {
     global_net: Arc<GlobalNetworkBridge>,
     global_tx_counter: Arc<AtomicU64>,
     event_tx: Sender<SystemEvent>,
+    master_signing_key: SigningKey,
 }
 
 impl MemoryRouter {
@@ -61,6 +69,7 @@ impl MemoryRouter {
         global_net: Arc<GlobalNetworkBridge>,
         global_tx_counter: Arc<AtomicU64>,
         event_tx: Sender<SystemEvent>,
+        master_signing_key: SigningKey,
     ) -> Self {
         Self {
             config,
@@ -75,6 +84,7 @@ impl MemoryRouter {
             global_net,
             global_tx_counter,
             event_tx,
+            master_signing_key,
         }
     }
 
@@ -481,10 +491,48 @@ impl MemoryRouter {
 
         let sandbox_agent_hex = hex::encode(phantom_bytes);
 
-        println!(
-            "[TIME MACHINE] Phantom ID {} generated from Host {}",
-            sandbox_agent_hex, agent_hex
-        );
+        // 2. IDENTITY AND CERTIFICATE RESOLUTION SUBLOGIC
+        let (agent_private_key, capability_cert_bytes) = if is_isolated_debug {
+            println!(
+                "[TIME MACHINE] Generating Ephemeral Sandbox Credentials for Phantom: {} ",
+                sandbox_agent_hex
+            );
+
+            // Generate a completely isolated cryptographic keypair for the simulation context
+            let mut csprng = OsRng;
+            let phantom_signing_key = SigningKey::generate(&mut csprng);
+
+            // Forge a valid CapabilityCertificate template mimicking our new role layout
+            let mut mock_certificate = CapabilityCertificate {
+                agent_hex: sandbox_agent_hex.clone(),
+                group_name: "simulation_sandbox".to_string(),
+                allowed_namespaces: vec![format!("/phantom_{}/*", sandbox_agent_hex)],
+                blocked_namespaces: vec!["/finance/*".to_string()],
+                expiration_timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    + 3600,
+                master_signature: vec![0u8; 64],
+            };
+
+            // Sign the mock passport using the server's Master Private key to bypass forewall boundaries
+            let serialized_raw = postcard::to_allocvec(&mock_certificate)?;
+            let master_signature = self.master_signing_key.sign(&serialized_raw);
+            mock_certificate.master_signature = master_signature.to_bytes().to_vec();
+
+            (
+                phantom_signing_key,
+                postcard::to_allocvec(&mock_certificate)?,
+            )
+        } else {
+            // Production Resurrection: Pull the immutable production keys from secure vault backup directory
+            let key_bytes = fs::read(format!("./plugins_archive/{}.key.running", agent_hex))?;
+            let cert_bytes = fs::read(format!("./plugins_archive/{}.cert.running", agent_hex))?;
+            let key_array: &[u8; 32] = key_bytes.as_slice().try_into()?;
+
+            (SigningKey::from_bytes(key_array), cert_bytes)
+        };
 
         // Isolated Infrastructure (The Quarantine Sandbox)
         let (dummy_wal, _) =
@@ -585,8 +633,11 @@ impl MemoryRouter {
             event_tx: actual_tx.clone(),
             wasi: wasi_ctx,
             lance: self.lance_engine.clone(),
-            agent_hex: sandbox_agent_hex.clone().to_string(),
             telemetry: self.telemetry.clone(),
+            agent_hex: sandbox_agent_hex.clone().to_string(),
+
+            agent_private_key,
+            capability_cert_bytes,
 
             // Live queue start empty
             live_responses: Vec::new(),

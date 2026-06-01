@@ -1,4 +1,3 @@
-["096da8e82c5768cf68d05c11d4289b5a"]
-public_key_hex = "197f6b23e16c8532c6abc838facd5ea789be0c76b2920334039bfa8b3d368d61"
-allowed_namespaces = ["/siege/*"]
-blocked_namespaces = []
+[groups.finance_worker]
+allowed_namespaces = ["/finance/*"]
+blocked_namespaces = ["/admin/*"]
