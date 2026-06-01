@@ -1,3 +1,4 @@
+use ed25519_dalek::SigningKey;
 use jsonwebtoken::{Validation, decode};
 use raqim_core::aegis::AegisGateKeeper;
 use raqim_core::api::{ApiState, EnterpriseClaim, UiEvent, build_admin_router};
@@ -19,6 +20,7 @@ use raqim_core::telemetry::TelemetryEngine;
 use raqim_core::utils::parse_agent_id;
 use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
 
+use md5::{Digest, Md5};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::atomic::AtomicU64;
@@ -264,29 +266,55 @@ async fn main() {
                 for entry in entries.flatten() {
                     let path = entry.path();
 
-                    // If a new .wasm file is found we execute it.
                     if path.extension().and_then(|s| s.to_str()) == Some("wasm") {
                         println!("Discovered a new WASM Plugin: {:?}", path);
-
-                        let wasm_bytes = fs::read(&path).unwrap();
-
-                        //  Extract the agent_id directly from the filename
                         let file_stem = path.file_stem().unwrap().to_str().unwrap();
 
-                        // Validate ID
-                        let agent_id_bytes = match parse_agent_id(file_stem) {
-                            Ok(bytes) => bytes,
+                        // Resolve the adjacent secure crptographic files
+                        let key_path = path.with_extension("key");
+                        let cert_path = path.with_extension("cert");
+
+                        if !key_path.exists() || !cert_path.exists() {
+                            eprintln!(
+                                " [ORCHESTRATOR WARNING] Dropped plugin deployment for '{}'. Missing adjacent secure credentials (.key / .cert). ",
+                                file_stem
+                            );
+                            continue;
+                        }
+
+                        println!(
+                            "[ORCHESTRATOR] Initializing secure cryptographic verification for: {}.wasm ",
+                            file_stem
+                        );
+
+                        // Read the raw system component from the disk
+                        let wasm_bytes = fs::read(&path).unwrap();
+                        let private_key_bytes = fs::read(&key_path).unwrap();
+                        let cert_bytes = fs::read(&cert_path).unwrap();
+
+                        // Re-instantiate the authentic cryptographic identity
+                        let agent_private_key = match private_key_bytes.as_slice().try_into() {
+                            Ok(bytes) => SigningKey::from_bytes(bytes),
                             Err(_) => {
                                 eprintln!(
-                                    "[SYSTEM WARN] Invalid Agent ID filename: {}. Skipping...",
+                                    "[ORCHESTRATOR FATAL] Private key for '{}' is corrupt. Skipping. ",
                                     file_stem
                                 );
                                 continue;
                             }
                         };
 
+                        // Compute the Agent ID Hex directly from the valid public key bytes.
+                        let pub_key_bytes = agent_private_key.verifying_key().to_bytes();
+                        let hasher = Md5::new();
+                        hasher.update(pub_key_bytes);
+                        let agent_id_byte: [u8; 16] = hasher.finalize().into();
                         let agent_hex = hex::encode(agent_id_bytes);
-                        println!("[SYSTEM] Deploying Agent: {} ", &agent_hex);
+
+                        println!(
+                            "[ORCHESTRATOR] Deploying Certified Identity Node: [Hex: {}] [Alias: {}] ",
+                            &agent_hex, file_stem
+                        );
 
                         let _ = w_event_tx.send(SystemEvent::PluginLoaded {
                             plugin_name: entry.file_name().to_string_lossy().to_string(),
@@ -317,6 +345,10 @@ async fn main() {
                             event_tx: tx_clone,
                             wasi: wasi_ctx,
                             agent_hex: agent_hex.clone(),
+
+                            agent_private_key,
+                            capability_cert_bytes: cert_bytes,
+
                             lance: lance_clone,
                             aegis: ae_clone,
                             live_responses: Vec::new(),
@@ -343,32 +375,39 @@ async fn main() {
 
                         // Get the exact current Transaction ID
                         let current_tx = w_tx_couter.load(std::sync::atomic::Ordering::SeqCst);
+                        let w_engine_clone = w_wasm_engine.clone();
+                        let wasm_bytes_clonen = wasm_bytes.clone();
+                        let mut tracker_clone = agent_tracker.clone();
 
-                        // Execute the untrusted logic in the WASM cage
-                        if let Err(e) = w_wasm_engine.execute_agent(
-                            &wasm_bytes,
-                            content,
-                            agent_tracker,
-                            current_tx,
-                            None,
-                        ) {
-                            eprintln!("Plugin {:?} trapped/failed: {} ", &path, e);
-                        }
+                        // Execute the untrusted logic in the safe WASM execution cell
+                        tokio::spawn(async move {
+                            if let Err(e) = w_wasm_engine.execute_agent(
+                                &wasm_bytes_clonen,
+                                content,
+                                &mut tracker_clone,
+                                current_tx,
+                                None,
+                            ) {
+                                eprintln!("[SANDBOX TRAPPED] Plugin engine failure: {}", e);
+                            }
+                        });
 
-                        // Rename this file again so we don't execute it again in the next loop
-                        let mut new_path = path.clone();
-                        new_path.set_extension("wasm.running");
-                        let _ = fs::rename(&path, new_path);
-
-                        // Move the processed files into an archive folder
+                        // Secure Forensic Footprint Archive Transition
                         let archive_dir = "./plugins_archive";
                         let _ = fs::create_dir_all(archive_dir);
 
-                        let file_name = path.file_name().unwrap();
-                        let archive_path = std::path::Path::new(archive_dir).join(file_name);
-
-                        // Move the file our of the active dir to preserve the forensic tail
-                        let _ = fs::rename(&path, archive_path);
+                        let _ = fs::rename(
+                            &key_path,
+                            format!("{}/{}.key.running", archive_dir, agent_hex),
+                        );
+                        let _ = fs::rename(
+                            &cert_path,
+                            format!("{}/{}.cert.running", archive_dir, agent_hex),
+                        );
+                        let _ = fs::rename(
+                            &path,
+                            format!("{}/{}.wasm.running", archive_dir, agent_hex),
+                        );
                     }
                 }
             }

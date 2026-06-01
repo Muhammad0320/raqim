@@ -359,7 +359,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     &capability,
                 ) {
                     let err = WsMessage::Error {
-                        message: format!("[AEGIS Gate block]  "),
+                        message: format!("[AEGIS Gate block] {}  ", e),
                     };
                     let _ = conn_clone
                         .downstream_tx
