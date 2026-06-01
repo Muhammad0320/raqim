@@ -219,10 +219,6 @@ async fn main() {
     let plugin_dir = "./plugins";
     fs::create_dir_all(plugin_dir).expect("Failed to create plugins dir");
 
-    // Initialize global tracker ONCE outside the loop
-    let global_tracker: Arc<Mutex<HashMap<String, CheckPointTracker>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-
     // The Cryptographic Re-reinstantiation method.
 
     // Decode the private hex string into raw heap bytes
@@ -255,6 +251,10 @@ async fn main() {
         event_tx.clone(),
         master_sigining_key,
     ));
+
+    // Initialize global tracker ONCE outside the loop
+    let global_tracker: Arc<Mutex<HashMap<String, CheckPointTracker>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     let w_axon = axon.clone();
     let w_wal = wal.clone();
@@ -382,21 +382,30 @@ async fn main() {
                             a2a_reply_channel: None,
                         };
 
+                        // Mutex lifetime enforcement
+
                         let mut tracker_lock = global_tracker.lock().unwrap();
-                        let agent_tracker =
-                            tracker_lock.entry(agent_hex).or_insert(CheckPointTracker {
+
+                        // Extract an owned, independent clone of the tracker out of the map boundary
+                        let mut agent_tracker = tracker_lock
+                            .entry(agent_hex.clone())
+                            .or_insert(CheckPointTracker {
                                 last_snapshot_tx: 0,
                                 last_snapshot_time: 0,
-                            });
+                            })
+                            .clone();
+
+                        // Drop the lock instantly to prevent hot path thread starvation
+                        drop(tracker_lock);
 
                         // Get the exact current Transaction ID
                         let current_tx = w_tx_couter.load(std::sync::atomic::Ordering::SeqCst);
                         let w_engine_clone = w_wasm_engine.clone();
-                        let wasm_bytes_clonen = wasm_bytes.clone();
+                        let wasm_bytes_clone = wasm_bytes.clone();
 
                         // Execute the untrusted logic in the safe WASM execution cell
                         tokio::spawn(async move {
-                            if let Err(e) = w_wasm_engine.execute_agent(
+                            if let Err(e) = w_engine_clone.execute_agent(
                                 &wasm_bytes_clone,
                                 content,
                                 &mut agent_tracker,
@@ -413,11 +422,11 @@ async fn main() {
 
                         let _ = fs::rename(
                             &key_path,
-                            format!("{}/{}.key.running", archive_dir, agent_hex),
+                            format!("{}/{}.key.running", archive_dir, &agent_hex),
                         );
                         let _ = fs::rename(
                             &cert_path,
-                            format!("{}/{}.cert.running", archive_dir, agent_hex),
+                            format!("{}/{}.cert.running", archive_dir, &agent_hex),
                         );
                         let _ = fs::rename(
                             &path,
