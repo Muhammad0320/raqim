@@ -58,6 +58,7 @@ pub struct SandboxContent {
     pub a2a_reply_channel: Option<std::sync::mpsc::Sender<Vec<u8>>>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct CheckPointTracker {
     pub last_snapshot_tx: u64,
     pub last_snapshot_time: u64,

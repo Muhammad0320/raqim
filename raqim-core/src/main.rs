@@ -387,13 +387,13 @@ async fn main() {
                         let mut tracker_lock = global_tracker.lock().unwrap();
 
                         // Extract an owned, independent clone of the tracker out of the map boundary
-                        let mut agent_tracker = tracker_lock
-                            .entry(agent_hex.clone())
-                            .or_insert(CheckPointTracker {
-                                last_snapshot_tx: 0,
-                                last_snapshot_time: 0,
-                            })
-                            .clone();
+                        let mut agent_tracker =
+                            *tracker_lock
+                                .entry(agent_hex.clone())
+                                .or_insert(CheckPointTracker {
+                                    last_snapshot_tx: 0,
+                                    last_snapshot_time: 0,
+                                });
 
                         // Drop the lock instantly to prevent hot path thread starvation
                         drop(tracker_lock);
