@@ -332,7 +332,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                 };
 
                 let mut public_key_bytes = [0u8; 32];
-                if Ok(b) = hex::decode(&public_key) {
+                if let Ok(b) = hex::decode(&public_key) {
                     if b.len() == 32 {
                         public_key_bytes.copy_from_slice(&b);
                     }

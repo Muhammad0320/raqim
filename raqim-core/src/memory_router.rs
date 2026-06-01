@@ -19,14 +19,12 @@ use crate::api::ForkConfig;
 use crate::api::UiEvent;
 use crate::axon::AxonGateKeeper;
 use crate::network::GlobalNetworkBridge;
-use crate::registry::SwarmRegistry;
 use crate::sandbox::SandboxContent;
 use crate::sandbox::WasmEngine;
 use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{
     OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
-    state::SwarmState,
 };
 
 pub enum RebuildMode {
