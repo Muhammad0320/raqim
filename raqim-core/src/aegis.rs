@@ -203,7 +203,7 @@ impl AegisGateKeeper {
             return Err(anyhow::anyhow!(" Capability Certificate has expired "));
         }
 
-        // 4. LINEAGE VERIFICATION: Verify token validity agains the Master Swarm Key
+        // 4. LINEAGE VERIFICATION: Prove token validity against the Master Swarm Key
         let mut cert_unsigned_payload = cert.clone();
         cert_unsigned_payload.master_signature = Vec::new();
         let serialized_raw = postcard::to_allocvec(&cert_unsigned_payload)?;
@@ -246,8 +246,16 @@ impl AegisGateKeeper {
             ));
         }
 
-        // 6. POLICY ENFORCEMENT: Evaluate the dynamically accepted namespace claims
-        for blocked in &cert.blocked_namespaces {
+        // 6. POLICY ENFORCEMENT: Evaluate namespace directly from the LIVE manifest file
+        let policies_guard = self.group_policies.read().unwrap();
+        let live_policy = policies_guard.get(&cert.group_name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Group Policy mapping '{}' not defined inside active aegis.toml ",
+                &cert.group_name
+            )
+        })?;
+
+        for blocked in &live_policy.blocked_namespaces {
             let match_found = if blocked.ends_with("*") {
                 intent_path.starts_with(&blocked[..blocked.len() + 1])
             } else {
@@ -267,7 +275,7 @@ impl AegisGateKeeper {
             }
         }
 
-        for allowed in &cert.allowed_namespaces {
+        for allowed in &live_policy.allowed_namespaces {
             let match_found = if allowed.ends_with("*") {
                 intent_path.starts_with(&allowed[..allowed.len() - 1])
             } else {
