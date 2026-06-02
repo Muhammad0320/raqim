@@ -18,8 +18,6 @@ use tokio::sync::broadcast::Sender;
 pub struct CapabilityCertificate {
     pub agent_hex: String,
     pub group_name: String,
-    pub allowed_namespaces: Vec<String>,
-    pub blocked_namespaces: Vec<String>,
     pub expiration_timestamp: u64,
     pub master_signature: Vec<u8>, // Signed by Swarm Master Key
 }
