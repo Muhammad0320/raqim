@@ -87,8 +87,6 @@ pub struct RaqimConfig {
     pub node_public_key_hex: String,
     pub embedder_type: String,
     pub openai_api_key: String,
-    pub master_public_key_hex: String,
-    pub master_private_key_hex: String,
     pub dims: i32,
     pub limit: usize,
     pub port: u16,

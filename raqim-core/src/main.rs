@@ -23,6 +23,7 @@ use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade
 use md5::{Digest, Md5};
 use std::collections::HashMap;
 use std::fs;
+use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
@@ -219,22 +220,37 @@ async fn main() {
     let plugin_dir = "./plugins";
     fs::create_dir_all(plugin_dir).expect("Failed to create plugins dir");
 
-    // The Cryptographic Re-reinstantiation method.
+    // Securely loads the swarm key from disk. Generate it if it doesn't exist/
+    let key_dir = Path::new("./ca-keys");
+    let key_path = key_dir.join("swarm_master.key");
 
-    // Decode the private hex string into raw heap bytes
-    let secret_key_bytes = hex::decode(&config.master_private_key_hex)
-        .expect("FATAL: The Master Private Key inside raqim.toml is not a valid hex format");
+    // Generation Phase (First Boot Only)
+    if !key_path.exists() {
+        println!("[SECURITY] Initializing Swarm Master Cryptographic Root... ");
+        fs::create_dir_all(key_dir).expect("Failed to create keys directory");
 
-    // Ensure it conforms exactlu to standard Ed25519 length bounds
-    let secret_array: &[u8; 32] = secret_key_bytes
+        let mut csprng = OsRng;
+        let signing_key = SigningKey::generate(&mut csprng);
+
+        fs::write(&key_path, signing_key.to_bytes()).expect("Failed to write Master Key");
+
+        // Lock down Unix permissions
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+                .expect("Failed to secure Master Key Permissions")?;
+        }
+    }
+
+    // Memory Load Phase
+    let key_bytes = fs::read(&key_path).expect("FATAL: Failed to read master_key from disk");
+    let key_array: [u8; 32] = key_bytes
         .as_slice()
         .try_into()
-        .expect("FATAL: Master Secret Key must be exactly 32-byte (64 characters) long");
-
-    let master_sigining_key = SigningKey::from_bytes(secret_array);
-    println!("[SECURITY] Swarm Master Private Key re-instantiated into secure kernel memory ");
-
-    // =====
+        .expect("FATAL: Master key bytes is corruped (not 32 bytes)");
+    let master_siging_key = SigningKey::from_bytes(&key_array);
+    println!("[SECURITY] Swarm Master Identity loaded into a secure kernel memory ");
 
     let mem_router = Arc::new(MemoryRouter::new(
         config.clone(),
