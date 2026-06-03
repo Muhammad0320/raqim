@@ -5,11 +5,16 @@ use rand::rngs::OsRng;
 use reqwest::Client;
 use serde_json::json;
 use std::fs;
+use std::path::Path;
 
 #[derive(Parser)]
-#[command(name = "raqim", about = "Raqim OS Adminstration CLI", version = "1.0")]
+#[command(
+    name = "raqim",
+    about = "Raqim OS  Master Control Plane",
+    version = "1.0"
+)]
 struct Cli {
-    /// URL of the Raqim OS Daemon
+    /// URL of the Raqim OS Daemon Control plane
     #[arg(short, long, default_value = "http://127.0.0.1:8081", global = true)]
     daemon_url: String,
 
@@ -48,10 +53,22 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum KeyAction {
-    /// Generates a new Ed25519 Private/Public Keypair
-    Generate {
-        /// Name of the key (e.g., 'finance_agent')
+    /// Batch forge cryptographic agents with signed CA
+    Forge {
+        // Base name for the agents (e.g finance_bot)
+        #[arg(short, long)]
         name: String,
+
+        /// The security group mapping declared in aegis.toml (e.g finance_worker)
+        #[arg(short, long)]
+        group: String,
+
+        #[arg(short, long, default_value_t = 1)]
+        count: u32,
+
+        /// Target directory for the atomic artifact
+        #[arg(short, long, default_value = "./target_workspace")]
+        out_dir: String,
     },
 }
 
@@ -77,39 +94,100 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match &cli.command {
         // 1. Crytographic Key Generation
         Commands::Keys {
-            action: KeyAction::Generate { name },
+            action:
+                KeyAction::Forge {
+                    name,
+                    group,
+                    count,
+                    out_dir,
+                },
         } => {
-            let mut csprng = OsRng;
-            let signing_key = SigningKey::generate(&mut csprng);
-            let public_key = signing_key.verifying_key();
+            println!("Bismillah. Initiating Sovereign Fleet Forge... ");
+            println!("Target Group [{}] | Fleet Size [{}] ", group, count);
 
-            // Mathematically derive the 16-byte Agent ID
-            let mut hasher = Md5::new();
-            hasher.update(public_key.to_bytes());
-            let agent_id_bytes: [u8; 16] = hasher.finalize().into();
-            let agent_hex = hex::encode(agent_id_bytes); // The true routing ID
+            let workspace = Path::new(out_dir);
+            fs::create_dir_all(workspace)?;
 
-            let pub_hex = hex::encode(public_key.to_bytes());
-            let priv_path = format!("{}_private.pem", name);
+            let mint_url = format!("{}/v1/admin/ca/mint", cli.daemon_url);
+            let mut success_count = 0;
 
-            // Write the exact bytes needed by the PyO3/Rust SDKs
-            fs::write(&priv_path, signing_key.to_bytes())?;
+            for i in 1..=*count {
+                let agent_alias = if *count > 1 {
+                    format!("{}_{:02}", name.clone(), i)
+                } else {
+                    name.clone()
+                };
 
-            // Unix Systems: Set tight permissions on private keys
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&priv_path, fs::Permissions::from_mode(0o600))?;
+                // Local cryptographic generation
+                let mut csprng = OsRng;
+                let signing_key = SigningKey::generate(&mut csprng);
+                let public_key = signing_key.verifying_key().to_bytes();
+
+                // Identity Hash Derivation
+                let mut hasher = Md5::new();
+                hasher.update(public_key);
+                let agent_id_bytes: [u8; 16] = hasher.finalize().into();
+                let agent_hex = hex::encode(agent_id_bytes);
+
+                // Request Capability passport from the Daemon Control Plane
+
+                let payload = json!({"agent_hex": agent_hex.clone(), "group": group.clone() });
+
+                let res = http_client
+                    .post(mint_url)
+                    .header("Authorization", format!("Bearer {}", get_auth()))
+                    .body(payload)
+                    .send()
+                    .await;
+
+                match res {
+                    Ok(response) if response.status().is_success() => {
+                        let cert_hex: String = response.json().await?;
+                        let cert_bytes = hex::decode(cert_hex)?;
+
+                        // Atomic bundling in the Workspace
+                        let key_path = workspace.join(format!("{}.pem", agent_alias));
+                        let cert_path = workspace.join(format!("{}.cert", agent_alias));
+                        let wasm_path = workspace.join(format!("{}.wasm", agent_alias));
+
+                        fs::write(&key_path, signing_key.to_bytes());
+                        fs::write(&cert_path, cert_bytes)?;
+
+                        // Create a dummy WASM file to satisfy hot-reloader schema requirement
+                        if !wasm_path.exists() {
+                            fs::write(&wasm_path, b"// Raqim WASM Plugin Scaffold")?;
+                        }
+
+                        // Set strict Unix permissions for the private key
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))?;
+                        }
+
+                        println!("  [OK] Forged Agent: {} -> {} ", agent_alias, agent_hex);
+                        success_count += 1;
+                    }
+
+                    Ok(response) => {
+                        eprintln!(
+                            "     [FAIL] Agent: {}: CA Minting Rejected {}",
+                            agent_alias,
+                            response.status()
+                        )
+                    }
+
+                    Err(e) => {
+                        eprintln!("     [FAIL] Agent: {} - Network Error: {} ", agent_alias, e);
+                    }
+                }
             }
 
-            println!("✅ Keypair generated successfully");
-            println!("Private Key saved to: {}", priv_path);
-            println!("Agent Routing ID (Hex): {}", agent_hex);
-            println!("\n[ACTION REQUIRED] Add this to your daemon's aegis.toml: ");
             println!(
-                "[\"{}\"]\npublic_key_hex = \"{}\"\ncapability = [\"*\"]",
-                name, pub_hex
+                "\n✅ Fleet Forge Complete. Successfully generated {}/{} secure artifacts in {} ",
+                success_count, count, out_dir
             );
+            println!("Deploy these agents by moving them into the Daemon's /plugins directory.");
         }
 
         // 2. Aegis GateKeeper Management
