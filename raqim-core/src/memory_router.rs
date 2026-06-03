@@ -506,8 +506,6 @@ impl MemoryRouter {
             let mut mock_certificate = CapabilityCertificate {
                 agent_hex: sandbox_agent_hex.clone(),
                 group_name: "simulation_sandbox".to_string(),
-                allowed_namespace: vec!["/finance/*".to_string()],
-                blocked_namespace: vec!["/admin/*".to_string()],
                 expiration_timestamp: SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()

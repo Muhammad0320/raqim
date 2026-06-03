@@ -18,8 +18,6 @@ pub struct CapabilityCertificate {
     pub agent_hex: String,
     pub group_name: String,
     pub expiration_timestamp: u64,
-    pub allowed_namespace: Vec<String>,
-    pub blocked_namespace: Vec<String>,
     pub master_signature: Vec<u8>, // Signed by Swarm Master Key
 }
 

@@ -1069,8 +1069,6 @@ pub async fn handle_ca_mint(
         agent_hex: payload.agent_hex.clone(),
         group_name: payload.group.clone(),
         expiration_timestamp: expiration,
-        allowed_namespace: group_policy.allowed_namespaces.clone(),
-        blocked_namespace: group_policy.blocked_namespaces.clone(),
         master_signature: Vec::new(),
     };
 
