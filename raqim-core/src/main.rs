@@ -486,6 +486,7 @@ async fn main() {
         phantom_ui_tx: phantom_ui_tx.clone(),
         health_tx: health_tx.clone(),
         swarm_registry: registry.clone(),
+        master_signing_key,
     };
 
     let axum_app = build_admin_router(api_state);

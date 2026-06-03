@@ -33,10 +33,6 @@ struct IdentitySection {
     node_pub_key_hex: String,
     license_key: String,
     openai_api_key: Option<String>,
-
-    // THE CRYPTOGRAPHIC CORE CA KEYS
-    master_public_key_hex: String,
-    master_secret_key_hex: String,
 }
 
 #[derive(Parser, Debug)]
@@ -110,10 +106,6 @@ impl Default for RaqimConfig {
             license_key: "dev_move".to_string(),
             node_public_key_hex: "0000000000000000000000000000000000000000000000000000000000000000"
                 .to_string(),
-            master_public_key_hex:
-                "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
-            master_private_key_hex:
-                "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
 
             embedder_type: "bge".to_string(),
             openai_api_key: "".to_string(),
@@ -164,8 +156,6 @@ impl RaqimConfig {
                 dims: proxy.daemon.dims.unwrap_or(384),
                 limit: proxy.daemon.limit.unwrap_or(5),
                 port: proxy.daemon.port.unwrap_or(8080),
-                master_public_key_hex: proxy.identity.master_public_key_hex,
-                master_private_key_hex: proxy.identity.master_secret_key_hex,
             }
         } else {
             let default_cfg = Self::default();

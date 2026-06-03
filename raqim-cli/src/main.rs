@@ -69,6 +69,10 @@ enum KeyAction {
         /// Target directory for the atomic artifact
         #[arg(short, long, default_value = "./target_workspace")]
         out_dir: String,
+
+        /// Execution environment: 'internal' (WASM) or 'external' (Python/MCP/SDK)
+        #[arg(short, long, default_value = "external")]
+        env: String,
     },
 }
 
@@ -100,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     group,
                     count,
                     out_dir,
+                    env,
                 },
         } => {
             println!("Bismillah. Initiating Sovereign Fleet Forge... ");
@@ -134,9 +139,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let payload = json!({"agent_hex": agent_hex.clone(), "group": group.clone() });
 
                 let res = http_client
-                    .post(mint_url)
+                    .post(&mint_url)
                     .header("Authorization", format!("Bearer {}", get_auth()))
-                    .body(payload)
+                    .json(&payload)
                     .send()
                     .await;
 
@@ -150,11 +155,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let cert_path = workspace.join(format!("{}.cert", agent_alias));
                         let wasm_path = workspace.join(format!("{}.wasm", agent_alias));
 
-                        fs::write(&key_path, signing_key.to_bytes());
+                        fs::write(&key_path, signing_key.to_bytes())?;
                         fs::write(&cert_path, cert_bytes)?;
 
                         // Create a dummy WASM file to satisfy hot-reloader schema requirement
-                        if !wasm_path.exists() {
+                        if env == "internal" && !wasm_path.exists() {
                             fs::write(&wasm_path, b"// Raqim WASM Plugin Scaffold")?;
                         }
 
