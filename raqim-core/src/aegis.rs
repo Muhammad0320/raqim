@@ -1,7 +1,6 @@
 use crate::SystemEvent;
 use crate::api::UiEvent;
 use dashmap::DashMap;
-use datafusion::parquet::data_type::AsBytes;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
@@ -19,6 +18,8 @@ pub struct CapabilityCertificate {
     pub agent_hex: String,
     pub group_name: String,
     pub expiration_timestamp: u64,
+    pub allowed_namespace: Vec<String>,
+    pub blocked_namespace: Vec<String>,
     pub master_signature: Vec<u8>, // Signed by Swarm Master Key
 }
 
@@ -43,7 +44,7 @@ pub struct QuarantineRecord {
 }
 
 pub struct AegisGateKeeper {
-    group_policies: RwLock<HashMap<String, AegisGroupPolicy>>,
+    pub group_policies: RwLock<HashMap<String, AegisGroupPolicy>>,
     pub quarantine_blocklist: DashMap<String, QuarantineRecord>,
     master_public_key: VerifyingKey,
     tx: Sender<SystemEvent>,
