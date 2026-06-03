@@ -11,6 +11,7 @@ use axum::{
 use axum::body::Bytes;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use dashmap::DashMap;
+use ed25519_dalek::{Signer, SigningKey};
 use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
 use std::convert::Infallible;
@@ -29,7 +30,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
-use crate::aegis::QuarantineRecord;
+use crate::aegis::{CapabilityCertificate, QuarantineRecord};
 use crate::axon::AxonGateKeeper;
 use crate::health::SystemHealth;
 use crate::lancedb_store::LanceEngine;
@@ -156,6 +157,8 @@ pub struct ApiState {
     pub phantom_ui_tx: Sender<UiEvent>,
     pub health_tx: Sender<SystemHealth>,
     pub swarm_registry: Arc<SwarmRegistry>,
+
+    pub master_signing_key: SigningKey,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1036,6 +1039,54 @@ pub async fn aegis_metics_endpoint(
     }
 
     Ok(Json(metrics))
+}
+
+#[derive(serde::Deserialize)]
+pub struct MintRequest {
+    pub agent_hex: String,
+    pub group: String,
+}
+
+pub async fn handle_ca_mint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+    Json(payload): Json<MintRequest>,
+) -> Result<Json<String>, StatusCode> {
+    // Verify the group actually exists in the live configuration
+    let policies = state.aegis.group_policies.read().unwrap();
+    let group_policy = policies
+        .get(&payload.group)
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    // 2. Contruct the unsigned Certificate Passport
+    let expiration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        + (365 * 24 * 60 * 60);
+
+    let mut cert = CapabilityCertificate {
+        agent_hex: payload.agent_hex.clone(),
+        group_name: payload.group.clone(),
+        expiration_timestamp: expiration,
+        allowed_namespace: group_policy.allowed_namespaces,
+        blocked_namespace: group_policy.blocked_namespaces,
+        master_signature: Vec::new(),
+    };
+
+    // Serialize and sign using the master private key inside api_state
+    let serialized_raw =
+        postcard::to_allocvec(&cert).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let signature = state.master_signing_key.sign(&serialized_raw);
+
+    cert.master_signature = signature.to_bytes().to_vec();
+
+    // Returned the fully serialized and signed passport to the CLI
+    let final_bytes =
+        postcard::to_allocvec(&cert).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(hex::encode(final_bytes)))
 }
 
 // Route Builder
