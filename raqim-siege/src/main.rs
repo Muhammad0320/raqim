@@ -35,7 +35,7 @@ async fn main() {
         let agent_signing_key = SigningKey::generate(&mut csprng);
         let pub_key_bytes = agent_signing_key.verifying_key().to_bytes();
 
-        let hasher = Md5::new();
+        let mut hasher = Md5::new();
         hasher.update(pub_key_bytes);
         let agent_id: [u8; 16] = hasher.finalize().into();
         let agent_hex = hex::encode(agent_id);
@@ -51,11 +51,12 @@ async fn main() {
         };
 
         // Sign the passport with the Master Key
-        let serialized_raw = postcard::to_allocvec(&cert).unwrap();
+        let serialized_raw = postcard::to_allocvec(&cert)?;
+
         let master_sig = master_signing_key.sign(&serialized_raw);
         cert.master_signature = master_sig.to_bytes().to_vec();
 
-        let cert_bytes = postcard::to_allocvec(&cert).unwrap();
+        let cert_bytes = postcard::to_allocvec(&cert)?;
         agents.push((
             agent_id,
             agent_signing_key,
