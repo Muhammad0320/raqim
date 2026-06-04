@@ -1052,13 +1052,7 @@ pub async fn handle_ca_mint(
     State(state): State<ApiState>,
     Json(payload): Json<MintRequest>,
 ) -> Result<Json<String>, StatusCode> {
-    // Verify the group actually exists in the live configuration
-    let policies = state.aegis.group_policies.read().unwrap();
-    let group_policy = policies
-        .get(&payload.group)
-        .ok_or(StatusCode::BAD_REQUEST)?;
-
-    // 2. Contruct the unsigned Certificate Passport
+    // Contruct the unsigned Certificate Passport
     let expiration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

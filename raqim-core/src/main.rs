@@ -135,17 +135,46 @@ async fn main() {
         println!("[WARNING] Invalid License. Defaulting to Local LAN Swarm mode.");
     }
 
+    // Securely loads the swarm key from disk. Generate it if it doesn't exist/
+    let key_dir = Path::new("./ca-keys");
+    let key_path = key_dir.join("swarm_master.key");
+
+    // Generation Phase (First Boot Only)
+    if !key_path.exists() {
+        println!("[SECURITY] Initializing Swarm Master Cryptographic Root... ");
+        fs::create_dir_all(key_dir).expect("Failed to create keys directory");
+
+        let mut csprng = OsRng;
+        let signing_key = SigningKey::generate(&mut csprng);
+
+        fs::write(&key_path, signing_key.to_bytes()).expect("Failed to write Master Key");
+
+        // Lock down Unix permissions
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+                .expect("Failed to secure Master Key Permissions")?;
+        }
+    }
+
+    // Memory Load Phase
+    let key_bytes = fs::read(&key_path).expect("FATAL: Failed to read master_key from disk");
+    let key_array: [u8; 32] = key_bytes
+        .as_slice()
+        .try_into()
+        .expect("FATAL: Master key bytes is corruped (not 32 bytes)");
+    let master_siging_key = SigningKey::from_bytes(&key_array);
+
+    let master_public_key = master_siging_key.verifying_key().to_bytes();
+    println!("[SECURITY] Swarm Master Identity loaded into a secure kernel memory ");
+
     // ===============================
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain_shard = Arc::new(SwarmStateRegistry::new());
 
     let axon = Arc::new(AxonGateKeeper::new());
-    let aegis = AegisGateKeeper::new(
-        &config.aegis_path,
-        &config.master_public_key_hex,
-        event_tx.clone(),
-        ui_tx.clone(),
-    );
+    let aegis = AegisGateKeeper::new(&config.aegis_path, event_tx.clone(), ui_tx.clone());
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
         GlobalNetworkBridge::new(&verified_tenat_id, &config.topic, aegis.clone(), allow_wan).await,
@@ -219,38 +248,6 @@ async fn main() {
     // The WASM plugign Orchestrator
     let plugin_dir = "./plugins";
     fs::create_dir_all(plugin_dir).expect("Failed to create plugins dir");
-
-    // Securely loads the swarm key from disk. Generate it if it doesn't exist/
-    let key_dir = Path::new("./ca-keys");
-    let key_path = key_dir.join("swarm_master.key");
-
-    // Generation Phase (First Boot Only)
-    if !key_path.exists() {
-        println!("[SECURITY] Initializing Swarm Master Cryptographic Root... ");
-        fs::create_dir_all(key_dir).expect("Failed to create keys directory");
-
-        let mut csprng = OsRng;
-        let signing_key = SigningKey::generate(&mut csprng);
-
-        fs::write(&key_path, signing_key.to_bytes()).expect("Failed to write Master Key");
-
-        // Lock down Unix permissions
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
-                .expect("Failed to secure Master Key Permissions")?;
-        }
-    }
-
-    // Memory Load Phase
-    let key_bytes = fs::read(&key_path).expect("FATAL: Failed to read master_key from disk");
-    let key_array: [u8; 32] = key_bytes
-        .as_slice()
-        .try_into()
-        .expect("FATAL: Master key bytes is corruped (not 32 bytes)");
-    let master_siging_key = SigningKey::from_bytes(&key_array);
-    println!("[SECURITY] Swarm Master Identity loaded into a secure kernel memory ");
 
     let mem_router = Arc::new(MemoryRouter::new(
         config.clone(),
