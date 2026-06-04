@@ -22,16 +22,6 @@ async fn main() {
     let master_key_array: [u8; 32] = master_key_bytes.as_slice().try_into().unwrap();
     let master_signing_key = SigningKey::from_bytes(&master_key_array);
 
-    // Derive agent_hex from public key
-    let mut hasher = Md5::new();
-    hasher.update(pub_key_bytes);
-    let agent_id: [u8; 16] = hasher.finalize().into();
-
-    let agent_hex = hex::encode(agent_id);
-
-    println!("[SEIGE] DETERMINISTIC Agent Hex: {}", agent_hex);
-    println!("[SIEGE] Public Key Hex: {}", hex::encode(pub_key_bytes));
-
     // Forge the Magazine in RAM
     let mut magazine: Vec<Vec<u8>> = Vec::with_capacity(total_rounds);
 
