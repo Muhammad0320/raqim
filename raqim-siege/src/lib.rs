@@ -1,4 +1,5 @@
 use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct IngressEnvelope {
@@ -26,4 +27,12 @@ pub enum AgentStatus {
     Reasoning,     // Waiting on LLM token generation
     ToolExecution, // Executing an external API or tool
     Halted,        // Interdicted by the Aegis security layer
+}
+
+#[derive(SerdeDeserialize, SerdeSerialize, Clone)]
+pub struct CapabilityCertificate {
+    pub agent_hex: String,
+    pub group_name: String,
+    pub expiration_timestamp: u64,
+    pub master_signature: Vec<u8>,
 }
