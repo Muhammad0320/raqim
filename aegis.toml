@@ -1,3 +1,7 @@
 [groups.finance_worker]
 allowed_namespaces = ["/finance/*"]
 blocked_namespaces = ["/admin/*"]
+
+[groups.siege_tester]
+allowed_namespaces = ["/siege/*"]
+blocked_namespaces = []
