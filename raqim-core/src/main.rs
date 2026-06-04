@@ -16,9 +16,8 @@ use raqim_core::network::GlobalNetworkBridge;
 use raqim_core::nucleus::WalEngine;
 use raqim_core::registry::SwarmRegistry;
 use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
-use raqim_core::state::{SwarmState, SwarmStateRegistry};
+use raqim_core::state::SwarmStateRegistry;
 use raqim_core::telemetry::TelemetryEngine;
-use raqim_core::utils::parse_agent_id;
 use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
 
 use md5::{Digest, Md5};
@@ -506,8 +505,7 @@ async fn main() {
         phantom_ui_tx: phantom_ui_tx.clone(),
         health_tx: health_tx.clone(),
         swarm_registry: registry.clone(),
-                master_signing_key.clone(),
-
+        master_signing_key: master_signing_key.clone(),
     };
 
     let axum_app = build_admin_router(api_state);
