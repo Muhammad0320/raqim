@@ -3,10 +3,11 @@ use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct IngressEnvelope {
-    pub intent_path: String,  // "raqim_finance/ledger" ( Checked by Aegis )
-    pub public_key: [u8; 32], // The Ed25519 public key of the sender
-    pub signature: [u8; 64],  // The mathematical signauture proving authenticity
-    pub state_bytes: Vec<u8>, // The actual thought
+    pub intent_path: String,      // "raqim_finance/ledger" ( Checked by Aegis )
+    pub public_key: [u8; 32],     // The Ed25519 public key of the sender
+    pub signature: [u8; 64],      // The mathematical signauture proving authenticity
+    pub state_bytes: Vec<u8>,     // The actual thought
+    pub capability_cert: Vec<u8>, // The master token signed by the Master Key
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
