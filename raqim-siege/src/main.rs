@@ -1,24 +1,26 @@
 use md5::{Digest, Md5};
 use raqim_siege::{AgentState, AgentStatus, IngressEnvelope};
-use std::time::Instant;
+use std::{fs, time::Instant};
 
 use ed25519_dalek::{Signer, SigningKey};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 #[tokio::main]
 async fn main() {
-    println!("Bismillah. Forging the Loaded Magazine...");
+    println!("Bismillah. Forging the Enterprise Distributed Magazine...");
 
     let total_rounds = 1_000_000;
     let concurrency = 32;
+    let num_agents = 50;
     let rounds_per_thread = total_rounds / concurrency;
 
-    // DETERMINISTIC KEY GENERATION
-    // A fixed 32-bytes seed so the keys never change bet
-    let secret_seed = [42u8; 32];
-    let signing_key = SigningKey::from_bytes(&secret_seed);
-    let verifying_key = signing_key.verifying_key();
-    let pub_key_bytes = verifying_key.to_bytes();
+    // Load the Soverign Master Key directly from the secure disk vault
+    println!("[SIEGE CA] Acessing Swarm Master from ./ca-keys/swarm_master.key ....");
+    let master_key_bytes = fs::read("./ca-keys/swarm_master.key")
+        .expect("FATAL: Master Key Missing. Run raqim-core once to bootstrap keys ");
+
+    let master_key_array: [u8; 32] = master_key_bytes.as_slice().try_into().unwrap();
+    let master_signing_key = SigningKey::from_bytes(&master_key_array);
 
     // Derive agent_hex from public key
     let mut hasher = Md5::new();
