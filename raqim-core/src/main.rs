@@ -1,5 +1,6 @@
 use ed25519_dalek::SigningKey;
 use jsonwebtoken::{Validation, decode};
+use rand_core::OsRng;
 use raqim_core::aegis::AegisGateKeeper;
 use raqim_core::api::{ApiState, EnterpriseClaim, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
@@ -154,7 +155,7 @@ async fn main() {
         {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
-                .expect("Failed to secure Master Key Permissions")?;
+                .expect("Failed to secure Master Key Permissions");
         }
     }
 
@@ -164,9 +165,10 @@ async fn main() {
         .as_slice()
         .try_into()
         .expect("FATAL: Master key bytes is corruped (not 32 bytes)");
-    let master_siging_key = SigningKey::from_bytes(&key_array);
+    let master_signing_key = SigningKey::from_bytes(&key_array);
 
-    let master_public_key = master_siging_key.verifying_key().to_bytes();
+    let master_public_key = master_signing_key.verifying_key().to_bytes();
+    let master_public_key_hex = hex::encode(master_public_key.clone());
     println!("[SECURITY] Swarm Master Identity loaded into a secure kernel memory ");
 
     // ===============================
@@ -174,7 +176,12 @@ async fn main() {
     let brain_shard = Arc::new(SwarmStateRegistry::new());
 
     let axon = Arc::new(AxonGateKeeper::new());
-    let aegis = AegisGateKeeper::new(&config.aegis_path, event_tx.clone(), ui_tx.clone());
+    let aegis = AegisGateKeeper::new(
+        &config.aegis_path,
+        master_public_key_hex.as_str(),
+        event_tx.clone(),
+        ui_tx.clone(),
+    );
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
         GlobalNetworkBridge::new(&verified_tenat_id, &config.topic, aegis.clone(), allow_wan).await,
@@ -262,7 +269,7 @@ async fn main() {
         global_net.clone(),
         tx_counter.clone(),
         event_tx.clone(),
-        master_sigining_key,
+        master_signing_key.clone(),
     ));
 
     // Initialize global tracker ONCE outside the loop
@@ -499,7 +506,8 @@ async fn main() {
         phantom_ui_tx: phantom_ui_tx.clone(),
         health_tx: health_tx.clone(),
         swarm_registry: registry.clone(),
-        master_signing_key,
+                master_signing_key.clone(),
+
     };
 
     let axum_app = build_admin_router(api_state);
