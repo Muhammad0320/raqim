@@ -560,22 +560,25 @@ async fn main() {
 
                 // Spawn into the joinset
                  tcp_workers.spawn(async move {
-                    //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
+
+                        loop {
+                              //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
                     let mut len_buf = [0u8; 4];
                     if socket.read_exact(&mut len_buf).await.is_err() {
-                        return;
+                        break;
                     }
                     let payload_len = u32::from_le_bytes(len_buf) as usize;
 
                     // Prevent malicious massive memory allocation attacks ( Max 1mb per thought )
                     if payload_len > 1024 * 1024 {
-                        return;
+                        eprintln!("[NETWORK WARN] Payload Exceeded 1MB limit. Dropping Connections.");
+                        break;
                     }
 
                     // Read the exact payload bytes
                     let mut payload_buf = vec![0u8; payload_len];
                     if socket.read_exact(&mut payload_buf).await.is_err() {
-                        return;
+                        break;
                     }
 
 
@@ -583,7 +586,7 @@ async fn main() {
                     Ok(valid_archived) => valid_archived,
                     Err(e) => {
                         eprintln!("[AEGIS] TCP Dropped: Malformed Memory layout (IngressEnvelope): {}", e);
-                        return;
+                        break;
                     }
                 };
 
@@ -600,7 +603,7 @@ async fn main() {
                         Ok(valid_state) => valid_state,
                         Err(e) => {
                             eprintln!("[AEGIS ERROR] TCP Dropped: Misaligned/Malformed Inner Payload (AgentState): {} ", e);
-                            return;
+                            break;
                         }
                     };
 
@@ -613,7 +616,7 @@ async fn main() {
                         Ok(verified_hex) => verified_hex,
                         Err(err) =>  {
                             eprintln!("[AEGIS INTERDICTION] Inbound TCP packet dropped: {} ", err);
-                            return;
+                            break;
                         }
                     };
 
@@ -626,7 +629,7 @@ async fn main() {
                             // We do not execute a cascade for handshake. We just register and drop
                             task_registry.touch_agent(&agent_hex, &path_intent, "Connected", &alias);
 
-                            return;
+                            break;
                         }
                     } else {
                         // O(1) Ram lookup and keep the alias active for normal thought
@@ -638,15 +641,15 @@ async fn main() {
                     // --- The Raqim Cascade ---
                     let res = execute_raqim_cascade(
                         &archived_state,
-                        task_axon,
-                        task_wal,
-                        task_cortex_tx,
-                        global_publisher,
-                        task_tx_couter,
-                        task_event_tx,
+                        task_axon.clone(),
+                        task_wal.clone(),
+                        task_cortex_tx.clone(),
+                        global_publisher.clone(),
+                        task_tx_couter.clone(),
+                        task_event_tx.clone(),
                         Vec::new(),
                         Vec::new(),
-                        task_telemetry,
+                        task_telemetry.clone(),
                     )
                     .await;
 
@@ -660,7 +663,7 @@ async fn main() {
 
                     let tx_id = match res {
                         Ok(id) => id,
-                        Err(_) => return,
+                        Err(_) => continue,
                     };
 
                     let ui_payload = UiEvent::ThoughtCommited {
@@ -672,7 +675,9 @@ async fn main() {
 
                     let _ = task_ui_tx.send(ui_payload);
 
-                    println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
+                    // println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
+
+                        }
 
                 });
 

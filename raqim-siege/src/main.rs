@@ -51,12 +51,12 @@ async fn main() {
         };
 
         // Sign the passport with the Master Key
-        let serialized_raw = postcard::to_allocvec(&cert)?;
+        let serialized_raw = postcard::to_allocvec(&cert).unwrap();
 
         let master_sig = master_signing_key.sign(&serialized_raw);
         cert.master_signature = master_sig.to_bytes().to_vec();
 
-        let cert_bytes = postcard::to_allocvec(&cert)?;
+        let cert_bytes = postcard::to_allocvec(&cert).unwrap();
         agents.push((
             agent_id,
             agent_signing_key,

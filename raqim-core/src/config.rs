@@ -68,7 +68,7 @@ pub struct CliArgs {
     #[arg(short, long)]
     pub dims: Option<i32>,
 
-    #[arg(short, long)]
+    #[arg(long)]
     pub limit: Option<usize>,
 
     #[arg(short, long)]
