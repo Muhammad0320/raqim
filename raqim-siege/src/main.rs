@@ -134,13 +134,14 @@ async fn main() {
 
             // Monolithic buffer aggregation: Calculate the total capacity required to avoid costly heap allocation.
             let total_size: usize = chunk.iter().map(|p| p.len()).sum();
-            let super_buffer = Vec::with_capacity(total_size);
+            let mut super_buffer = Vec::with_capacity(total_size);
 
             // Pull the trigger
             for packet in chunk {
                 super_buffer.extend(packet);
             }
 
+            // Pull the trigger: Blast the entire magazine in a single kernel syscall.
             if let Err(e) = socket.write_all(&super_buffer).await {
                 eprintln!("[SEIGE THRREAD WARN]: TCP write interrupted: {}", e)
             }

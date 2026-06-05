@@ -14,6 +14,7 @@ use crate::SystemEvent;
 // The lock free memory counter. Zero impact on the hot path.
 pub struct TelemetryEngine {
     pub tenant_id: String,
+
     pub license_key: RwLock<String>,
     pub crdt_merges: AtomicU64,
     pub a2a_bytes_routed: AtomicU64,
