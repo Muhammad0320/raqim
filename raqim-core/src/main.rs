@@ -565,7 +565,7 @@ async fn main() {
                               //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
                     let mut len_buf = [0u8; 4];
                     if let Err(e) = socket.read_exact(&mut len_buf).await {
-                        eprintln!("[TCP EDGE]: Connection closed or read failed: {}", e)
+                        eprintln!("[TCP EDGE]: Connection closed or read failed: {}", e);
                         break;
                     }
                     let payload_len = u32::from_le_bytes(len_buf) as usize;
