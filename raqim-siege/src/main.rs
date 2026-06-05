@@ -132,9 +132,17 @@ async fn main() {
             // No Nagle's algorithm delay for pure throuput benchmark
             let _ = socket.set_nodelay(true);
 
+            // Monolithic buffer aggregation: Calculate the total capacity required to avoid costly heap allocation.
+            let total_size: usize = chunk.iter().map(|p| p.len()).sum();
+            let super_buffer = Vec::with_capacity(total_size);
+
             // Pull the trigger
             for packet in chunk {
-                socket.write_all(&packet).await.expect("TCP Write Failed");
+                super_buffer.extend(packet);
+            }
+
+            if let Err(e) = socket.write_all(&super_buffer).await {
+                eprintln!("[SEIGE THRREAD WARN]: TCP write interrupted: {}", e)
             }
         });
 

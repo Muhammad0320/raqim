@@ -564,7 +564,8 @@ async fn main() {
                         loop {
                               //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
                     let mut len_buf = [0u8; 4];
-                    if socket.read_exact(&mut len_buf).await.is_err() {
+                    if let Err(e) = socket.read_exact(&mut len_buf).await {
+                        eprintln!("[TCP EDGE]: Connection closed or read failed: {}", e)
                         break;
                     }
                     let payload_len = u32::from_le_bytes(len_buf) as usize;
@@ -577,7 +578,8 @@ async fn main() {
 
                     // Read the exact payload bytes
                     let mut payload_buf = vec![0u8; payload_len];
-                    if socket.read_exact(&mut payload_buf).await.is_err() {
+                    if let Err(e) = socket.read_exact(&mut payload_buf).await {
+                        eprintln!("[TCP EDGE]: Failed to load TCP payload {}", e);
                         break;
                     }
 
@@ -629,7 +631,7 @@ async fn main() {
                             // We do not execute a cascade for handshake. We just register and drop
                             task_registry.touch_agent(&agent_hex, &path_intent, "Connected", &alias);
 
-                            break;
+                            continue;
                         }
                     } else {
                         // O(1) Ram lookup and keep the alias active for normal thought
@@ -639,6 +641,7 @@ async fn main() {
                     }
 
                     // --- The Raqim Cascade ---
+                    // If the WAL or the Publisher channel are full, the .await creates a healthy backppressure rather than panicking.
                     let res = execute_raqim_cascade(
                         &archived_state,
                         task_axon.clone(),
@@ -663,21 +666,22 @@ async fn main() {
 
                     let tx_id = match res {
                         Ok(id) => id,
-                        Err(_) => continue,
+                        Err(e) => {
+                            eprintln!("[CASCADE ERROR]: Processing failed: {:?}", e);
+                            continue;
+                        }
                     };
 
-                    let ui_payload = UiEvent::ThoughtCommited {
+                    let _ = task_ui_tx.send(UiEvent::ThoughtCommited {
                         agent_hex: agent_hex.clone(),
                         intent_path: path_intent.to_string(),
                         tx_id,
                         text,
-                    };
+                    });
 
-                    let _ = task_ui_tx.send(ui_payload);
+                    println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
 
-                    // println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
-
-                        }
+                }
 
                 });
 
