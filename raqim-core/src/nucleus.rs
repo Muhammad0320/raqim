@@ -69,9 +69,16 @@ impl WalEngine {
                               batch.push(log);
 
                         // Drain the channel of any other pending thoughts for batching
-                        while let Ok(log) = rx.try_recv() {
-                            batch.push(log);
-                        }
+                       while batch.len() < 6_000 {
+                            if let Ok(pending_log) = rx.try_recv() {
+                                batch.push(pending_log);
+                            } else {
+                                break;
+                            }
+                       }
+                        // while let Ok(log) = rx.try_recv() {
+                        //     batch.push(log);
+                        // }
 
                         // Record the offset for the first tx_id in this batch
                         let first_txid = batch[0].state.transaction_id;
