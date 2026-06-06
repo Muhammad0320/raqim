@@ -12,6 +12,7 @@ use crate::api::ForkConfig;
 use crate::lancedb_store::LanceEngine;
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
+use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, SystemEvent};
 use crate::{AgentState, axon::AxonGateKeeper};
@@ -26,6 +27,7 @@ pub struct SandboxContent {
     pub axon: Arc<AxonGateKeeper>,
     pub aegis: Arc<AegisGateKeeper>,
     pub wal: Arc<WalEngine>,
+    pub shard: Arc<SwarmStateRegistry>,
     pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub global_net: Arc<GlobalNetworkBridge>,
     pub global_tx_counter: Arc<AtomicU64>,
@@ -176,6 +178,7 @@ impl WasmEngine {
                 let seeds_to_save = layers.live_seeds.clone();
                 let network_to_save = layers.replay_responses.clone();
                 let telemetry_clone = layers.telemetry.clone();
+                let shard_clone = layers.shard.clone();
 
                 // Clear the live queues for the next thought cycle
                 caller.data_mut().live_responses.clear();
@@ -210,6 +213,7 @@ impl WasmEngine {
                         archived_bytes,
                         axon_clone,
                         wal_clone,
+                        shard_clone,
                         cortex_tx_clone,
                         global_net_clone,
                         counter_clone,

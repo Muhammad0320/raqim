@@ -157,7 +157,6 @@ pub struct ApiState {
     pub phantom_ui_tx: Sender<UiEvent>,
     pub health_tx: Sender<SystemHealth>,
     pub swarm_registry: Arc<SwarmRegistry>,
-
     pub master_signing_key: SigningKey,
 }
 
@@ -792,7 +791,7 @@ pub async fn http_ingress_endpoint(
     let mut packet_sig = [0u8; 64];
     packet_sig.copy_from_slice(ingress_envelope.signature.as_slice());
 
-    let agent_hex = match state.aegis.verify_and_authorize_ingress(
+    let _agent_hex = match state.aegis.verify_and_authorize_ingress(
         &ingress_envelope.capability_cert.as_slice(),
         &ingress_envelope.public_key,
         &state_bytes,
@@ -809,6 +808,7 @@ pub async fn http_ingress_endpoint(
     let task_cortex = state.cortex_tx.clone();
     let task_net = state.global_net.clone();
     let task_counter_tx = state.global_tx_counter.clone();
+    let task_brain = state.brain.clone();
 
     let body_clone = body.clone();
 
@@ -827,6 +827,7 @@ pub async fn http_ingress_endpoint(
             &state,
             task_axon,
             task_wal,
+            task_brain,
             task_cortex,
             task_net,
             task_counter_tx,

@@ -369,11 +369,13 @@ async fn main() {
                         let lance_clone = w_lance.clone();
                         let ae_clone = w_aegis.clone();
                         let tele_clone = w_telemetry.clone();
+                        let shard_clone = brain_shard.clone();
 
                         // When an agent connects or boots, we retreive or initialize its specific tracker
                         let content = SandboxContent {
                             axon: a_clone,
                             wal: w_clone,
+                            shard: shard_clone,
                             cortex_tx: c_clone,
                             global_net: g_clone,
                             global_tx_counter: t_clone,
@@ -562,7 +564,7 @@ async fn main() {
                 // Spawn into the joinset
                  tcp_workers.spawn(async move {
 
-                        loop {
+                loop {
                               //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
                     let mut len_buf = [0u8; 4];
                     if let Err(e) = socket.read_exact(&mut len_buf).await {
