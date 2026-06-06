@@ -557,6 +557,7 @@ async fn main() {
                 let task_aegis = aegis.clone();
                 let task_ui_tx = ui_tx.clone();
                 let task_registry = registry.clone();
+                let task_brain = brain_shard.clone();
 
                 // Spawn into the joinset
                  tcp_workers.spawn(async move {
@@ -646,6 +647,7 @@ async fn main() {
                         &archived_state,
                         task_axon.clone(),
                         task_wal.clone(),
+                        task_brain.clone(),
                         task_cortex_tx.clone(),
                         global_publisher.clone(),
                         task_tx_couter.clone(),

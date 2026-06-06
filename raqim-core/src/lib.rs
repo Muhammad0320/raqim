@@ -89,6 +89,7 @@ pub async fn execute_raqim_cascade(
     archive_state: &rkyv::Archived<AgentState>, // True Zero Copy
     axon: Arc<AxonGateKeeper>,
     wal: Arc<WalEngine>,
+    shard_brain: Arc<SwarmStateRegistry>,
     cortex_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
     global_tx_counter: Arc<AtomicU64>,
@@ -129,7 +130,7 @@ pub async fn execute_raqim_cascade(
         text: archive_state.text.as_str().to_string(), // Extract text from pointer
     };
 
-    let delta = SwarmStateRegistry::new()
+    let delta = shard_brain
         .get_or_create_brain(&enriched_state.namespace.clone())
         .append_agent_thought(&agent_hex, &enriched_state)
         .unwrap();
