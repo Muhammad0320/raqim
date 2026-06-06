@@ -625,6 +625,7 @@ impl MemoryRouter {
             axon: self.axon.clone(),
             aegis: self.aegis.clone(),
             wal: active_wal.clone(),
+            shard: self.brain.clone(),
             cortex_tx: self.cortex_tx.clone(),
             global_net: active_net.clone(),
             global_tx_counter: self.global_tx_counter.clone(),

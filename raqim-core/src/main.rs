@@ -285,6 +285,7 @@ async fn main() {
     let w_event_tx = event_tx.clone();
     let w_aegis = aegis.clone();
     let w_telemetry = telemetry.clone();
+    let w_brain_shard = brain_shard.clone();
 
     // Spawns a dedicated background thread to monitor the plugins folder
     tokio::spawn(async move {
@@ -369,7 +370,7 @@ async fn main() {
                         let lance_clone = w_lance.clone();
                         let ae_clone = w_aegis.clone();
                         let tele_clone = w_telemetry.clone();
-                        let shard_clone = brain_shard.clone();
+                        let shard_clone = w_brain_shard.clone();
 
                         // When an agent connects or boots, we retreive or initialize its specific tracker
                         let content = SandboxContent {
@@ -682,8 +683,6 @@ async fn main() {
                         tx_id,
                         text,
                     });
-
-                    println!("Thought processed, sealed, and broadcast in sub-milliseconds.");
 
                 }
 
