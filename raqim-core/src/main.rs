@@ -7,7 +7,7 @@ use raqim_core::axon::AxonGateKeeper;
 
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
-use raqim_core::cortex::{CortexDataPlane, listen_for_local_thoughts};
+use raqim_core::cortex::CortexDataPlane;
 use raqim_core::embedding::{EmbeddingProvider, LocalBgeProvider, OpenAIProvider};
 use raqim_core::health::{HealthMonitor, SystemHealth};
 use raqim_core::lancedb_store::LanceEngine;
@@ -237,15 +237,6 @@ async fn main() {
         wal.cmd_sender.clone(),
     );
     compactor.start_daemon();
-
-    // The Local cortex actor
-    let topic_clone = &config.topic;
-    listen_for_local_thoughts(
-        topic_clone.to_string(),
-        brain_shard.clone(),
-        axon.clone(),
-        event_tx.clone(),
-    );
 
     // Channel to talk to the publisher safely accross threads
     let (cortex_tx, mut cortex_rx) = mpsc::unbounded_channel::<Vec<u8>>();

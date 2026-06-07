@@ -1,13 +1,6 @@
-use std::sync::Arc;
-
 use iceoryx2::port::publisher::Publisher;
 use iceoryx2::port::subscriber::Subscriber;
 use iceoryx2::prelude::*;
-use tokio::sync::broadcast::Sender;
-
-use crate::axon::AxonGateKeeper;
-use crate::state::SwarmStateRegistry;
-use crate::{OpLog, SystemEvent};
 
 pub struct CortexDataPlane {
     service_name: ServiceName,
@@ -50,57 +43,4 @@ impl CortexDataPlane {
 
         Ok(subscriber)
     }
-}
-
-/// The uncomprormising local listener. Runs in a dedicated background thread.
-pub fn listen_for_local_thoughts(
-    topic_name: String,
-    brain: Arc<SwarmStateRegistry>,
-    axon: Arc<AxonGateKeeper>,
-    tx: Sender<SystemEvent>,
-) {
-    //  Subscriber is created on this specific thrad, so it doesn't cross boundaries.
-    std::thread::spawn(move || {
-        //  Initialize inside the thread
-        let cortex = CortexDataPlane::new(&topic_name);
-
-        let subscriber = cortex
-            .create_subscriber()
-            .expect("Failed to create local subscriber");
-
-        println!("Cortx Data Plane: Listening for zero-copy local thoughts...");
-
-        //  Read from shared physical RAM
-        loop {
-            if let Ok(Some(sample)) = subscriber.receive() {
-                let payload_bytes = sample.payload();
-
-                // Zero copy deserialization of the dynamic bytes
-                let archived_log = unsafe {
-                    rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload_bytes)
-                };
-
-                // The Circuit Breaker
-                if axon.verify_foreign_thoughts(&archived_log) {
-                    brain
-                        .get_or_create_brain(&archived_log.state.namespace)
-                        .assimilate_foreign_thought(&archived_log.delta.as_slice())
-                        .expect("FATAL: failed to assimilate thought");
-                    println!(
-                        "Cortex: Assimilated thought from Agent: {:?}",
-                        archived_log.agent_id.as_slice()
-                    );
-                } else {
-                    println!("CRITICAL ALERT: Local tampering detected. Dropping thoughts.");
-                    let _ = tx.send(SystemEvent::SecurityBreach {
-                        agent_id: hex::encode(&archived_log.agent_id.as_slice()),
-                        reason: "Local tampering detected - Markle Hash Mismatch ".to_string(),
-                        culprit_text: archived_log.state.text.as_str().to_string(),
-                    });
-                }
-            }
-
-            std::thread::yield_now();
-        }
-    });
 }
