@@ -180,54 +180,6 @@ impl AegisGateKeeper {
         packet_sig_bytes: &[u8; 64],
         intent_path: &str,
     ) -> Result<String, anyhow::Error> {
-        // 1. Unpack the certificate token using postcard
-        let cert: CapabilityCertificate = postcard::from_bytes(cert_bytes)
-            .map_err(|_| anyhow::anyhow!("Malformed Cryptographic Certificate Token"))?;
-
-        // 2. Short-circuit check if the agent is actively quarantined
-        if self.quarantine_blocklist.contains_key(&cert.agent_hex) {
-            return Err(anyhow::anyhow!(
-                " Agent is expicitely locked down by firewall "
-            ));
-        }
-
-        // 3. Audit token lifetime bounds.
-        let current_ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        if current_ts > cert.expiration_timestamp {
-            return Err(anyhow::anyhow!(" Capability Certificate has expired "));
-        }
-
-        // 4. LINEAGE VERIFICATION: Prove token validity against the Master Swarm Key
-        let mut cert_unsigned_payload = cert.clone();
-        cert_unsigned_payload.master_signature = Vec::new();
-        let serialized_raw = postcard::to_allocvec(&cert_unsigned_payload)?;
-
-        let master_sig_array: &[u8; 64] = cert
-            .master_signature
-            .as_slice()
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("Invalid Master Signature block lengnth"))?;
-
-        let master_sig = Signature::from_bytes(master_sig_array);
-        if self
-            .master_public_key
-            .verify(&serialized_raw, &master_sig)
-            .is_err()
-        {
-            self.trigger_quarantine(
-                &cert.agent_hex,
-                intent_path,
-                "CRYPTO_SPOOF",
-                "Forged Swarm Lineage Token",
-            );
-            return Err(anyhow::anyhow!(
-                "Lineage Audit Failure: Forged Master Signature"
-            ));
-        }
-
         // 5. AUTHENTICITY VERIFICATION: Verify payload integrity against individual Agent Key.
         let agent_verifying_key = VerifyingKey::from_bytes(agent_pub_bytes)?;
         let packet_sig = Signature::from_bytes(packet_sig_bytes);
@@ -294,5 +246,61 @@ impl AegisGateKeeper {
         Err(anyhow::anyhow!(
             "Access Denied: Default Deny Policy Tripped"
         ))
+    }
+
+    /// The heavy handshake (Called once per connection)
+    pub fn verify_session_lineage(
+        &self,
+        cert_bytes: &[u8],
+    ) -> Result<(String, String), anyhow::Error> {
+        // 1. Unpack the certificate token using postcard
+        let cert: CapabilityCertificate = postcard::from_bytes(cert_bytes)
+            .map_err(|_| anyhow::anyhow!("Malformed Cryptographic Certificate Token"))?;
+
+        // 2. Short-circuit check if the agent is actively quarantined
+        if self.quarantine_blocklist.contains_key(&cert.agent_hex) {
+            return Err(anyhow::anyhow!(
+                " Agent is expicitely locked down by firewall "
+            ));
+        }
+
+        // 3. Audit token lifetime bounds.
+        let current_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if current_ts > cert.expiration_timestamp {
+            return Err(anyhow::anyhow!(" Capability Certificate has expired "));
+        }
+
+        // 4. LINEAGE VERIFICATION: Prove token validity against the Master Swarm Key
+        let mut cert_unsigned_payload = cert.clone();
+        cert_unsigned_payload.master_signature = Vec::new();
+        let serialized_raw = postcard::to_allocvec(&cert_unsigned_payload)?;
+
+        let master_sig_array: &[u8; 64] = cert
+            .master_signature
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid Master Signature block lengnth"))?;
+
+        let master_sig = Signature::from_bytes(master_sig_array);
+        if self
+            .master_public_key
+            .verify(&serialized_raw, &master_sig)
+            .is_err()
+        {
+            self.trigger_quarantine(
+                &cert.agent_hex,
+                "Handshake",
+                "CRYPTO_SPOOF",
+                "Forged Swarm Lineage Token",
+            );
+            return Err(anyhow::anyhow!(
+                "Lineage Audit Failure: Forged Master Signature"
+            ));
+        }
+
+        Ok((cert.agent_hex, cert.group_name))
     }
 }

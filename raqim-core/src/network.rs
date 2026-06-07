@@ -71,7 +71,7 @@ impl GlobalNetworkBridge {
         tokio::spawn(async move {
             println!(
                 "[NETWORK CORE] Zenoh Egress Funnel active on topic: {} ",
-                &topic
+                &topic_clone
             );
             while let Some(bytes) = egress_rx.recv().await {
                 if let Err(e) = session_clone.put(&topic_clone, bytes).await {
