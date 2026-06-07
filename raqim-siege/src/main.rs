@@ -4,7 +4,10 @@ use raqim_siege::{AgentState, AgentStatus, CapabilityCertificate, IngressEnvelop
 use std::{fs, time::Instant};
 
 use ed25519_dalek::{Signer, SigningKey};
-use tokio::{io::AsyncWriteExt, net::TcpStream};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 
 #[tokio::main]
 async fn main() {
@@ -145,6 +148,10 @@ async fn main() {
             if let Err(e) = socket.write_all(&super_buffer).await {
                 eprintln!("[SEIGE THRREAD WARN]: TCP write interrupted: {}", e)
             }
+
+            // Graceful shutdown: wait for the daemon to finish reading. This prevents the siege engine from dropping the socket prematurely.
+            let mut buf = [0u8; 1];
+            let _ = socket.read(&mut buf).await;
         });
 
         join_handles.push(handle);
