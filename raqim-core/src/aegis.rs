@@ -172,20 +172,23 @@ impl AegisGateKeeper {
     }
 
     /// Validates the cryptographic token structure and executes signature audit at the gateway.
-    pub fn verify_and_authorize_ingress(
+    // The ultra-fast packet audit (Called once per packet)
+    pub fn autho(
         &self,
+        agent_hex: &str,
+        group_name: &str,
         cert_bytes: &[u8],
         agent_pub_bytes: &[u8; 32],
         payload: &[u8],
         packet_sig_bytes: &[u8; 64],
         intent_path: &str,
-    ) -> Result<String, anyhow::Error> {
-        // 5. AUTHENTICITY VERIFICATION: Verify payload integrity against individual Agent Key.
+    ) -> Result<(), anyhow::Error> {
+        //  AUTHENTICITY VERIFICATION: Verify payload integrity against individual Agent Key.
         let agent_verifying_key = VerifyingKey::from_bytes(agent_pub_bytes)?;
         let packet_sig = Signature::from_bytes(packet_sig_bytes);
         if agent_verifying_key.verify(payload, &packet_sig).is_err() {
             self.trigger_quarantine(
-                &cert.agent_hex,
+                agent_hex,
                 &intent_path,
                 "CRYPTO_SPOOF",
                 "Invalid Agent Frame Signature",
@@ -197,10 +200,10 @@ impl AegisGateKeeper {
 
         // 6. POLICY ENFORCEMENT: Evaluate namespace directly from the LIVE manifest file
         let policies_guard = self.group_policies.read().unwrap();
-        let live_policy = policies_guard.get(&cert.group_name).ok_or_else(|| {
+        let live_policy = policies_guard.get(group_name).ok_or_else(|| {
             anyhow::anyhow!(
                 "Group Policy mapping '{}' not defined inside active aegis.toml ",
-                &cert.group_name
+                group_name
             )
         })?;
 
@@ -213,7 +216,7 @@ impl AegisGateKeeper {
 
             if match_found {
                 self.trigger_quarantine(
-                    &cert.agent_hex,
+                    agent_hex,
                     intent_path,
                     "NAMESPACE_BREACH",
                     "Atempted interaction inside expicitely blocked domain",
@@ -232,13 +235,13 @@ impl AegisGateKeeper {
             };
 
             if match_found {
-                return Ok(cert.agent_hex);
+                return Ok(agent_hex);
             }
         }
 
         // Default Deny Fallback
         self.trigger_quarantine(
-            &cert.agent_hex,
+            agent_hex,
             intent_path,
             "NAMESPACE_BREACH",
             "No explicit allowance match withing token permissions",
