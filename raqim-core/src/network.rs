@@ -16,6 +16,7 @@ pub struct GlobalNetworkBridge {
     session: Arc<Session>,
     workspace_prefix: String,
     aegis: Arc<AegisGateKeeper>,
+    os_node_id: String, // Track out own identity
 }
 
 impl GlobalNetworkBridge {
@@ -25,6 +26,7 @@ impl GlobalNetworkBridge {
         swarm_name: &str,
         aegis: Arc<AegisGateKeeper>,
         allow_wan: bool,
+        os_node_id: String,
     ) -> Self {
         println!("Bismillah. Initialializing Zenoh Global Network Bridge...");
 
@@ -60,12 +62,14 @@ impl GlobalNetworkBridge {
             session: Arc::new(session),
             workspace_prefix: format!("raqim/{}/{}", tenant_id, swarm_name),
             aegis,
+            os_node_id,
         }
     }
 
     /// Takes a locally verfied Oplog and broadcasts it to the global swarm
     pub async fn broadcast_to_world(&self, log: &OpLog) {
-        let key_expr = format!("{}/thoughts", self.workspace_prefix);
+        // Topic becomes: raqim/tenant_id/swarm_name/thoughts/node_id
+        let key_expr = format!("{}/thoughts/{}", self.workspace_prefix, self.os_node_id);
 
         let bytes = to_bytes::<rkyv::rancor::Error>(log).expect("Zero-copy serialization failed");
 
@@ -75,26 +79,35 @@ impl GlobalNetworkBridge {
             .expect("Failed to broadcast thought")
     }
 
-    /// Listens for foreign thoughts from the global network
+    /// Listens for foreign thoughts from the global network using a wildcard, dropping echoes from outselves
     pub async fn listen_for_foreign_thoughts(
         &self,
         brain_registry: Arc<SwarmStateRegistry>,
         axon: Arc<AxonGateKeeper>,
         tx: Sender<SystemEvent>,
     ) {
-        let key_expr = format!("{}/thoughts", self.workspace_prefix);
-
-        // Clone the Arc to safely pass the session into the background thread
+        // We subscribe to a wildcard to catch thoughts from ALL other nodes on the planet
+        let key_expr = format!("{}/thoughts/*", self.workspace_prefix);
         let session_clone = self.session.clone();
+        let my_node_id = self.os_node_id.clone();
 
         println!(
-            "Listening for global swarm synchronization on: {} ...",
+            " [NETWORK CORE] Listening for global swarm synchronization on: {} ...",
             key_expr
         );
         tokio::spawn(async move {
             let subscriber = session_clone.declare_subscriber(key_expr).await.unwrap();
 
             while let Ok(sample) = subscriber.recv_async().await {
+                // Extract the sender node id from the topic path
+                let topic_str = sample.key_expr().as_str();
+                let sender_node_id = topic_str.split("/").last().unwrap_or("");
+
+                // The Echo filter: If this packet came from our own code, drop it instantly.
+                if sender_node_id == my_node_id {
+                    continue;
+                }
+
                 let payload_bytes = sample.payload().to_bytes();
 
                 // 2. We cast pointer directly over ZENOH network buffer!
