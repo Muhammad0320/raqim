@@ -32,6 +32,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 use wasmtime_wasi::WasiCtxBuilder;
 
 #[tokio::main]
@@ -171,6 +172,9 @@ async fn main() {
     println!("[SECURITY] Swarm Master Identity loaded into a secure kernel memory ");
 
     // ===============================
+    let os_node_id = Uuid::new_v4().to_string();
+    println!("[SYSTEM] Sovereign OS Node ID: {} ", os_node_id);
+
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain_shard = Arc::new(SwarmStateRegistry::new());
 
@@ -183,7 +187,14 @@ async fn main() {
     );
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
-        GlobalNetworkBridge::new(&verified_tenat_id, &config.topic, aegis.clone(), allow_wan).await,
+        GlobalNetworkBridge::new(
+            &verified_tenat_id,
+            &config.topic,
+            aegis.clone(),
+            allow_wan,
+            os_node_id,
+        )
+        .await,
     );
     let wasm_engine = Arc::new(WasmEngine::new());
 

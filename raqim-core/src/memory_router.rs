@@ -541,6 +541,7 @@ impl MemoryRouter {
                 format!("phamtom_{}", sandbox_agent_hex).as_str(),
                 self.aegis.clone(),
                 false,
+                format!("phantom_{}", sandbox_agent_hex).to_string(),
             )
             .await,
         );
