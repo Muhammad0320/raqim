@@ -173,11 +173,10 @@ impl AegisGateKeeper {
 
     /// Validates the cryptographic token structure and executes signature audit at the gateway.
     // The ultra-fast packet audit (Called once per packet)
-    pub fn autho(
+    pub fn authorize_packet_fast(
         &self,
         agent_hex: &str,
         group_name: &str,
-        cert_bytes: &[u8],
         agent_pub_bytes: &[u8; 32],
         payload: &[u8],
         packet_sig_bytes: &[u8; 64],
@@ -235,7 +234,7 @@ impl AegisGateKeeper {
             };
 
             if match_found {
-                return Ok(agent_hex);
+                return Ok(());
             }
         }
 

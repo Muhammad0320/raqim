@@ -791,8 +791,17 @@ pub async fn http_ingress_endpoint(
     let mut packet_sig = [0u8; 64];
     packet_sig.copy_from_slice(ingress_envelope.signature.as_slice());
 
-    let _agent_hex = match state.aegis.verify_and_authorize_ingress(
-        &ingress_envelope.capability_cert.as_slice(),
+    let (agent_hex, group_name) = match state
+        .aegis
+        .verify_session_lineage(&ingress_envelope.capability_cert.as_slice())
+    {
+        Ok((agent, group)) => (agent, group),
+        Err(_) => return Err(StatusCode::UNAUTHORIZED),
+    };
+
+    let _agent_hex = match state.aegis.authorize_packet_fast(
+        agent_hex.as_str(),
+        group_name.as_str(),
         &ingress_envelope.public_key,
         &state_bytes,
         &packet_sig,

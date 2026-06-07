@@ -567,8 +567,12 @@ async fn main() {
                 // Spawn into the joinset
                  tcp_workers.spawn(async move {
 
+                // ENTERPRISE FIX: Socket-Level Cryptographic Session Cache.
+                let mut session_established = false;
+                let mut cached_agent_hex = String::new();
+                let mut cached_group_name = String:::new();
                 loop {
-                              //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
+                   //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
                     let mut len_buf = [0u8; 4];
                     if let Err(e) = socket.read_exact(&mut len_buf).await {
                         eprintln!("[TCP EDGE]: Connection closed or read failed: {}", e);
@@ -620,13 +624,35 @@ async fn main() {
                     packet_sig.copy_from_slice( archived_ingress.signature.as_slice() );
 
                     // UNIFIED PERIMETER: Validates lineage, check signature, and checks the namespace instantly
-                    let agent_hex = match task_aegis.verify_and_authorize_ingress(archived_ingress.capability_cert.as_slice(), &agent_pub_key, state_slice,  &packet_sig, path_intent ) {
-                        Ok(verified_hex) => verified_hex,
-                        Err(err) =>  {
-                            eprintln!("[AEGIS INTERDICTION] Inbound TCP packet dropped: {} ", err);
-                            break;
-                        }
-                    };
+
+                    // ONLY verify the heavy Master Certificate on the very first packet.
+                    if !session_established {
+
+                            match task_aegis.verify_session_lineage(archived_ingress.capability_cert.as_slice()) {
+                                Ok((agent_hex, group_name)) => {
+                                    session_established = true;
+                                    cached_agent_hex = agent_hex;
+                                    cached_group_name = group_name;
+                                }
+
+                                Err(e) => {
+                                    eprintln!("[AEGIS INTERDICTION] Handshake Failed: {} ", e);
+                                    break;
+
+                                }
+                            }
+
+                    }
+
+                    // Perform ultrafast packet audit for each packet.
+                    if let  Err(e) = task_aegis.authorize_packet_fast(&cached_agent_hex, &cached_group_name, &agent_pub_key, state_slice, &packet_sig, path_intent) {
+
+                        eprintln!("[AEGIS INTERDICTION] Fast Audit failed: {} ", e);
+                        break;
+
+                    }
+
+                    let agent_hex = cached_agent_hex.clone();
 
                     let text = archived_state.text.as_str().to_string();
 
