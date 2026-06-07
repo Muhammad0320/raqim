@@ -148,10 +148,6 @@ async fn main() {
             if let Err(e) = socket.write_all(&super_buffer).await {
                 eprintln!("[SEIGE THRREAD WARN]: TCP write interrupted: {}", e)
             }
-
-            // Graceful shutdown: wait for the daemon to finish reading. This prevents the siege engine from dropping the socket prematurely.
-            let mut buf = [0u8; 1];
-            let _ = socket.read(&mut buf).await;
         });
 
         join_handles.push(handle);

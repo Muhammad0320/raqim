@@ -7,6 +7,7 @@ use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, OpLog, SystemEvent};
 use rkyv::{Archive, to_bytes};
 use tokio::sync::broadcast::Sender;
+use tokio::sync::mpsc;
 use zenoh::Session;
 
 use crate::aegis::AegisGateKeeper;
@@ -16,7 +17,8 @@ pub struct GlobalNetworkBridge {
     session: Arc<Session>,
     workspace_prefix: String,
     aegis: Arc<AegisGateKeeper>,
-    os_node_id: String, // Track out own identity
+    os_node_id: String,
+    egress_tx: mpsc::Sender<Vec<u8>>, // The high-speed funnel
 }
 
 impl GlobalNetworkBridge {
@@ -57,26 +59,44 @@ impl GlobalNetworkBridge {
         }
 
         let session = zenoh::open(config).await.expect("Failed to start zenoh");
+        let workspace_prefix = format!("raqim/{}/{}", tenant_id, swarm_name);
+
+        // Bounded Egress funnel
+        let (egress_tx, mut egress_rx) = mpsc::channel::<Vec<u8>>(100_000);
+
+        // Spawn the dedicated single-thread publisher task
+        let session_clone = session.clone();
+        let topic_clone = format!("{}/thoughts/{}", workspace_prefix.clone(), os_node_id);
+
+        tokio::spawn(async move {
+            println!(
+                "[NETWORK CORE] Zenoh Egress Funnel active on topic: {} ",
+                &topic
+            );
+            while let Some(bytes) = egress_rx.recv().await {
+                if let Err(e) = session_clone.put(&topic_clone, bytes).await {
+                    eprintln!("[NETWORK WARN] Zenoh Egress Dropped a packet: {}", e);
+                }
+            }
+        });
 
         Self {
             session: Arc::new(session),
-            workspace_prefix: format!("raqim/{}/{}", tenant_id, swarm_name),
+            workspace_prefix,
             aegis,
             os_node_id,
+            egress_tx,
         }
     }
 
     /// Takes a locally verfied Oplog and broadcasts it to the global swarm
     pub async fn broadcast_to_world(&self, log: &OpLog) {
-        // Topic becomes: raqim/tenant_id/swarm_name/thoughts/node_id
-        let key_expr = format!("{}/thoughts/{}", self.workspace_prefix, self.os_node_id);
+        let bytes = to_bytes::<rkyv::rancor::Error>(log)
+            .expect("Zero-copy serialization failed")
+            .into_vec();
 
-        let bytes = to_bytes::<rkyv::rancor::Error>(log).expect("Zero-copy serialization failed");
-
-        self.session
-            .put(key_expr, bytes.to_vec())
-            .await
-            .expect("Failed to broadcast thought")
+        // Applies healthy async backprpessure if WAN is slow, without spawning tokio task.
+        let _ = self.egress_tx.send(bytes).await;
     }
 
     /// Listens for foreign thoughts from the global network using a wildcard, dropping echoes from outselves

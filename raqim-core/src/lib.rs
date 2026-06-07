@@ -159,14 +159,7 @@ pub async fn execute_raqim_cascade(
     let serialized_log = rkyv::to_bytes::<rkyv::rancor::Error>(&sealed_log).unwrap();
     let _ = cortex_tx.send(serialized_log.into_vec());
 
-    // 6. Fire to global swarm
-    // Asyncronous Egress: Never .wait a global WAN operation inside your hot ingress TCP pipeline.
-    // If zenoh applies backpressure it will deadlock the incoming bytes
-    let sealed_clone = sealed_log.clone();
-    let net_clone = global_net.clone();
-    tokio::spawn(async move {
-        net_clone.broadcast_to_world(&sealed_clone).await;
-    });
+    global_net.broadcast_to_world(&sealed_log).await;
 
     let _ = tx.send(SystemEvent::ThoughtCommited {
         agent_id: agent_hex.clone(),
