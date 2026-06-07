@@ -208,8 +208,24 @@ impl GlobalNetworkBridge {
                 agent_public_key.copy_from_slice(archievd_envelope.sender_public_key.as_slice());
 
                 // UNIFIED PERIMETER AUDIT: Validates lineage token, proved the signature authenticity and checks path
-                match aegis.verify_and_authorize_ingress(
-                    archievd_envelope.sender_capability_cert.as_slice(),
+
+                let (agent_hex, group_name) = match aegis
+                    .verify_session_lineage(&archievd_envelope.sender_capability_cert.as_slice())
+                {
+                    Ok((agent, group)) => (agent, group),
+                    Err(e) => {
+                        eprintln!(
+                            "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Reason: {}",
+                            e
+                        );
+
+                        continue;
+                    }
+                };
+
+                match aegis.authorize_packet_fast(
+                    agent_hex.as_str(),
+                    group_name.as_str(),
                     &agent_public_key,
                     question_payload,
                     &packet_signature,
@@ -227,16 +243,15 @@ impl GlobalNetworkBridge {
                             );
                         }
                     }
-
-                    Err(interdiction_reason) => {
+                    Err(e) => {
                         eprintln!(
                             "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Reason: {}",
-                            interdiction_reason
+                            e
                         );
 
                         continue;
                     }
-                }
+                };
 
                 // Executes the agent's internal logic  to generate answer
                 let answer_bytes = response_handler(question_payload);

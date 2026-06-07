@@ -352,23 +352,32 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     sig_bytes.copy_from_slice(&signature)
                 }
 
-                // Perform Pre-Flight Verification before wrapping into network layer.
-                if let Err(e) = os_state_clone.aegis.verify_and_authorize_ingress(
-                    &cert_bytes,
+                let (agent_hex, group_name) =
+                    match os_state_clone.aegis.verify_session_lineage(&cert_bytes) {
+                        Ok((agent, group)) => (agent, group),
+                        Err(_) => return (),
+                    };
+
+                let _agent_hex = match os_state_clone.aegis.authorize_packet_fast(
+                    agent_hex.as_str(),
+                    group_name.as_str(),
                     &public_key_bytes,
                     &question,
                     &sig_bytes,
                     &capability,
                 ) {
-                    let err = WsMessage::Error {
-                        message: format!("[AEGIS Gate block] {}  ", e),
-                    };
-                    let _ = conn_clone
-                        .downstream_tx
-                        .send(Message::Text(serde_json::to_string(&err).unwrap()))
-                        .await;
-                    return;
-                }
+                    Ok(hex) => hex,
+                    Err(e) => {
+                        let err = WsMessage::Error {
+                            message: format!("[AEGIS Gate block] {}  ", e),
+                        };
+                        let _ = conn_clone
+                            .downstream_tx
+                            .send(Message::Text(serde_json::to_string(&err).unwrap()))
+                            .await;
+                        return;
+                    }
+                };
 
                 let envelope = A2AEnvelope {
                     sender_id: sender_id_bytes,
