@@ -277,8 +277,23 @@ impl GlobalNetworkBridge {
 
         let sender_pub_bytes: [u8; 32] = [0; 32];
 
-        if let Err(e) = aegis.verify_and_authorize_ingress(
-            envelope.sender_capability_cert.as_slice(),
+        let (agent_hex, group_name) = match aegis
+            .verify_session_lineage(envelope.sender_capability_cert.as_slice())
+        {
+            Ok((agent, group)) => (agent, group),
+            Err(e) => {
+                eprintln!(
+                    "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Reason: {}",
+                    e
+                );
+
+                return Err(anyhow::anyhow!(""));
+            }
+        };
+
+        if let Err(e) = aegis.authorize_packet_fast(
+            agent_hex.as_str(),
+            group_name.as_str(),
             &sender_pub_bytes,
             &envelope.payload,
             &packet_sig,
