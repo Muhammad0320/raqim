@@ -126,12 +126,6 @@ impl GlobalNetworkBridge {
                             "[CRDT SHARD ERROR]: Shard '{}' assimilation failed: {} ",
                             target_namespace, e
                         );
-                    } else {
-                        println!(
-                            " [ CRDT SHARD SUCCESS ] Assimlated foreign thoughts into '{}' from Agent: {} ",
-                            target_namespace,
-                            hex::encode(archived_log.agent_id.as_slice())
-                        )
                     }
                 } else {
                     eprintln!("SECURITY BREACH: Forged thought detected on network. Dropping.");

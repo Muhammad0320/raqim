@@ -21,7 +21,6 @@ impl CortexDataPlane {
     }
 
     // Notice we use [u8]  a dynamic byte slice instead of a fixed struct!
-
     pub fn create_publisher(
         &self,
     ) -> Result<Publisher<ipc::Service, [u8], ()>, Box<dyn std::error::Error>> {
