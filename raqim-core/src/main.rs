@@ -612,7 +612,7 @@ async fn main() {
                         break;
                     }
 
-                let archived_ingress = match rkyv::access::<<IngressEnvelope as rkyv::Archive>::Archived, rkyv::rancor::Error>(&payload_buf) {
+                let archived_ingress = match rkyv::access::<<IngressEnvelope as rkyv::Archive>::Archived, rkyv::rancor::Error>(active_payload_slice) {
                     Ok(valid_archived) => valid_archived,
                     Err(e) => {
                         eprintln!("[AEGIS] TCP Dropped: Malformed Memory layout (IngressEnvelope): {}", e);
