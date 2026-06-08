@@ -567,15 +567,32 @@ async fn main() {
                 // Spawn into the joinset
                  tcp_workers.spawn(async move {
 
+                //  Syscall Amortization: Wrap the socket in a 1mb BufReader to eliminate kernel context switches
+                let mut reader = tokio::io::BufReader::with_capacity(1024 * 1024, socket);
+
+                // Heap Allocation Amortization: pre-allocate a 1mb scratch buffer ONCE to eliminate dynamic heap allocation.
+                let mut payload_scratch_buf = vec![0u8; 1024* 1024];
+
                 // ENTERPRISE FIX: Socket-Level Cryptographic Session Cache.
                 let mut session_established = false;
                 let mut cached_agent_hex = String::new();
-                let mut cached_group_name = String:::new();
+                let mut cached_group_name = String::new();
+
+
+
                 loop {
                    //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
+                //    Read from the BufReader
                     let mut len_buf = [0u8; 4];
-                    if let Err(e) = socket.read_exact(&mut len_buf).await {
-                        eprintln!("[TCP EDGE]: Connection closed or read failed: {}", e);
+                    if let Err(e) = tokio::io::AsyncReadExt::read_exact(&mut reader, &mut len_buf).await {
+
+                            if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                                println!("[TCP EDGE] Agent at {} disconnected cleanly (EOF) ", addr);
+                            } else {
+
+
+                                eprintln!("[TCP EDGE]: Connection closed or read failed: {}", e);
+                            }
                         break;
                     }
                     let payload_len = u32::from_le_bytes(len_buf) as usize;
@@ -586,13 +603,14 @@ async fn main() {
                         break;
                     }
 
-                    // Read the exact payload bytes
-                    let mut payload_buf = vec![0u8; payload_len];
-                    if let Err(e) = socket.read_exact(&mut payload_buf).await {
+                    // Read the exact payload bytes: Read into the preallocated screatch bufffer.
+                    // We slice the scratch buffer to the exact length of the incoming payload complately bypassing the OS memory allocator
+                    let active_payload_slice = &mut payload_scratch_buf[0..payload_len];
+
+                    if let Err(e) = tokio::io::AsyncReadExt::read(&mut reader, active_payload_slice).await {
                         eprintln!("[TCP EDGE]: Failed to load TCP payload {}", e);
                         break;
                     }
-
 
                 let archived_ingress = match rkyv::access::<<IngressEnvelope as rkyv::Archive>::Archived, rkyv::rancor::Error>(&payload_buf) {
                     Ok(valid_archived) => valid_archived,
@@ -641,7 +659,6 @@ async fn main() {
 
                                 }
                             }
-
                     }
 
                     // Perform ultrafast packet audit for each packet.

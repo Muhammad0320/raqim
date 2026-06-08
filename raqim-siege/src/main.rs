@@ -13,7 +13,7 @@ use tokio::{
 async fn main() {
     println!("Bismillah. Forging the Enterprise Distributed Magazine...");
 
-    let total_rounds = 1_000_000;
+    let total_rounds = 500_000;
     let concurrency = 32;
     let num_agents = 50;
     let rounds_per_thread = total_rounds / concurrency;
