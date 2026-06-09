@@ -275,7 +275,8 @@ impl GlobalNetworkBridge {
         let mut packet_sig = [0u8; 64];
         packet_sig.copy_from_slice(envelope.signature.as_slice());
 
-        let sender_pub_bytes: [u8; 32] = [0; 32];
+        let mut sender_pub_bytes: [u8; 32] = [0; 32];
+        sender_pub_bytes.copy_from_slice(envelope.sender_public_key.as_slice());
 
         let (agent_hex, group_name) = match aegis
             .verify_session_lineage(envelope.sender_capability_cert.as_slice())

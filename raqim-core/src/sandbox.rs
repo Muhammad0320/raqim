@@ -56,7 +56,8 @@ pub struct SandboxContent {
     pub a2a_response_cache: Vec<u8>,
     pub http_response_cache: Vec<u8>,
 
-    pub a2a_receiver: Option<mpsc::Receiver<(Vec<u8>, std::sync::mpsc::Sender<Vec<u8>>)>>,
+    pub a2a_receiver:
+        Option<std::sync::mpsc::Receiver<(Vec<u8>, std::sync::mpsc::Sender<Vec<u8>>)>>,
     pub a2a_reply_channel: Option<std::sync::mpsc::Sender<Vec<u8>>>,
 }
 
@@ -452,9 +453,11 @@ impl WasmEngine {
 
                 let net = caller.data_mut().global_net.clone();
 
-                // Create a channel for zenoh to send questions to this specific WASM sandbox
-                let (tx, rx) =
-                    tokio::sync::mpsc::channel::<(Vec<u8>, std::sync::mpsc::Sender<Vec<u8>>)>(100);
+                // use the standard stync channel to cross WASM/Async thread safely
+                let (tx, rx) = std::sync::mpsc::sync_channel::<(
+                    Vec<u8>,
+                    std::sync::mpsc::Sender<Vec<u8>>,
+                )>(100);
                 caller.data_mut().a2a_receiver = Some(rx);
 
                 // Start listening on zenoh globally
@@ -464,24 +467,22 @@ impl WasmEngine {
                         move |question_bytes: &[u8]| -> Vec<u8> {
                             let (reply_tx, reply_rx) = std::sync::mpsc::channel();
 
-                            // Send the question to the suspended WASM thread.
-                            if tx
-                                .blocking_send((question_bytes.to_vec(), reply_tx))
-                                .is_ok()
-                            {
-                                // Wait for the WASM to process it and reply
-                                return match reply_rx
-                                    .recv_timeout(std::time::Duration::from_secs(15))
-                                {
-                                    Result::Ok(data) => data, // Timeout didn't trigger, and channel yielded data
-                                    Result::Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                                        b"A2A_TIMEOUT".to_vec()
-                                    } // 15 seconds passed!
-                                    Result::Err(
-                                        std::sync::mpsc::RecvTimeoutError::Disconnected,
-                                    ) => b"A2A_GUEST_CRASH".to_vec(), // Channel dropped/crashed
-                                };
+                            if tx.send((question_bytes.to_vec(), reply_tx)).is_ok() {
+                                // Yield the thread pool gracefully while blocking.
+                                return tokio::task::block_in_place(|| {
+                                    match reply_rx.recv_timeout(std::time::Duration::from_secs(15))
+                                    {
+                                        Ok(data) => data,
+                                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                                            b"A2A_TIMEOUT".to_vec()
+                                        }
+                                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                                            b"A2A_GUEST_CRASH".to_vec()
+                                        }
+                                    }
+                                });
                             }
+
                             b"A2A_QUEUE_FULL".to_vec()
                         },
                     )
