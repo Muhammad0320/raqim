@@ -578,8 +578,6 @@ async fn main() {
                 let mut cached_agent_hex = String::new();
                 let mut cached_group_name = String::new();
 
-
-
                 loop {
                    //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
                 //    Read from the BufReader
@@ -607,7 +605,7 @@ async fn main() {
                     // We slice the scratch buffer to the exact length of the incoming payload complately bypassing the OS memory allocator
                     let active_payload_slice = &mut payload_scratch_buf[0..payload_len];
 
-                    if let Err(e) = tokio::io::AsyncReadExt::read(&mut reader, active_payload_slice).await {
+                    if let Err(e) = tokio::io::AsyncReadExt::read_exact(&mut reader, active_payload_slice).await {
                         eprintln!("[TCP EDGE]: Failed to load TCP payload {}", e);
                         break;
                     }
