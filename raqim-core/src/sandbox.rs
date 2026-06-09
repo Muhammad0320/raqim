@@ -57,7 +57,7 @@ pub struct SandboxContent {
     pub http_response_cache: Vec<u8>,
 
     pub a2a_receiver:
-        Option<std::sync::mpsc::Receiver<(Vec<u8>, std::sync::mpsc::Sender<Vec<u8>>)>>,
+        Option<tokio::sync::mpsc::Receiver<(Vec<u8>, std::sync::mpsc::Sender<Vec<u8>>)>>,
     pub a2a_reply_channel: Option<std::sync::mpsc::Sender<Vec<u8>>>,
 }
 
@@ -454,10 +454,8 @@ impl WasmEngine {
                 let net = caller.data_mut().global_net.clone();
 
                 // use the standard stync channel to cross WASM/Async thread safely
-                let (tx, rx) = std::sync::mpsc::sync_channel::<(
-                    Vec<u8>,
-                    std::sync::mpsc::Sender<Vec<u8>>,
-                )>(100);
+                let (tx, rx) =
+                    tokio::sync::mpsc::channel::<(Vec<u8>, std::sync::mpsc::Sender<Vec<u8>>)>(100);
                 caller.data_mut().a2a_receiver = Some(rx);
 
                 // Start listening on zenoh globally
@@ -467,7 +465,10 @@ impl WasmEngine {
                         move |question_bytes: &[u8]| -> Vec<u8> {
                             let (reply_tx, reply_rx) = std::sync::mpsc::channel();
 
-                            if tx.send((question_bytes.to_vec(), reply_tx)).is_ok() {
+                            if tx
+                                .blocking_send((question_bytes.to_vec(), reply_tx))
+                                .is_ok()
+                            {
                                 // Yield the thread pool gracefully while blocking.
                                 return tokio::task::block_in_place(|| {
                                     match reply_rx.recv_timeout(std::time::Duration::from_secs(15))
