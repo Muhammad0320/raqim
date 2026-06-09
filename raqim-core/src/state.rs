@@ -4,7 +4,7 @@ use loro::{ImportStatus, LoroDoc, LoroList, LoroMap};
 use parking_lot::RwLock;
 use std::{borrow::Cow, sync::Arc};
 
-// An Isolated Swarm Domain Document protected by an independent, low-overhead read/write lock.
+// An Isolated Swarm Domain Document protected by an independent, low-overhead read/write lock which is namespace scoped
 pub struct SwarmState {
     // This lock ONLY protects this specific namespace
     doc: RwLock<LoroDoc>,

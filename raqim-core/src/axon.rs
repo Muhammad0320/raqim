@@ -1,30 +1,32 @@
 use crate::OpLog;
 use blake3::Hasher;
+use dashmap::DashMap;
 use rkyv::Archived;
 use std::sync::Mutex;
 
 /// The active Governance GateKeeper.
 pub struct AxonGateKeeper {
-    // We use a mutex here because the last know hash must be updated strictly sequentially
-    last_known_hash: Mutex<[u8; 32]>,
+    // True conncurrency, The Markle DAG is now sharded per namespace
+    last_known_hash: DashMap<String, [u8; 32]>,
 }
 
 impl AxonGateKeeper {
     pub fn new() -> Self {
         Self {
-            last_known_hash: Mutex::new([0; 32]),
+            last_known_hash: DashMap::new(),
         }
     }
 
-    /// Intercepts the raw thought, cryptographically seals it into the DAG, and returns the mutated Oplog ready or the WAL and Cortex.
+    /// Intercepts the raw thought, cryptographically seals it into a specific namespace DAG, and returns the mutated Oplog ready or the WAL and Cortex.
     pub fn seal_thought(&self, mut log: OpLog) -> OpLog {
         let mut hasher = Hasher::new();
+        let namespace = log.state.namespace.clone();
 
-        // 1. Lock the DAG chain briefly to get the prev hash
-        let mut chain_lock = self.last_known_hash.lock().unwrap();
+        // Acquire a localized, sharded reference to the namespace hash; If it doesn't exist we default to genesis zero hash
+        let mut shard_hash_ref = self.last_known_hash.entry(namespace).or_insert([0u8; 32]);
 
         // 2. Mutate the log to include the prev link in the chain
-        log.previous_hash = *chain_lock;
+        log.previous_hash = *shard_hash_ref;
 
         // 3. Hash the payloadsize, agent_id and previous hash
         hasher.update(&log.delta);
@@ -35,8 +37,8 @@ impl AxonGateKeeper {
         let current_hash: [u8; 32] = hasher.finalize().into();
         log.current_hash = current_hash;
 
-        // 5. Update the gatekeepers memory.
-        *chain_lock = current_hash;
+        // 5. Update the gatekeepers memory for this specific namespace.
+        *shard_hash_ref = current_hash;
 
         log
     }
