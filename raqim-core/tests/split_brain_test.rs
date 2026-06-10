@@ -30,68 +30,70 @@ async fn test_crdt_split_brain_convergence() {
     // Node A and B generate thoughts.
     let state_a1 = forge_state(1, "NODE A: Intial Thought");
     let delta_a1 = registry_a
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .append_agent_thought(&agent_id_hex, &state_a1)
         .unwrap();
 
     // Node C also generates a thought simultaneously but it's isolated
     let state_c1 = forge_state(2, "NODE C: Isolated Thought");
     let delta_c1 = registry_c
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .append_agent_thought(&agent_id_hex, &state_c1)
         .unwrap();
 
     // Phase 2: Partial Sync (A and B talk, C remains isolated)
     registry_b
-        .get_or_create_brain(namespace.clone())
-        .assimilate_foreign_thought(&delta_a1);
+        .get_or_create_brain(namespace)
+        .assimilate_foreign_thought(&delta_a1)
+        .unwrap();
 
     let state_b1 = forge_state(3, "NODE B: Reply to A");
     let delta_b1 = registry_b
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .append_agent_thought(&agent_id_hex, &state_b1)
         .unwrap();
 
     registry_a
-        .get_or_create_brain(namespace.clone())
-        .assimilate_foreign_thought(&delta_b1);
+        .get_or_create_brain(namespace)
+        .assimilate_foreign_thought(&delta_b1)
+        .unwrap();
 
     // Phase 3: The heal the Reconnection
     // The partition ends: Node C's Zenoh router floods the network with it's missing delta. Node A and B floods C with their missing delta
     registry_c
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .assimilate_foreign_thought(&delta_a1)
         .unwrap();
     registry_c
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .assimilate_foreign_thought(&delta_b1)
         .unwrap();
 
     registry_a
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .assimilate_foreign_thought(&delta_c1)
         .unwrap();
     registry_b
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .assimilate_foreign_thought(&delta_c1)
         .unwrap();
 
     // Phase 4: Mathematical assertion.
     // Wr export the entire raw json graph of the loro document for all 3 nodes
     let json_a = registry_a
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .doc
         .read()
         .export(loro::ExportMode::Snapshot);
 
     let json_b = registry_b
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .doc
         .read()
         .export(loro::ExportMode::Snapshot);
 
     let json_c = registry_c
-        .get_or_create_brain(namespace.clone())
+        .get_or_create_brain(namespace)
         .doc
         .read()
         .export(loro::ExportMode::Snapshot);
