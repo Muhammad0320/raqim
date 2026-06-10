@@ -23,7 +23,7 @@ async fn test_crdt_split_brain_convergence() {
         namespace: namespace.to_string(),
     };
 
-    let agent_hex = hex::encode([1u8; 12]);
+    let agent_id_hex = hex::encode([1u8; 12]);
 
     // PHASE 1: THE FORK (NETWORK PARTITION)
 
