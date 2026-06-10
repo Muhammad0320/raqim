@@ -82,38 +82,19 @@ async fn test_crdt_split_brain_convergence() {
         .get_or_create_brain(namespace.clone())
         .doc
         .read()
-        .export_json_updates(
-            &loro::VersionVector::new(),
-            &registry_a
-                .get_or_create_brain(namespace.clone())
-                .doc
-                .read()
-                .oplog_vv(),
-        );
+        .export(loro::ExportMode::Snapshot);
+
     let json_b = registry_b
         .get_or_create_brain(namespace.clone())
         .doc
         .read()
-        .export_json_updates(
-            &loro::VersionVector::new(),
-            &registry_b
-                .get_or_create_brain(namespace.clone())
-                .doc
-                .read()
-                .oplog_vv(),
-        );
+        .export(loro::ExportMode::Snapshot);
+
     let json_c = registry_c
         .get_or_create_brain(namespace.clone())
         .doc
         .read()
-        .export_json_updates(
-            &loro::VersionVector::new(),
-            &registry_c
-                .get_or_create_brain(namespace.clone())
-                .doc
-                .read()
-                .oplog_vv(),
-        );
+        .export(loro::ExportMode::Snapshot);
 
     // If the CRDT Math is flawless, A B and C must be identical despite the temporal ordering of events.
     assert_eq!(
