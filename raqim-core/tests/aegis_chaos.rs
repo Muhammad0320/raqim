@@ -1,7 +1,8 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::{Signer, SigningKey};
-use rand::rngs::OsRng;
+use rand_core::OsRng;
+
 use raqim_core::aegis::{AegisGateKeeper, AegisGroupPolicy, CapabilityCertificate};
 use tokio::sync::broadcast;
 
@@ -65,7 +66,7 @@ async fn test_adversarial_crytographic_gates() {
     let forged_intent_path = "/core/admin";
 
     // Aegis receives the tampered packet and process the handshake
-    let handshake_res = aegis.verify_session_lineage(&cert_bytes);
+    let handshake_res = aegis.verify_session_lineage(&cert_b_bytes);
     assert!(
         handshake_res.is_ok(),
         "Lineage Check should pass for valid transport"
