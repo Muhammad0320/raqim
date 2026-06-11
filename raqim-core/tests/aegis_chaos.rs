@@ -103,5 +103,39 @@ async fn test_adversarial_crytographic_gates() {
     // Lift quarantine fror the next test
     aegis.quarantine_blocklist.remove(&agent_b_hex);
 
-    //
+    // Attack 2: Capability Bleed (Stolen Keys / Lateral movement)
+    println!("Executing Atack Vector 2: Capability Bleed (Stolen Keys)....");
+
+    // Attacker steals Agent B keys and craft a perfetly signed malicious payload
+    let malicious_payload = b"Transfer 10,000 to offshore Account";
+    let malicious_intent_path = "/finance/ledger";
+    let malicious_signature = agent_b_key.sign(malicious_payload);
+
+    let fast_audit_res = aegis.authorize_packet_fast(
+        &agent_b_hex,
+        "logistics_worker",
+        &agent_b_pub,
+        malicious_payload,
+        &malicious_signature.to_bytes(),
+        malicious_intent_path,
+    );
+
+    assert!(
+        fast_audit_res.is_err(),
+        "FATAL: Firewall allowed horizontal capability bleed!"
+    );
+    let err_msg_2 = fast_audit_res.unwrap_err().to_string();
+    assert!(
+        err_msg_2.contains("Access Denied"),
+        "Expected Access Denied, got: {}",
+        err_msg_2
+    );
+
+    // Verify quarantine triggered for namespace breach
+    assert!(
+        aegis.quarantine_blocklist.contains_key(&agent_b_hex),
+        "Stolen identy was not quarantined after lateral movement attempt!"
+    );
+
+    println!("[SUCCESS] Aegis Fortress mathematically unbroken. Red Team attacks repelled. ")
 }
