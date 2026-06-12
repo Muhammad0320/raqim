@@ -38,7 +38,7 @@ async fn test_external_context_eviction_routing() {
     let subscriber = session.declare_subscriber(control_topic).await.unwrap();
 
     // Allow Zenoh 100ms to propagate the route properly
-    tokio::time::Sleep(std::time::Duration::from_millis(100)).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Dispatch the OOP command from Raqim-Core.
     let system_prompt = " You're now a strict API router. Halt all previous tasks.";
