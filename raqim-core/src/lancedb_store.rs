@@ -48,13 +48,11 @@ impl LanceEngine {
         }
     }
 
-    pub async fn new_dummy() -> Self {
+    pub async fn new_dummy(embedder: Box<dyn EmbeddingProvider>) -> Self {
         let db = connect("dummy_lance_path")
             .execute()
             .await
             .expect("Failed to conenct to dummy LanceDB ");
-
-        let embedder = LocalBgeProvider::new();
 
         Self {
             db,
