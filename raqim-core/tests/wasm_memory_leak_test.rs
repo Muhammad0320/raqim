@@ -17,7 +17,7 @@ use sysinfo::System;
 use tokio::sync::broadcast;
 use wasmtime_wasi::WasiCtxBuilder;
 
-#[tokio::main]
+#[tokio::test]
 async fn test_wasm_sandbox_memory_reclamation() {
     println!(" Bismillah. Initiating WASM Temporal Memory Leak Audit... ");
 
@@ -69,8 +69,6 @@ async fn test_wasm_sandbox_memory_reclamation() {
         iteration
     );
 
-    let embedder_clone = embedder.clone();
-
     for i in 0..iteration {
         // Generate Isolated Credential
         let mut csprng = OsRng;
@@ -113,7 +111,7 @@ async fn test_wasm_sandbox_memory_reclamation() {
 
         // Execute the agent.
         // We inject a 5MB 'historical snapshot' to bloat the linear memory
-        let bloat_snapshot = vec![48u8, 5 * 1024 * 1024];
+        let bloat_snapshot = vec![48u8; 5 * 1024 * 1024];
 
         let res = wasm_engine.execute_agent(
             &dummy_wasm_bytes,
@@ -131,7 +129,7 @@ async fn test_wasm_sandbox_memory_reclamation() {
     }
 
     // Force the system to register freed memory.
-    tokio::time::sleep(std::time::Duration::from_millis(500));
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     sys.refresh_memory();
     let final_memory = sys.used_memory();
     println!(" [AUDIT] Fianl System Memory: {} KB", final_memory / 1024);
