@@ -1,5 +1,5 @@
 use crate::api::{TimelineNode, VaultSearchResult};
-use crate::embedding::EmbeddingProvider;
+use crate::embedding::{EmbeddingProvider, LocalBgeProvider};
 use crate::{OpLog, SystemEvent};
 use arrow_array::types::Float32Type;
 use arrow_array::{Array, Float32Array};
@@ -45,6 +45,24 @@ impl LanceEngine {
             snapshot_table: "agent_snapshot".to_string(),
             embedder,
             dims,
+        }
+    }
+
+    pub async fn new_dummy() -> Self {
+        let db = connect("dummy_lance_path")
+            .execute()
+            .await
+            .expect("Failed to conenct to dummy LanceDB ");
+
+        let embedder = LocalBgeProvider::new();
+
+        Self {
+            db,
+            history_table: "dummy_history".to_string(),
+            snapshot_table: "dummy_snapshot".to_string(),
+            storage_path: "dummy_storage".to_string(),
+            embedder,
+            dims: 768,
         }
     }
 
