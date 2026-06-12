@@ -171,6 +171,19 @@ impl WalEngine {
         )
     }
 
+    pub async fn start_dummy() -> Arc<Self> {
+        let (tx, _) = mpsc::channel::<OpLog>(100);
+        let (cmd_tx, _) = mpsc::channel::<WalCommand>(10);
+
+        let index = Arc::new(RwLock::new(BTreeMap::new()));
+
+        Arc::new(Self {
+            sender: tx,
+            cmd_sender: cmd_tx,
+            index,
+        })
+    }
+
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
     pub async fn append(&self, log: OpLog) {
         let _ = self.sender.send(log).await;
