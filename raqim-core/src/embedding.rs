@@ -66,6 +66,7 @@ impl EmbeddingProvider for LocalBgeProvider {
 // PATH B: HIGH-THROUGHTPUT BENCHMARK MOCK
 // ========================================
 #[cfg(feature = "mock-embedding")]
+#[derive(Debug, Clone)]
 pub struct LocalBgeProvider;
 
 #[cfg(feature = "mock-embedding")]

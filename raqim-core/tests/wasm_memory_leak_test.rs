@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ed25519_dalek::SigningKey;
 use rand_core::OsRng;
 use raqim_core::{
@@ -11,6 +13,7 @@ use raqim_core::{
     state::SwarmStateRegistry,
     telemetry::TelemetryEngine,
 };
+use sysinfo::System;
 use tokio::sync::broadcast;
 use wasmtime_wasi::WasiCtxBuilder;
 
@@ -33,8 +36,8 @@ async fn test_wasm_sandbox_memory_reclamation() {
         GlobalNetworkBridge::new("test", "test", aegis.clone(), false, "node".to_string()).await,
     );
     let brain_shard = Arc::new(SwarmStateRegistry::new());
-
-    let embedder = LocalBgeProvider::new();
+    let embedder = Box::new(LocalBgeProvider::new());
+    let lance = Arc::new(LanceEngine::new_dummy(embedder).await);
 
     let wasm_engine = WasmEngine::new();
 
@@ -51,12 +54,22 @@ async fn test_wasm_sandbox_memory_reclamation() {
     )
     .expect("Failed to parse WAT to WASM");
 
+    let mut sys = System::new_all();
+    sys.refresh_memory();
+    let initial_memory = sys.used_memory();
+    println!(
+        " [AUDIT] Initial System Memory: {} KB ",
+        initial_memory / 1024
+    );
+
     // The leak loop
     let iteration = 100;
     println!(
         "[AUDIT] Spinning up and Destroying {} Isolated WASM timelines",
         iteration
     );
+
+    let embedder_clone = embedder.clone();
 
     for i in 0..iteration {
         // Generate Isolated Credential
@@ -74,8 +87,8 @@ async fn test_wasm_sandbox_memory_reclamation() {
             global_tx_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             event_tx: event_tx.clone(),
             wasi: WasiCtxBuilder::new().build_p1(),
-            lance: Arc::new(LanceEngine::new_dummy(embedder)),
-            telemetry: Arc::new(TelemetryEngine::new("test", "test")),
+            lance: lance.clone(),
+            telemetry: TelemetryEngine::new("test", "test"),
             agent_hex: format!("phantom_agent_{:02}", i),
             agent_private_key: signing_key,
             capability_cert_bytes: vec![0u8; 128],
@@ -115,9 +128,21 @@ async fn test_wasm_sandbox_memory_reclamation() {
             "FATAL: WASM Exection failed at iteration {}",
             i
         );
-
-        // The instance this loop interation end, `content` and the internal `Store` created by execute_agent go out of scope. Rust's Drop semantics must free the 5Mb
     }
+
+    // Force the system to register freed memory.
+    tokio::time::sleep(std::time::Duration::from_millis(500));
+    sys.refresh_memory();
+    let final_memory = sys.used_memory();
+    println!(" [AUDIT] Fianl System Memory: {} KB", final_memory / 1024);
+
+    // Assert that we didn't permanently leak 500MB - We allow a small variance fro Tokio runtime background allocation.
+    let lack_ceiling = initial_memory + (15 * 1024 * 1024);
+
+    assert!(
+        final_memory <= lack_ceiling,
+        "FATAL: Memory Leak detected. Heap bloated by over 15MB. WASM Linear memory was not dropped."
+    );
 
     println!(
         "[SUCCESS] 100 phantom realities initialized and collapsed cleanly without OOM crashes.  "
