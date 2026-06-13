@@ -52,6 +52,12 @@ enum Commands {
         #[arg(short, long)]
         fork_config: Option<String>,
     },
+
+    /// Swarm Infrastructure Observability and Telemetry Mapping
+    Cluster {
+        #[command(subcommand)]
+        action: ClusterAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -70,7 +76,7 @@ enum KeyAction {
         count: u32,
 
         /// Target directory for the atomic artifact
-        #[arg(short, long, default_value = "./target_workspace")]
+        #[arg(short, long, default_value = "./vault/identities")]
         out_dir: String,
 
         /// Execution environment: 'internal' (WASM) or 'external' (Python/MCP/SDK)
@@ -84,6 +90,14 @@ enum AegisAction {
     List,
 
     Lift { agent_id: String },
+}
+
+#[derive(Subcommand)]
+enum ClusterAction {
+    /// Extracts raw system performance metrics, transaction counters, and storage status.
+    Info,
+    /// Inspect Active Loro document shards, allocated namespaces and active timelines
+    Topology,
 }
 
 #[tokio::main]
@@ -111,7 +125,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
         } => {
             println!("Bismillah. Initiating Sovereign Fleet Forge... ");
-            println!("Target Group [{}] | Fleet Size [{}] ", group, count);
+            println!("Target Group [{}] ", group);
+            println!("Requested Size [{}]", count);
+            println!("Environmental Scope [{}]", env);
 
             let workspace = Path::new(out_dir);
             fs::create_dir_all(workspace)?;
@@ -138,7 +154,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let agent_hex = hex::encode(agent_id_bytes);
 
                 // Request Capability passport from the Daemon Control Plane
-
                 let payload = json!({"agent_hex": agent_hex.clone(), "group": group.clone() });
 
                 let res = http_client
@@ -179,14 +194,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     Ok(response) => {
                         eprintln!(
-                            "     [FAIL] Agent: {}: CA Minting Rejected {}",
+                            "   [FAIL] Agent: [{}]: CA Minting Refused - Status Code: {}",
                             agent_alias,
                             response.status()
                         )
                     }
 
                     Err(e) => {
-                        eprintln!("     [FAIL] Agent: {} - Network Error: {} ", agent_alias, e);
+                        eprintln!(
+                            "   [FAIL] Agent: {} - Network Disruption - Trace: {} ",
+                            agent_alias, e
+                        );
                     }
                 }
             }
@@ -195,7 +213,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "\n✅ Fleet Forge Complete. Successfully generated {}/{} secure artifacts in {} ",
                 success_count, count, out_dir
             );
-            println!("Deploy these agents by moving them into the Daemon's /plugins directory.");
         }
 
         // 2. Aegis GateKeeper Management
@@ -211,9 +228,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if res.status().is_success() {
                 let agents: Vec<String> = res.json().await?;
-                println!("🔒 Quarantined Agents: {:?}", agents);
+                println!("🔒 Active Quarantine Perimeters (Blocklisted Hashes):");
+                if agents.is_empty() {
+                    println!("  None. All cryptographic gates clear.");
+                } else {
+                    for agent in agents {
+                        println!("   -> {}", agent);
+                    }
+                }
             } else {
-                eprintln!("❌ Failed to fetchh Aegis state: {}", res.status());
+                eprintln!(
+                    "❌ Operational Error: Failed to extract firewall status: {}",
+                    res.status()
+                );
             }
         }
 
