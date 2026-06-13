@@ -10,7 +10,7 @@ use std::path::Path;
 #[derive(Parser)]
 #[command(
     name = "raqim",
-    about = "Raqim OS  Master Control Plane",
+    about = "Raqim OS Administrative Command Line Core",
     version = "1.0"
 )]
 struct Cli {
@@ -28,21 +28,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Cryptographic Identity Management
+    /// Cryptographic Identity & Fleet Provisioning
     Keys {
         #[command(subcommand)]
         action: KeyAction,
     },
 
-    /// Aegis Quarantine Management
+    /// Aegis Cryptographic Firewall & Quarantine Diagnostics
     Aegis {
         #[command(subcommand)]
         action: AegisAction,
     },
 
-    /// Time Machine Administration
+    /// Temporal Routing & Reality Forking mechanics
     TimeTravel {
+        #[arg(short, long)]
         agent_id: String,
+
+        #[arg(short, long)]
         tx_id: u64,
 
         /// Optional path to a JSON ForkConfig file
