@@ -8,7 +8,7 @@ use std::{borrow::Cow, sync::Arc};
 pub struct SwarmState {
     // This lock ONLY protects this specific namespace
     pub doc: RwLock<LoroDoc>,
-    root_timeline_map: LoroMap,
+    pub root_timeline_map: LoroMap,
 }
 
 impl SwarmState {

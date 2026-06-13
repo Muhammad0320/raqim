@@ -1134,7 +1134,22 @@ pub async fn cluster_topology_endpoint(
 ) -> Result<Json<Value>, StatusCode> {
     let mut shards = Vec::new();
 
-    for shard in state.brain.shards.iter() {}
+    // Iterate through the DashMap of the active swarmbrain document
+    for entry in state.brain.shards.iter() {
+        let namespace = entry.key();
+        let brain = entry.value();
+
+        // Acquire a brief read lock on the Loro CRDT to extract topology metrics
+        let doc_lock = brain.doc.read();
+
+        // Count how many unique agent timelines exist within this specific shard
+        let active_timelines = brain.root_timeline_map.len();
+
+        // For CLI diagnostics: we measure the length of the underlying operations log.
+        let ops_count = doc_lock.oplog_vv().len();
+
+        shards.push(json!({ "namespace": namespace, "active_timelines": active_timelines, "memory_footprint": ops_count * 128}));
+    }
 
     Ok(Json(json!(shards)))
 }
@@ -1149,6 +1164,8 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
             post(lift_qurantine_and_resurrect),
         )
         .route("/v1/admin/time_travel", post(time_travel))
+        .route("/v1/admin/cluster/info", get(cluster_info_endpoint))
+        .route("/v1/admin/cluster/topology", get(cluster_topology_endpoint))
         // System / Deployment endpoints
         .route("/v1/system_boot_agent", post(upload_wasm_endpoint))
         .route("/v1/system/health/live", post(sse_health_endpoint))
