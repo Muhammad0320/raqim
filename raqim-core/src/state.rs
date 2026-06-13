@@ -108,7 +108,7 @@ impl SwarmState {
 // The Global Enterprise Registry.
 pub struct SwarmStateRegistry {
     // Threads looking up different namespaces will hit different bucket with zero locking interference.
-    shards: DashMap<String, Arc<SwarmState>>,
+    pub shards: DashMap<String, Arc<SwarmState>>,
 }
 
 impl SwarmStateRegistry {

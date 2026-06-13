@@ -17,7 +17,7 @@ pub struct GlobalNetworkBridge {
     session: Arc<Session>,
     workspace_prefix: String,
     aegis: Arc<AegisGateKeeper>,
-    os_node_id: String,
+    pub os_node_id: String,
     egress_tx: mpsc::Sender<Vec<u8>>, // The high-speed funnel
 }
 

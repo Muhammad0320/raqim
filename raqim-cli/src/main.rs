@@ -319,7 +319,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if res.status().is_success() {
                 let info: serde_json::Value = res.json().await?;
                 println!("🌐 Raqim Core Kernel Metrics:");
-                println!("  Node Identity Hash: {}, info["node_id"]");
+                println!("  Node Identity Hash: {}", info["node_id"]);
                 println!("  Total Swarm Commits : TxID {}", info["highest_tx_buffer"]);
                 println!("  Inflight Bufer Load: {} items", info["buffer_load"]);
                 println!("  Disk WAL Footprint  : {} bytes ", info["wal_bytes"]);
