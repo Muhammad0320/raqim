@@ -14,6 +14,7 @@ use dashmap::DashMap;
 use ed25519_dalek::{Signer, SigningKey};
 use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
+use serde_json::{Value, json};
 use std::convert::Infallible;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_stream::wrappers::BroadcastStream;
@@ -1098,6 +1099,44 @@ pub async fn handle_ca_mint(
         postcard::to_allocvec(&cert).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(hex::encode(final_bytes)))
+}
+
+/// Maps to `raqim cluster info`
+pub async fn cluster_info_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
+    let highest_tx = state
+        .global_tx_counter
+        .load(std::sync::atomic::Ordering::SeqCst);
+
+    let pending_wal_items = state.wal.get_pending_count();
+    let wal_size = std::fs::metadata(&state.config.wal_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let node_id = state.global_net.os_node_id.clone();
+
+    let payload = json!({
+        "node_id": node_id,
+        "highest_tx_id": highest_tx,
+        "wal_bytes": wal_size,
+        "buffer_load": pending_wal_items
+    });
+
+    Ok(Json(payload))
+}
+
+/// Maps to  `raqim cluster topology`
+pub async fn cluster_topology_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
+    let mut shards = Vec::new();
+
+    for shard in state.brain.shards.iter() {}
+
+    Ok(Json(json!(shards)))
 }
 
 // Route Builder
