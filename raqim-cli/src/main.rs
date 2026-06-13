@@ -338,7 +338,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let res = http_client
                 .get(&url)
-                .header("Authorization", format!("Bearer {}", get_auth))
+                .header("Authorization", format!("Bearer {}", get_auth()))
                 .send()
                 .await?;
 
