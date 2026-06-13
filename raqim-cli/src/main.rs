@@ -258,7 +258,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if res.status().is_success() {
                 println!("🔓 Quarantine lifted for agent: {}", agent_id)
             } else {
-                eprintln!("❌ Failed to lift quarantine: {}", res.status())
+                eprintln!(
+                    "❌ Operational Error: Reset signal refused by kernel: {}",
+                    res.status()
+                )
             }
         }
 
@@ -286,15 +289,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let res = http_client
                 .post(&url)
-                .header("Autorization", format!("Bearer {}", get_auth()))
+                .header("Authorization", format!("Bearer {}", get_auth()))
                 .json(&payload)
                 .send()
                 .await?;
 
             if res.status().is_success() {
-                println!("⚡Reality successfully forked. Agent execution thread spawned.");
+                println!(
+                    "⚡ Isolation Matrix Deployed. Replay Successfully forked onto independent thread."
+                );
             } else {
-                eprintln!("❌ Time Travel Failed: {}", res.status());
+                eprintln!(
+                    "❌ Temporal Exception: Kernel refused simulation launch: {}",
+                    res.status()
+                );
+            }
+        }
+
+        Commands::Cluster {
+            action: ClusterAction::Info,
+        } => {
+            let url = format!("{}/v1/admin/cluster/info", cli.daemon_url);
+            let res = http_client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", get_auth()))
+                .send()
+                .await?;
+
+            if res.status().is_success() {
+                let info: serde_json::Value = res.json().await?;
+                println!("🌐 Raqim Core Kernel Metrics:");
+                println!("  Node Identity Hash: {}, info["node_id"]");
+                println!("  Total Swarm Commits : TxID {}", info["highest_tx_buffer"]);
+                println!("  Inflight Bufer Load: {} items", info["buffer_load"]);
+                println!("  Disk WAL Footprint  : {} bytes ", info["wal_bytes"]);
+            } else {
+                eprintln!(
+                    "❌  Telemetry Failure: Failed to poll information stream: {}",
+                    res.status()
+                )
+            }
+        }
+
+        Commands::Cluster {
+            action: ClusterAction::Topology,
+        } => {
+            let url = format!("{}/v1/admin/cluster/topology", cli.daemon_url);
+
+            let res = http_client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", get_auth))
+                .send()
+                .await?;
+
+            if res.status().is_success() {
+                let shards: Vec<serde_json::Value> = res.json().await?;
+                println!("🧠 Allocated Swarm Brain Shards  (Loro Documents): ");
+                for shard in shards {
+                    println!("  Shard Space Namespace: [{}]", shard["namespace"]);
+                    println!("  Active Peer Timelines: {}", shard["active_timelines"]);
+                    println!("  Total Memory Size: {} bytes", shard["memory_footprint"]);
+                }
+            } else {
+                eprintln!(
+                    "❌  Telemetry Failure: Failed to traverse sharded state table: {}",
+                    res.status()
+                );
             }
         }
     }
