@@ -6,9 +6,16 @@ export default function LoginPage() {
     <div className="min-h-screen bg-zinc-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 selection:bg-zinc-800">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <Link href="/" className="inline-flex justify-center mb-6 hover:opacity-80 transition-opacity">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="2" y="2" width="20" height="20" rx="4" className="fill-white" />
-            <path d="M8 12L12 8L16 12M12 16V8" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-[#00f3ff] drop-shadow-[0_0_8px_rgba(0,243,255,0.6)]">
+            <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path d="M50 25 L75 38 L75 62 L50 75 L25 62 L25 38 Z" stroke="currentColor" strokeWidth="2" fill="none" />
+            <circle cx="50" cy="50" r="6" fill="currentColor" />
+            <line x1="50" y1="5" x2="50" y2="25" stroke="currentColor" strokeWidth="2" />
+            <line x1="10" y1="25" x2="25" y2="38" stroke="currentColor" strokeWidth="2" />
+            <line x1="90" y1="25" x2="75" y2="38" stroke="currentColor" strokeWidth="2" />
+            <line x1="10" y1="75" x2="25" y2="62" stroke="currentColor" strokeWidth="2" />
+            <line x1="90" y1="75" x2="75" y2="62" stroke="currentColor" strokeWidth="2" />
+            <line x1="50" y1="95" x2="50" y2="75" stroke="currentColor" strokeWidth="2" />
           </svg>
         </Link>
         <h2 className="text-3xl font-bold tracking-tight text-white mb-2">
