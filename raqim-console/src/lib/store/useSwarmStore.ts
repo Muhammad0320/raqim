@@ -202,7 +202,7 @@ export const useSwarmStore = create<SwarmState>((set) => ({
       };
 
       for (const ev of events) {
-        if (ev.event_type === 'ThoughtCommitted') {
+        if (ev.event_type === 'ThoughtCommitted' || ev.event_type === 'ThoughtCommited') {
           ensureNamespaceNode(ev.intent_path);
           
           const agentNodeId = `agent-${ev.agent_hex}`;

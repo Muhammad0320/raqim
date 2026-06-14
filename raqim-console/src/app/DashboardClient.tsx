@@ -104,7 +104,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
               <span className="material-symbols-outlined text-outline text-sm">speed</span>
             </div>
             <div className="font-headline text-4xl font-black relative z-10 tracking-tight transition-colors duration-200 text-white">
-              0 <span className="text-sm text-outline-variant font-mono">TPS</span>
+              {currentTps} <span className="text-sm text-outline-variant font-mono">TPS</span>
             </div>
             <div className="font-mono text-[10px] text-[#00f3ff] mt-2 flex items-center gap-1.5 relative z-10 opacity-80">
               <span className="material-symbols-outlined text-[12px]">bolt</span> Real-time network throughput

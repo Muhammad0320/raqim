@@ -5,52 +5,20 @@ import styled from 'styled-components';
 import { ThreatRadar } from '../../components/Firewall/ThreatRadar';
 import { StdoutLogs } from '../../components/Firewall/StdoutLogs';
 import { ReseedModal } from '../../components/Firewall/ReseedModal';
+import { MainLayout } from '../../components/Layout/MainLayout';
 
 // CSS Grid Brutalist Layout
 const GridContainer = styled.div`
   display: grid;
   width: 100%;
-  height: 100vh;
+  height: 100%;
   background-color: #000000;
   color: #ffffff;
   font-family: monospace;
-  grid-template-rows: 60px 1fr;
   grid-template-columns: 1fr 400px;
   grid-template-areas:
-    "header header"
     "main sidebar";
   overflow: hidden;
-`;
-
-const Topbar = styled.header`
-  grid-area: header;
-  border-bottom: 1px solid #27272a;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 24px;
-  background-color: #09090b;
-`;
-
-const Title = styled.h1`
-  margin: 0;
-  font-size: 14px;
-  letter-spacing: 2px;
-  font-weight: bold;
-  text-transform: uppercase;
-  color: #ffffff;
-`;
-
-const EnforcementBadge = styled.div`
-  color: #ef4444;
-  font-family: monospace;
-  font-size: 11px;
-  text-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
-  border: 1px solid #ef4444;
-  padding: 4px 8px;
-  background: rgba(239, 68, 68, 0.15);
-  letter-spacing: 2px;
-  font-weight: bold;
 `;
 
 const MainArea = styled.main`
@@ -346,13 +314,9 @@ export function FirewallClientLayout({ initialMetrics, initialQuarantineList, to
   };
 
   return (
-    <GridContainer>
-      <Topbar>
-        <Title>Aegis Firewall Operator Console</Title>
-        <EnforcementBadge>[ AEGIS ENFORCEMENT: STRICT ]</EnforcementBadge>
-      </Topbar>
-
-      <MainArea>
+    <MainLayout title="Aegis Firewall">
+      <GridContainer>
+        <MainArea>
         {/* Metric Cards */}
         <MetricsContainer>
           <MetricCard>
@@ -480,6 +444,7 @@ export function FirewallClientLayout({ initialMetrics, initialQuarantineList, to
           onSuccess={handleResurrectionSuccess}
         />
       )}
-    </GridContainer>
+      </GridContainer>
+    </MainLayout>
   );
 }

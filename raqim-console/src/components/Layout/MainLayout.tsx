@@ -28,19 +28,9 @@ export function MainLayout({ children, title }: { children: React.ReactNode, tit
               </div>
               <div className="flex items-center gap-4">
                 {pathname === '/firewall' && (
-                  <>
-                    <div className="relative">
-                      <input
-                        className="bg-surface-container-lowest border border-outline-variant/30 text-on-surface font-mono text-xs px-4 py-2 rounded-sm focus:outline-none focus:border-primary-container focus:ring-1 focus:ring-primary-container/20 w-64 transition-all"
-                        placeholder="QUERY AGENT ID..."
-                        type="text"
-                      />
-                      <span className="material-symbols-outlined absolute right-3 top-2 text-on-surface-variant text-sm">search</span>
-                    </div>
-                    <button className="text-on-surface-variant hover:text-on-surface transition-colors p-2 bg-surface-container-low rounded-sm outline outline-1 outline-outline-variant/15 outline-offset-[-1px]">
-                      <span className="material-symbols-outlined">tune</span>
-                    </button>
-                  </>
+                  <div className="text-[#ef4444] border border-[#ef4444]/30 bg-[#ef4444]/10 px-3.5 py-1.5 rounded-sm font-mono text-[10px] uppercase tracking-[0.2em] font-bold shadow-[0_0_10px_rgba(239,68,68,0.15)]">
+                    [ AEGIS ENFORCEMENT: STRICT ]
+                  </div>
                 )}
               </div>
             </header>

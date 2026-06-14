@@ -3,14 +3,14 @@ import { useSwarmStore, UiThought, UiEvent } from '../store/useSwarmStore';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { startMockStream } from '../mockGenerator';
 
-const SSE_URL = 'http://127.0.0.1:8081/v1/swarm/live';
+const SSE_URL = 'http://127.0.0.1:8081/v1/system/firehose';
 const JWT_TOKEN = 'mock_license_key_123'; // Replace with real auth token logic
 
 export function useSwarmStream() {
   const { batchAddThoughts, processUiEvents } = useSwarmStore();
   const thoughtsBufferRef = useRef<UiThought[]>([]);
   const eventsBufferRef = useRef<UiEvent[]>([]);
-  const isMock = true; // Use mock for local dev until Rust backend is up
+  const isMock = false; // Set to false to listen to the real Rust backend
   const rAF_Ref = useRef<number>(0);
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export function useSwarmStream() {
         },
         signal: controller.signal,
         async onopen(res) {
-          if (res.ok && res.headers.get('content-type') === 'text/event-stream') {
+          if (res.ok && res.headers.get('content-type')?.includes('text/event-stream')) {
              console.log("Connected to Swarm Firehose");
              return; // everything's good
           } else if (res.status >= 400 && res.status < 500 && res.status !== 429) {
@@ -50,24 +50,44 @@ export function useSwarmStream() {
         },
         onmessage(event) {
           try {
-            // Backend sends the exact UiThought interface
             const rawData = JSON.parse(event.data);
-            const data: UiThought = {
-              ...rawData,
-              // Inject synthetic UI state for visualization (assuming backend doesn't send these explicitly yet)
-              status: 'COMMITTED',
-              is_a2a_query: rawData.intent_path.includes('/a2a/'),
-              parent_tx_id: rawData.tx_id > 0 ? rawData.tx_id - 1 : null // Naive synthetic parent
-            };
-            thoughtsBufferRef.current.push(data);
-            
-            // Generate synthetic UiEvent since actual backend payload is missing it
-            eventsBufferRef.current.push({
-              event_type: "ThoughtCommitted",
-              agent_hex: data.agent_hex,
-              intent_path: data.intent_path,
-              tx_id: data.tx_id
-            });
+            const eventType = rawData.event_type || rawData.type;
+
+            if (eventType === 'ThoughtCommited' || eventType === 'ThoughtCommitted') {
+              const data: UiThought = {
+                tx_id: rawData.tx_id,
+                agent_hex: rawData.agent_hex,
+                intent_path: rawData.intent_path,
+                text: rawData.text || rawData.payload || '',
+                status: 'COMMITTED',
+                is_a2a_query: rawData.intent_path?.includes('/a2a/') || false,
+                parent_tx_id: rawData.tx_id > 0 ? rawData.tx_id - 1 : null
+              };
+              thoughtsBufferRef.current.push(data);
+              
+              eventsBufferRef.current.push({
+                event_type: "ThoughtCommitted",
+                agent_hex: data.agent_hex,
+                intent_path: data.intent_path,
+                tx_id: data.tx_id,
+                text: data.text
+              });
+            } else if (eventType === 'A2aMessageRouted') {
+              eventsBufferRef.current.push({
+                event_type: "A2aMessageRouted",
+                source_hex: rawData.source_hex,
+                target_hex: rawData.target_hex,
+                namespace: rawData.namespace,
+                question_payload: rawData.question_payload,
+                answer_payload: rawData.answer_payload,
+                latency_ms: rawData.latency_ms
+              });
+            } else if (eventType === 'AegisAlert') {
+              eventsBufferRef.current.push({
+                event_type: "AegisAlert",
+                record: rawData.record
+              });
+            }
           } catch (e) {
             console.error('Failed to parse SSE swarm frame', e);
           }
@@ -95,5 +115,5 @@ export function useSwarmStream() {
         cancelAnimationFrame(rAF_Ref.current);
       }
     };
-  }, [batchAddThoughts, isMock]);
+  }, [batchAddThoughts, isMock, processUiEvents]);
 }
