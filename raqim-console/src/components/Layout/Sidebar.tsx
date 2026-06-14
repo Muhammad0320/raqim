@@ -28,7 +28,7 @@ export function Sidebar() {
           <line x1="90" y1="75" x2="75" y2="62" stroke="currentColor" strokeWidth="2" />
           <line x1="50" y1="95" x2="50" y2="75" stroke="currentColor" strokeWidth="2" />
         </svg>
-        <span className="font-mono text-lg font-black tracking-[0.2em] text-white">RAQIM<span className="text-[#00f3ff] ml-1">OS</span></span>
+        <span className="font-mono text-lg font-black tracking-[0.2em] text-white">RAQIM<span className="text-[#00f3ff] ml-1">CONSOLE</span></span>
       </div>
 
       <div className="flex flex-col h-full overflow-hidden">

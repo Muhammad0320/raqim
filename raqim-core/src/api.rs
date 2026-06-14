@@ -1146,9 +1146,9 @@ pub async fn cluster_topology_endpoint(
         let active_timelines = brain.root_timeline_map.len();
 
         // For CLI diagnostics: we measure the length of the underlying operations log.
-        let ops_count = doc_lock.oplog_vv().len();
+        let ops_count = doc_lock.len_ops();
 
-        shards.push(json!({ "namespace": namespace, "active_timelines": active_timelines, "memory_footprint": ops_count * 128}));
+        shards.push(json!({ "namespace": namespace, "active_timelines": active_timelines, "total_crdt_operation": ops_count }));
     }
 
     Ok(Json(json!(shards)))
@@ -1168,7 +1168,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/admin/cluster/topology", get(cluster_topology_endpoint))
         // System / Deployment endpoints
         .route("/v1/system_boot_agent", post(upload_wasm_endpoint))
-        .route("/v1/system/health/live", post(sse_health_endpoint))
+        .route("/v1/system/health/live", get(sse_health_endpoint))
         // Agent Swarm endpoints
         .route("/v1/mcp/ws", post(mcp_ws_handler))
         .route("/v1/swarm/ingress", post(http_ingress_endpoint))
@@ -1178,7 +1178,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/swarm/live", get(sse_firehose_endpoint))
         .route("/v1/time-travel/live", get(sse_phantom_endpoint))
         .route("/v1/vault/search", post(unified_vault_search))
-        .route("/v1/vault/te1lemetry", get(vault_telemetry_endpoint))
+        .route("/v1/vault/tellemetry", get(vault_telemetry_endpoint))
         .route("/v1/aegis/metrics", get(aegis_metics_endpoint))
         .with_state(state)
 }

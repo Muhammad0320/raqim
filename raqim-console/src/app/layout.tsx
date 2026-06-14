@@ -1,9 +1,7 @@
 import type { Metadata } from 'next';
 import StyledComponentsRegistry from '@/lib/registry';
-import './globals.css';
-
-export const metadata: Metadata = {
-  title: 'Raqim OS | Aegis Terminal',
+import './globals.css';export const metadata: Metadata = {
+  title: 'Raqim Console | Aegis Terminal',
   description: 'Hyper-performant zero-copy Agentic Swarm Daemon GUI',
 };
 

@@ -18,7 +18,7 @@ export function useHardwareVitals(token: string) {
     const controller = new AbortController();
 
     fetchEventSource('http://127.0.0.1:8081/v1/system/health/live', {
-      method: 'GET',
+      method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Accept': 'text/event-stream',

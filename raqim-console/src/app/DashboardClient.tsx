@@ -7,6 +7,18 @@ import { useEffect, useRef } from 'react';
 import { DashboardCardsData } from '@/actions/dashboard';
 import { useHardwareVitals } from '../lib/hooks/useHardwareVitals';
 import { LiveSemanticStream } from '../components/LiveSemanticStream';
+import styled from 'styled-components';
+
+const ProgressBar = styled.div<{ $width: string }>`
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: ${props => props.$width};
+  background-color: #00f3ff;
+  box-shadow: 0 0 8px rgba(0, 243, 255, 0.8), 0 0 15px rgba(0, 243, 255, 0.4);
+  transition: width 0.3s ease-out;
+`;
 const getAgentColor = (hex: string) => {
   let hash = 0;
   for (let i = 0; i < hex.length; i++) {
@@ -91,8 +103,8 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
               <span className="font-mono text-[11px] text-on-surface-variant uppercase tracking-[0.2em] font-bold">Swarm Velocity</span>
               <span className="material-symbols-outlined text-outline text-sm">speed</span>
             </div>
-            <div className={`font-headline text-4xl font-black relative z-10 tracking-tight transition-colors duration-200 ${currentTps > 0 ? 'text-[#00f3ff] drop-shadow-[0_0_8px_rgba(0,243,255,0.4)]' : 'text-white'}`}>
-              {currentTps} <span className="text-sm text-outline-variant font-mono">TPS</span>
+            <div className="font-headline text-4xl font-black relative z-10 tracking-tight transition-colors duration-200 text-white">
+              0 <span className="text-sm text-outline-variant font-mono">TPS</span>
             </div>
             <div className="font-mono text-[10px] text-[#00f3ff] mt-2 flex items-center gap-1.5 relative z-10 opacity-80">
               <span className="material-symbols-outlined text-[12px]">bolt</span> Real-time network throughput
@@ -185,13 +197,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
                     </span>
                   </div>
                   <div className="h-1.5 w-full bg-surface-container-highest relative overflow-hidden rounded-sm">
-                    <div 
-                      className="absolute top-0 left-0 h-full bg-secondary"
-                      style={{ 
-                        width: vitals ? `${Math.min(vitals.cpu_percent, 100)}%` : '0%',
-                        transition: 'width 0.3s ease-out'
-                      }}
-                    />
+                    <ProgressBar $width={vitals ? `${Math.min(vitals.cpu_percent, 100)}%` : '0%'} />
                   </div>
                 </div>
 
@@ -204,13 +210,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
                     </span>
                   </div>
                   <div className="h-1.5 w-full bg-surface-container-highest relative overflow-hidden rounded-sm">
-                    <div 
-                      className="absolute top-0 left-0 h-full bg-[#00f3ff]"
-                      style={{ 
-                        width: vitals ? `${Math.min((vitals.wasm_memory_gb / vitals.wasm_memory_max_gb) * 100, 100)}%` : '0%',
-                        transition: 'width 0.3s ease-out'
-                      }}
-                    />
+                    <ProgressBar $width={vitals ? `${Math.min((vitals.wasm_memory_gb / vitals.wasm_memory_max_gb) * 100, 100)}%` : '0%'} />
                   </div>
                 </div>
 
@@ -223,13 +223,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
                     </span>
                   </div>
                   <div className="h-1.5 w-full bg-surface-container-highest relative overflow-hidden rounded-sm">
-                    <div 
-                      className="absolute top-0 left-0 h-full bg-secondary"
-                      style={{ 
-                        width: vitals ? `${Math.min((vitals.mesh_latency_ms / 100) * 100, 100)}%` : '0%', // Assume 100ms is max for bar width
-                        transition: 'width 0.3s ease-out'
-                      }}
-                    />
+                    <ProgressBar $width={vitals ? `${Math.min((vitals.mesh_latency_ms / 100) * 100, 100)}%` : '0%'} />
                   </div>
                 </div>
 

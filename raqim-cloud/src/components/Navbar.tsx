@@ -28,17 +28,24 @@ const LeftSection = styled.div`
 `;
 
 const LogoIcon = styled.svg`
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
+  color: #00f3ff;
+  filter: drop-shadow(0 0 8px rgba(0, 243, 255, 0.6));
 `;
 
 const LogoText = styled.span`
   font-family: var(--font-geist-mono), monospace;
   font-size: 1.125rem;
-  font-weight: 700;
+  font-weight: 900;
   color: #ffffff;
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
-  letter-spacing: -0.02em;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  
+  span {
+    color: #00f3ff;
+    margin-left: 4px;
+  }
 `;
 
 const CenterSection = styled.nav`
@@ -123,10 +130,18 @@ export default function Navbar() {
   return (
     <NavContainer>
       <LeftSection>
-        <LogoIcon viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <LogoIcon viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" stroke="currentColor" strokeWidth="4" fill="none" />
+          <path d="M50 25 L75 38 L75 62 L50 75 L25 62 L25 38 Z" stroke="currentColor" strokeWidth="2" fill="none" />
+          <circle cx="50" cy="50" r="6" fill="currentColor" />
+          <line x1="50" y1="5" x2="50" y2="25" stroke="currentColor" strokeWidth="2" />
+          <line x1="10" y1="25" x2="25" y2="38" stroke="currentColor" strokeWidth="2" />
+          <line x1="90" y1="25" x2="75" y2="38" stroke="currentColor" strokeWidth="2" />
+          <line x1="10" y1="75" x2="25" y2="62" stroke="currentColor" strokeWidth="2" />
+          <line x1="90" y1="75" x2="75" y2="62" stroke="currentColor" strokeWidth="2" />
+          <line x1="50" y1="95" x2="50" y2="75" stroke="currentColor" strokeWidth="2" />
         </LogoIcon>
-        <LogoText>raqim_os</LogoText>
+        <LogoText>RAQIM<span>CLOUD</span></LogoText>
       </LeftSection>
 
       <CenterSection>
