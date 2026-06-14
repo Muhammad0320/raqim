@@ -20,7 +20,10 @@
     "recharts": "^3.8.1",
     "resend": "^6.12.3",
     "styled-components": "^6.4.1",
-    "framer-motion": "^11.0.0"
+    "framer-motion": "^11.0.0",
+    "@xyflow/react": "^12.10.2",
+    "zustand": "^5.0.12",
+    "@microsoft/fetch-event-source": "^2.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

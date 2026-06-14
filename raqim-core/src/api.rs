@@ -1158,9 +1158,9 @@ pub async fn cluster_topology_endpoint(
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
         // Admin / Debugging endpoints
-        .route("/v1/admin/quarantine", get(active_qurantine_endpoint))
+        .route("/v1/aegis/quarantine_list", get(active_qurantine_endpoint))
         .route(
-            "/v1/admin/quarantine/lift",
+            "/v1/aegis/resurrect",
             post(lift_qurantine_and_resurrect),
         )
         .route("/v1/admin/time_travel", post(time_travel))
@@ -1175,7 +1175,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/swarm/memory", get(semantic_search_endpoint))
         // UI endpoints
         .route("/v1/dashboard/cards", get(dashboard_cards_endpoint))
-        .route("/v1/swarm/live", get(sse_firehose_endpoint))
+        .route("/v1/system/firehose", get(sse_firehose_endpoint))
         .route("/v1/time-travel/live", get(sse_phantom_endpoint))
         .route("/v1/vault/search", post(unified_vault_search))
         .route("/v1/vault/tellemetry", get(vault_telemetry_endpoint))

@@ -11,29 +11,31 @@ const dash = keyframes`
 
 const AnimatedPath = styled.path`
   stroke: #d946ef;
-  stroke-width: 2;
+  stroke-width: 2.5;
   fill: none;
-  stroke-dasharray: 10 10;
-  animation: ${dash} 1s linear infinite;
+  stroke-dasharray: 8 6;
+  animation: ${dash} 0.8s linear infinite;
+  filter: drop-shadow(0 0 4px rgba(217, 70, 239, 0.8));
 `;
 
 const GlassBadge = styled.div`
   position: absolute;
   transform: translate(-50%, -50%);
-  background: rgba(9, 9, 11, 0.7);
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(217, 70, 239, 0.3);
-  color: #e4e4e7;
-  padding: 4px 8px;
-  border-radius: 4px;
+  background: rgba(9, 9, 11, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(217, 70, 239, 0.4);
+  color: #fafafa;
+  padding: 4px 10px;
+  border-radius: 3px;
   font-family: monospace;
   font-size: 10px;
   pointer-events: none;
-  max-width: 150px;
+  max-width: 180px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
 `;
 
 const A2aEdge = ({
@@ -55,6 +57,9 @@ const A2aEdge = ({
     targetPosition,
   });
 
+  const payload = data?.question_payload || '';
+  const truncatedPayload = payload.length > 20 ? `${payload.substring(0, 20)}...` : payload;
+
   return (
     <>
       <AnimatedPath d={edgePath} id={id} className="react-flow__edge-path" />
@@ -65,7 +70,7 @@ const A2aEdge = ({
             top: labelY,
           }}
         >
-          {data?.question_payload || '...'}
+          {truncatedPayload || 'A2A MSG'}
         </GlassBadge>
       </EdgeLabelRenderer>
     </>

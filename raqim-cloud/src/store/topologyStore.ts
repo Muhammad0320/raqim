@@ -26,19 +26,17 @@ interface TopologyState {
   _eventCount: number;
   
   handleThoughtCommited: (payload: { hex: string, namespace: string }) => void;
-  handleA2aMessageRouted: (payload: { sourceHex: string, targetHex: string, sourceNamespace: string, targetNamespace: string, question_payload: string }) => void;
+  handleA2aMessageRouted: (payload: { sourceHex: string, targetHex: string, namespace: string, question_payload: string }) => void;
   handleAegisAlert: (payload: { hex: string }) => void;
-  
+  processEvent: (event: any) => void;
   tickTps: () => void;
 }
 
-const ALIAS_DICT: Record<string, string> = {
-  // Mock dictionary, in a real scenario this would map hex to known aliases
-};
+const ALIAS_DICT: Record<string, string> = {};
 
 const resolveAlias = (hex: string) => {
   if (ALIAS_DICT[hex]) return ALIAS_DICT[hex];
-  return `Agent-${hex.slice(0, 4)}`;
+  return `Agent-${hex.slice(0, 6).toUpperCase()}`;
 };
 
 export const useTopologyStore = create<TopologyState>((set, get) => ({
@@ -58,13 +56,21 @@ export const useTopologyStore = create<TopologyState>((set, get) => ({
           ...newNodes[existingIdx],
           data: {
             ...newNodes[existingIdx].data,
+            namespace,
             lastPulse: now,
           }
         };
       } else {
+        // Compute simple dynamic layout position (circular/scattered)
+        const count = state.nodes.length;
+        const angle = count * (Math.PI / 4);
+        const radius = 150 + Math.random() * 100;
+        const x = 300 + Math.cos(angle) * radius;
+        const y = 200 + Math.sin(angle) * radius;
+
         newNodes.push({
           id: hex,
-          position: { x: Math.random() * 600, y: Math.random() * 400 }, // Initial layout, can be improved with a layout engine
+          position: { x, y },
           data: {
             hex,
             alias: resolveAlias(hex),
@@ -80,15 +86,15 @@ export const useTopologyStore = create<TopologyState>((set, get) => ({
     });
   },
 
-  handleA2aMessageRouted: ({ sourceHex, targetHex, sourceNamespace, targetNamespace, question_payload }) => {
+  handleA2aMessageRouted: ({ sourceHex, targetHex, namespace, question_payload }) => {
     const now = Date.now();
     
-    // Upsert nodes
-    get().handleThoughtCommited({ hex: sourceHex, namespace: sourceNamespace });
-    get().handleThoughtCommited({ hex: targetHex, namespace: targetNamespace });
+    // Upsert source node and target node
+    get().handleThoughtCommited({ hex: sourceHex, namespace });
+    get().handleThoughtCommited({ hex: targetHex, namespace });
 
-    // Create edge
-    const edgeId = `${sourceHex}-${targetHex}-${now}`;
+    // Create unique edge id
+    const edgeId = `${sourceHex}-${targetHex}-${now}-${Math.random()}`;
     
     set((state) => {
       const newEdge: A2aEdge = {
@@ -103,7 +109,7 @@ export const useTopologyStore = create<TopologyState>((set, get) => ({
       return { edges: [...state.edges, newEdge], _eventCount: state._eventCount + 1 };
     });
 
-    // Cleanup edge
+    // Auto-cleanup setTimeout to remove edge after 2500ms
     setTimeout(() => {
       set((s) => ({
         edges: s.edges.filter(e => e.id !== edgeId)
@@ -124,6 +130,21 @@ export const useTopologyStore = create<TopologyState>((set, get) => ({
       });
       return { nodes: newNodes, _eventCount: state._eventCount + 1 };
     });
+  },
+
+  processEvent: (event) => {
+    if (event.event_type === 'ThoughtCommited') {
+      get().handleThoughtCommited({ hex: event.agent_hex, namespace: event.intent_path });
+    } else if (event.event_type === 'A2aMessageRouted') {
+      get().handleA2aMessageRouted({
+        sourceHex: event.source_hex,
+        targetHex: event.target_hex,
+        namespace: event.namespace,
+        question_payload: event.question_payload,
+      });
+    } else if (event.event_type === 'AegisAlert') {
+      get().handleAegisAlert({ hex: event.record.agent_hex });
+    }
   },
 
   tickTps: () => {

@@ -1,7 +1,8 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { ReactFlow, Background, useNodesState, useEdgesState } from '@xyflow/react';
+import { ReactFlow, Background, BackgroundVariant } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import styled from 'styled-components';
+import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { useTopologyStore } from '../store/topologyStore';
 import AgentNode from './AgentNode';
 import A2aEdge from './A2aEdge';
@@ -20,7 +21,7 @@ const Container = styled.div`
   width: 100vw;
   background-color: #09090b;
   color: #fafafa;
-  font-family: 'Inter', monospace;
+  font-family: monospace;
 `;
 
 const Sidebar = styled.aside`
@@ -35,9 +36,9 @@ const SidebarHeader = styled.div`
   padding: 20px;
   border-bottom: 1px solid #27272a;
   font-weight: bold;
-  font-size: 14px;
+  font-size: 13px;
   text-transform: uppercase;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   color: #fff;
 `;
 
@@ -50,16 +51,17 @@ const NamespaceList = styled.div`
 
 const NamespaceItem = styled.div<{ $active: boolean }>`
   padding: 8px 12px;
-  border: 1px solid ${props => props.$active ? '#fafafa' : '#27272a'};
-  color: ${props => props.$active ? '#09090b' : '#a1a1aa'};
-  background-color: ${props => props.$active ? '#fafafa' : 'transparent'};
+  border: 1px solid ${props => props.$active ? '#06b6d4' : '#27272a'};
+  color: ${props => props.$active ? '#06b6d4' : '#a1a1aa'};
+  background-color: ${props => props.$active ? 'rgba(6, 182, 212, 0.08)' : 'transparent'};
   border-radius: 4px;
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover {
-    border-color: ${props => props.$active ? '#fafafa' : '#52525b'};
+    border-color: ${props => props.$active ? '#06b6d4' : '#52525b'};
+    color: ${props => props.$active ? '#06b6d4' : '#fff'};
   }
 `;
 
@@ -77,8 +79,9 @@ const TopBar = styled.header`
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background-color: rgba(9, 9, 11, 0.8);
-  backdrop-filter: blur(8px);
+  background-color: rgba(9, 9, 11, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   position: absolute;
   top: 0;
   left: 0;
@@ -95,14 +98,23 @@ const MetricLabel = styled.div`
   font-size: 10px;
   color: #a1a1aa;
   text-transform: uppercase;
+  letter-spacing: 1px;
 `;
 
 const MetricValue = styled.div`
   font-size: 18px;
-  font-weight: 600;
+  font-weight: bold;
   color: #fff;
   font-variant-numeric: tabular-nums;
 `;
+
+const getCookie = (name: string) => {
+  if (typeof document === 'undefined') return '';
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(';').shift() || '';
+  return '';
+};
 
 export const TopologyCanvas = () => {
   const nodes = useTopologyStore(state => state.nodes);
@@ -128,10 +140,36 @@ export const TopologyCanvas = () => {
   }, [nodes, selectedNamespace]);
 
   useEffect(() => {
-    // SSE Firehose simulation - Hook up to true endpoint here:
-    // const es = new EventSource('/v1/system/firehose');
-    // es.onmessage = (event) => { /* Process events using useTopologyStore.getState().handle... */ }
-    // return () => es.close();
+    const token = getCookie('raqim_license') || 'mock_license_key_123';
+    const controller = new AbortController();
+
+    const base = typeof window !== 'undefined' && window.location.port === '3000' ? 'http://127.0.0.1:8081' : '';
+    const url = `${base}/v1/system/firehose`;
+
+    fetchEventSource(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'text/event-stream',
+      },
+      signal: controller.signal,
+      onmessage(event) {
+        try {
+          const parsed = JSON.parse(event.data);
+          useTopologyStore.getState().processEvent(parsed);
+        } catch (e) {
+          console.error('Failed to parse firehose event frame', e);
+        }
+      },
+      onerror(err) {
+        console.error('Firehose EventSource Error', err);
+        throw err;
+      }
+    });
+
+    return () => {
+      controller.abort();
+    };
   }, []);
 
   return (
@@ -143,7 +181,7 @@ export const TopologyCanvas = () => {
             $active={selectedNamespace === null}
             onClick={() => setSelectedNamespace(null)}
           >
-            ALL
+            [ ALL ]
           </NamespaceItem>
           {namespaces.map(ns => (
             <NamespaceItem 
@@ -151,7 +189,7 @@ export const TopologyCanvas = () => {
               $active={selectedNamespace === ns}
               onClick={() => setSelectedNamespace(ns)}
             >
-              {ns}
+              {ns.toUpperCase()}
             </NamespaceItem>
           ))}
         </NamespaceList>
@@ -160,11 +198,11 @@ export const TopologyCanvas = () => {
         <TopBar>
           <MetricBox>
             <MetricLabel>Active Nodes</MetricLabel>
-            <MetricValue>{nodes.length}</MetricValue>
+            <MetricValue>{nodes.length.toString().padStart(2, '0')}</MetricValue>
           </MetricBox>
           <MetricBox style={{ alignItems: 'flex-end' }}>
             <MetricLabel>System TPS</MetricLabel>
-            <MetricValue>{tps}</MetricValue>
+            <MetricValue>{tps.toString().padStart(2, '0')}</MetricValue>
           </MetricBox>
         </TopBar>
         <ReactFlow
@@ -178,7 +216,7 @@ export const TopologyCanvas = () => {
           maxZoom={4}
           colorMode="dark"
         >
-          <Background color="#27272a" gap={20} size={1} />
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="rgba(255,255,255,0.05)" />
         </ReactFlow>
       </MainArea>
     </Container>

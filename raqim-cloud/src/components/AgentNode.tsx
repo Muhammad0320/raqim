@@ -1,33 +1,25 @@
 import React, { memo, useEffect } from 'react';
 import { Handle, Position, NodeProps } from '@xyflow/react';
-import styled, { keyframes, css } from 'styled-components';
+import styled from 'styled-components';
 import { motion, useAnimation } from 'framer-motion';
 import { AgentData } from '../store/topologyStore';
 
-const pulseRed = keyframes`
-  0% { border-color: #ef4444; box-shadow: 0 0 0px #ef4444; }
-  50% { border-color: #ff7f7f; box-shadow: 0 0 15px #ef4444; }
-  100% { border-color: #ef4444; box-shadow: 0 0 0px #ef4444; }
-`;
-
-const NodeContainer = styled(motion.div)<{ $isQuarantined: boolean }>`
+const NodeContainer = styled(motion.div)`
   background-color: #09090b;
-  border: 1px solid #27272a;
+  border-width: 1px;
+  border-style: solid;
   border-radius: 4px;
   width: 180px;
-  color: #fff;
-  font-family: 'Inter', monospace;
+  color: #ffffff;
+  font-family: monospace;
   position: relative;
   overflow: hidden;
-  
-  ${props => props.$isQuarantined && css`
-    animation: ${pulseRed} 1.5s infinite;
-  `}
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 `;
 
 const TopBar = styled.div`
   background-color: #18181b;
-  padding: 4px 8px;
+  padding: 6px 10px;
   font-size: 10px;
   text-transform: uppercase;
   color: #a1a1aa;
@@ -41,56 +33,67 @@ const Body = styled.div`
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 `;
 
 const Alias = styled.div`
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   color: #fafafa;
 `;
 
 const Hex = styled.div`
   font-size: 11px;
   color: #52525b;
-  font-family: monospace;
 `;
 
 const StatusDot = styled.div<{ $status: string }>`
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: ${props => props.$status === 'Quarantined' ? '#ef4444' : '#10b981'};
+  background-color: ${props => props.$status === 'Quarantined' ? '#ef4444' : '#06b6d4'};
+  box-shadow: 0 0 6px ${props => props.$status === 'Quarantined' ? '#ef4444' : '#06b6d4'};
 `;
 
 const AgentNode = ({ data }: NodeProps<{ data: AgentData }>) => {
   const controls = useAnimation();
 
   useEffect(() => {
-    if (data.status !== 'Quarantined') {
+    if (data.status === 'Quarantined') {
+      controls.start({
+        borderColor: ['#ef4444', '#7f1d1d', '#ef4444'],
+        boxShadow: [
+          '0 0 8px rgba(239, 68, 68, 0.6)',
+          '0 0 2px rgba(239, 68, 68, 0.2)',
+          '0 0 8px rgba(239, 68, 68, 0.6)'
+        ],
+        transition: { repeat: Infinity, duration: 1.5, ease: 'easeInOut' }
+      });
+    } else {
+      // Flash cyan quickly, then fade back to normal border
       controls.start({
         borderColor: ['#06b6d4', '#27272a'],
-        transition: { duration: 0.5, ease: "easeOut" }
+        boxShadow: ['0 0 12px rgba(6, 182, 212, 0.8)', '0 0 0px rgba(0, 0, 0, 0)'],
+        transition: { duration: 0.8, ease: 'easeOut' }
       });
     }
   }, [data.lastPulse, data.status, controls]);
 
   return (
     <NodeContainer
-      $isQuarantined={data.status === 'Quarantined'}
       animate={controls}
-      initial={{ borderColor: '#27272a' }}
+      initial={{ borderColor: '#27272a', boxShadow: '0 0 0px rgba(0,0,0,0)' }}
     >
-      <Handle type="target" position={Position.Top} style={{ visibility: 'hidden' }} />
+      <Handle type="target" position={Position.Top} style={{ background: '#27272a', width: 6, height: 6 }} />
       <TopBar>
         <span>{data.namespace}</span>
         <StatusDot $status={data.status} />
       </TopBar>
       <Body>
         <Alias>{data.alias}</Alias>
-        <Hex>{data.hex.substring(0, 8)}...</Hex>
+        <Hex>{data.hex.substring(0, 8).toUpperCase()}...</Hex>
       </Body>
-      <Handle type="source" position={Position.Bottom} style={{ visibility: 'hidden' }} />
+      <Handle type="source" position={Position.Bottom} style={{ background: '#27272a', width: 6, height: 6 }} />
     </NodeContainer>
   );
 };
