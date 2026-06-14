@@ -681,7 +681,7 @@ export function VaultClientLayout({ telemetry, initialAliases }: VaultClientLayo
     return (
         <LayoutGrid>
             {/* Left Sidebar: Query Engine & Vitals */}
-            <Sidebar>
+            <SidebarContainer>
                 <SidebarSection>
                     <Title>
                         <Icon className="material-symbols-outlined">manage_search</Icon>
@@ -774,7 +774,7 @@ export function VaultClientLayout({ telemetry, initialAliases }: VaultClientLayo
                         </VitalItem>
                     </VitalsList>
                 </SidebarSectionGrow>
-            </Sidebar>
+            </SidebarContainer>
 
             {/* Main Content Area: Distribution Ribbon & Unified Ledger Table */}
             <MainContentArea>
