@@ -161,7 +161,7 @@ pub async fn execute_raqim_cascade(
 
     global_net.broadcast_to_world(&sealed_log).await;
 
-    let _ = tx.send(SystemEvent::ThoughtCommited {
+    let _ = tx.send(SystemEvent::ThoughtCommitted {
         agent_id: agent_hex.clone(),
         tx_id: enriched_state.clone().transaction_id,
         namespace: enriched_state.clone().namespace,
@@ -173,7 +173,7 @@ pub async fn execute_raqim_cascade(
 
 #[derive(Clone, Debug, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize)]
 pub enum SystemEvent {
-    ThoughtCommited {
+    ThoughtCommitted {
         agent_id: String,
         tx_id: u64,
         namespace: String,

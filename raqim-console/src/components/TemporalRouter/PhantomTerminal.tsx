@@ -92,13 +92,13 @@ export function PhantomTerminal() {
     addLog("[PHANTOM_OS] Initializing WASI sandbox...");
     addLog("[PHANTOM_OS] Fork complete. Awaiting temporal events...");
 
-    const eventSource = new EventSource('http://localhost:8081/v1/time_travel/stream');
+    const eventSource = new EventSource('http://localhost:8081/v1/time-travel/stream');
 
     eventSource.onmessage = (event) => {
       try {
         const parsed = JSON.parse(event.data) as UiEvent;
         
-        if (parsed.event_type === "ThoughtCommitted") {
+        if (parsed.event_type === "ThoughtCommitted" || parsed.event_type === "ThoughtCommited") {
           addLog(`[PHANTOM_OS] [Tx ${parsed.tx_id}] Memory allocation complete: ${parsed.intent_path}`);
           
           const newPhantomThought: UiThought = {

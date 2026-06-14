@@ -5,7 +5,7 @@ export async function executeTimeTravel({ agent_hex, target_tx_id, fork_config }
   
   // Hit the backend
   try {
-    const res = await fetch("http://localhost:8081/v1/time_travel/fork", {
+    const res = await fetch("http://localhost:8081/v1/admin/time_travel/fork", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"

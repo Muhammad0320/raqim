@@ -143,7 +143,7 @@ export const TopologyCanvas = () => {
     const token = getCookie('raqim_license') || 'mock_license_key_123';
     const controller = new AbortController();
 
-    const base = typeof window !== 'undefined' && window.location.port === '3000' ? 'http://127.0.0.1:8081' : '';
+    const base = typeof window !== 'undefined' ? 'http://127.0.0.1:8081' : '';
     const url = `${base}/v1/system/firehose`;
 
     fetchEventSource(url, {
