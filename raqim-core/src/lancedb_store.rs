@@ -1,5 +1,5 @@
 use crate::api::{TimelineNode, VaultSearchResult};
-use crate::embedding::{EmbeddingProvider, LocalBgeProvider};
+use crate::embedding::EmbeddingProvider;
 use crate::{OpLog, SystemEvent};
 use arrow_array::types::Float32Type;
 use arrow_array::{Array, Float32Array};
@@ -199,7 +199,7 @@ impl LanceEngine {
             .as_millis() as i64;
 
         let (e_type, agent_id, meta) = match event {
-            SystemEvent::ThoughtCommited {
+            SystemEvent::ThoughtCommitted {
                 agent_id,
                 tx_id,
                 namespace,

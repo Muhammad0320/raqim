@@ -91,7 +91,7 @@ pub enum WsMessage {
 #[derive(serde::Serialize, Clone, Debug)]
 #[serde(tag = "event_type")]
 pub enum UiEvent {
-    ThoughtCommited {
+    ThoughtCommitted {
         agent_hex: String,
         intent_path: String,
         tx_id: u64,

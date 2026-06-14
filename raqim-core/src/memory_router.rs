@@ -553,14 +553,14 @@ impl MemoryRouter {
         if is_isolated_debug {
             tokio::spawn(async move {
                 while let Ok(event) = dummy_event_rx.recv().await {
-                    if let SystemEvent::ThoughtCommited {
+                    if let SystemEvent::ThoughtCommitted {
                         agent_id,
                         tx_id,
                         namespace,
                         text,
                     } = event
                     {
-                        let ui_event = UiEvent::ThoughtCommited {
+                        let ui_event = UiEvent::ThoughtCommitted {
                             agent_hex: agent_id,
                             intent_path: namespace,
                             tx_id,
