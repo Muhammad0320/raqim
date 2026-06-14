@@ -5,6 +5,7 @@ use raqim_core::aegis::AegisGateKeeper;
 use raqim_core::api::{ApiState, EnterpriseClaim, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 
+use http::Method;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::CortexDataPlane;
@@ -19,6 +20,7 @@ use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
 use raqim_core::telemetry::TelemetryEngine;
 use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
+use tower_http::cors::{Any, CorsLayer};
 
 use md5::{Digest, Md5};
 use std::collections::HashMap;
@@ -513,7 +515,12 @@ async fn main() {
         master_signing_key: master_signing_key.clone(),
     };
 
-    let axum_app = build_admin_router(api_state);
+    let axum_app = build_admin_router(api_state).layer(
+        CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([Method::GET, Method::POST])
+            .allow_headers(Any),
+    );
     let api_port = config.port + 1;
     tokio::spawn(async move {
         let listener = TcpListener::bind(format!("0.0.0.0:{}", api_port))
