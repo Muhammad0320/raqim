@@ -14,8 +14,8 @@ import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
 const PageContainer = styled.div`
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  width: 100vw;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
   background-color: #09090b;
   box-sizing: border-box;
@@ -96,7 +96,7 @@ const StatusDot = styled.span<{ $isForking: boolean }>`
 `;
 
 const MainStage = styled.div`
-  height: calc(100vh - 140px); /* Exactly 60px top bar + 80px scrubber */
+  height: calc(100% - 140px); /* Exactly 60px top bar + 80px scrubber */
   display: flex;
   width: 100%;
   position: relative;

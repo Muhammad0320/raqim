@@ -1,8 +1,331 @@
+'use client';
+
+import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import styled, { keyframes } from 'styled-components';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// Animations
+const rotateOuter = keyframes`
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+`;
+
+const pulseGlow = keyframes`
+  0%, 100% { opacity: 0.5; filter: drop-shadow(0 0 2px #00f3ff); }
+  50% { opacity: 1; filter: drop-shadow(0 0 8px #00f3ff); }
+`;
+
+const blinkHeartbeat = keyframes`
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+`;
+
+// Styled Components
+const SidebarContainer = styled.aside`
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: #050505;
+  border-right: 1px solid #1f1f23;
+  height: 100%;
+  z-index: 40;
+  box-sizing: border-box;
+  font-family: monospace;
+`;
+
+const LogoSection = styled.div`
+  padding: 24px;
+  border-bottom: 1px solid #1f1f23;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(180deg, #09090b 0%, #050505 100%);
+  box-sizing: border-box;
+`;
+
+const LogoWrapper = styled.div`
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+
+  svg .outer-ring {
+    transform-origin: center;
+    animation: ${rotateOuter} 20s linear infinite;
+  }
+
+  svg .inner-nucleus {
+    animation: ${pulseGlow} 2s ease-in-out infinite;
+  }
+`;
+
+const BrandName = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
+const BrandTitle = styled.h1`
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  color: #ffffff;
+  margin: 0;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.15);
+`;
+
+const BrandSubtitle = styled.span`
+  font-size: 9px;
+  font-weight: bold;
+  letter-spacing: 0.28em;
+  color: #00f3ff;
+  text-transform: uppercase;
+  opacity: 0.9;
+  text-shadow: 0 0 5px rgba(0, 243, 255, 0.3);
+`;
+
+const ProfileSection = styled.div`
+  padding: 20px 24px;
+  border-bottom: 1px solid #1f1f23;
+  background-color: rgba(9, 9, 11, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+`;
+
+const ProfileHeader = styled.div`
+  font-size: 9px;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-weight: bold;
+`;
+
+const OperatorDetails = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+`;
+
+const TerminalAvatar = styled.div`
+  width: 32px;
+  height: 32px;
+  border: 1px solid #27272a;
+  background-color: #09090b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const AvatarText = styled.span`
+  font-size: 11px;
+  color: #ffffff;
+  font-weight: bold;
+`;
+
+const OperatorMeta = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
+const OperatorId = styled.span`
+  font-size: 12px;
+  font-weight: bold;
+  color: #ffffff;
+`;
+
+const OperatorStatus = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`;
+
+const HeartbeatDot = styled.span`
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 6px #10b981;
+  animation: ${blinkHeartbeat} 1.5s infinite;
+`;
+
+const StatusText = styled.span`
+  font-size: 9px;
+  color: #a1a1aa;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+`;
+
+const LicenseRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  border-top: 1px dashed #1f1f23;
+  padding-top: 8px;
+  margin-top: 4px;
+`;
+
+const LicenseLabel = styled.span`
+  color: #52525b;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+`;
+
+const LicenseValue = styled.span`
+  color: #00f3ff;
+  font-weight: bold;
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 5px rgba(0, 243, 255, 0.2);
+`;
+
+const NavList = styled.nav`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+  box-sizing: border-box;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #1f1f23;
+  }
+`;
+
+const NavLink = styled(Link)<{ $isActive: boolean }>`
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  color: ${props => props.$isActive ? '#ffffff' : '#71717a'};
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: ${props => props.$isActive ? 'bold' : 'normal'};
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  transition: color 0.2s;
+  box-sizing: border-box;
+
+  &:hover {
+    color: #ffffff;
+  }
+`;
+
+const ActiveLine = styled(motion.div)`
+  position: absolute;
+  left: 0;
+  top: 12%;
+  height: 76%;
+  width: 2px;
+  background-color: #00f3ff;
+  box-shadow: 0 0 8px #00f3ff;
+`;
+
+const IconSpan = styled.span<{ $isActive: boolean }>`
+  font-size: 20px;
+  color: ${props => props.$isActive ? '#00f3ff' : '#52525b'};
+  transition: color 0.2s;
+  
+  ${props => props.$isActive && `
+    filter: drop-shadow(0 0 4px rgba(0, 243, 255, 0.8));
+  `}
+
+  ${NavLink}:hover & {
+    color: #00f3ff;
+    filter: drop-shadow(0 0 4px rgba(0, 243, 255, 0.5));
+  }
+`;
+
+const BottomSection = styled.div`
+  padding: 24px;
+  border-top: 1px solid #1f1f23;
+  background-color: #020202;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-sizing: border-box;
+`;
+
+const DiagnosticGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px dashed #1f1f23;
+  padding-bottom: 12px;
+`;
+
+const DiagnosticRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 9px;
+  font-family: monospace;
+`;
+
+const DiagnosticLabel = styled.span`
+  color: #52525b;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+`;
+
+const DiagnosticValue = styled.span<{ $alert?: boolean }>`
+  color: ${props => props.$alert ? '#ef4444' : '#a1a1aa'};
+  font-weight: bold;
+`;
+
+const ControlButton = styled.button`
+  width: 100%;
+  background-color: #050505;
+  border: 1px solid #27272a;
+  color: #a1a1aa;
+  padding: 10px;
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+
+  &:hover {
+    background-color: #ef4444;
+    color: #000000;
+    border-color: #ef4444;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+  }
+`;
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const navLinks = [
     { href: '/', icon: 'dashboard', label: 'Dashboard' },
@@ -13,71 +336,144 @@ export function Sidebar() {
   ];
 
   return (
-    <aside className="w-64 flex-shrink-0 flex flex-col bg-zinc-950 z-40 border-r border-zinc-900 hidden md:flex h-full">
-      
-      {/* The Logo Area */}
-      <div className="px-6 py-6 border-b border-zinc-900 flex items-center gap-4 shrink-0">
-        <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-[#00f3ff] drop-shadow-[0_0_8px_rgba(0,243,255,0.6)]">
-          <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" stroke="currentColor" strokeWidth="4" fill="none" />
-          <path d="M50 25 L75 38 L75 62 L50 75 L25 62 L25 38 Z" stroke="currentColor" strokeWidth="2" fill="none" />
-          <circle cx="50" cy="50" r="6" fill="currentColor" />
-          <line x1="50" y1="5" x2="50" y2="25" stroke="currentColor" strokeWidth="2" />
-          <line x1="10" y1="25" x2="25" y2="38" stroke="currentColor" strokeWidth="2" />
-          <line x1="90" y1="25" x2="75" y2="38" stroke="currentColor" strokeWidth="2" />
-          <line x1="10" y1="75" x2="25" y2="62" stroke="currentColor" strokeWidth="2" />
-          <line x1="90" y1="75" x2="75" y2="62" stroke="currentColor" strokeWidth="2" />
-          <line x1="50" y1="95" x2="50" y2="75" stroke="currentColor" strokeWidth="2" />
-        </svg>
-        <span className="font-mono text-lg font-black tracking-[0.2em] text-white">RAQIM<span className="text-[#00f3ff] ml-1">CONSOLE</span></span>
-      </div>
+    <SidebarContainer>
+      <LogoSection>
+        <LogoWrapper>
+          <svg width="36" height="36" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Outer Hexagon with slow rotate */}
+            <polygon 
+              className="outer-ring" 
+              points="50,5 90,28 90,72 50,95 10,72 10,28" 
+              stroke="#ffffff" 
+              strokeWidth="5" 
+              strokeLinejoin="round" 
+            />
+            {/* Inner Hexagon Synapse web */}
+            <polygon 
+              points="50,22 75,36 75,64 50,78 25,64 25,36" 
+              stroke="#00f3ff" 
+              strokeWidth="3.5" 
+              strokeLinejoin="round"
+              opacity="0.8" 
+            />
+            {/* Pulsing Synapse center nucleus */}
+            <circle 
+              className="inner-nucleus" 
+              cx="50" 
+              cy="50" 
+              r="8" 
+              fill="#00f3ff" 
+            />
+            {/* Connection axon struts */}
+            <line x1="50" y1="5" x2="50" y2="22" stroke="#ffffff" strokeWidth="2.5" />
+            <line x1="10" y1="28" x2="25" y2="36" stroke="#ffffff" strokeWidth="2.5" />
+            <line x1="90" y1="28" x2="75" y2="36" stroke="#ffffff" strokeWidth="2.5" />
+            <line x1="10" y1="72" x2="25" y2="64" stroke="#ffffff" strokeWidth="2.5" />
+            <line x1="90" y1="72" x2="75" y2="64" stroke="#ffffff" strokeWidth="2.5" />
+            <line x1="50" y1="95" x2="50" y2="78" stroke="#ffffff" strokeWidth="2.5" />
+          </svg>
+        </LogoWrapper>
+        <BrandName>
+          <BrandTitle>Raqim OS</BrandTitle>
+          <BrandSubtitle>Console // Core</BrandSubtitle>
+        </BrandName>
+      </LogoSection>
 
-      <div className="flex flex-col h-full overflow-hidden">
-        
-        {/* The Identity Plate */}
-        <div className="px-6 py-6 mb-2 shrink-0 bg-zinc-900/20 border-b border-zinc-900">
-          <div className="flex items-center gap-4 mb-3">
-            <div className="w-10 h-10 rounded-full border border-[#00f3ff]/50 bg-zinc-950 flex items-center justify-center shrink-0 shadow-[0_0_10px_rgba(0,243,255,0.2)]">
-              <span className="font-mono font-bold text-[#00f3ff] text-lg">J</span>
-            </div>
-            <div className="flex flex-col">
-              <h2 className="font-mono text-xs font-bold text-white uppercase tracking-widest leading-tight">JPM_CHASE_PROD</h2>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 mt-2 bg-zinc-950 px-2 py-1 border border-zinc-800 w-max">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_5px_#22c55e]"></span>
-            <span className="font-mono text-[9px] uppercase tracking-widest text-zinc-400">SECURE_ENCLAVE</span>
-          </div>
-        </div>
+      <ProfileSection>
+        <ProfileHeader>Operator Session</ProfileHeader>
+        <OperatorDetails>
+          <TerminalAvatar>
+            <AvatarText>OP</AvatarText>
+          </TerminalAvatar>
+          <OperatorMeta>
+            <OperatorId>0x7F4B2D9</OperatorId>
+            <OperatorStatus>
+              <HeartbeatDot />
+              <StatusText>Enclave Nominal</StatusText>
+            </OperatorStatus>
+          </OperatorMeta>
+        </OperatorDetails>
+        <LicenseRow>
+          <LicenseLabel>License Node</LicenseLabel>
+          <LicenseValue>Enterprise</LicenseValue>
+        </LicenseRow>
+      </ProfileSection>
 
-        {/* The Navigation Links */}
-        <nav className="flex flex-col flex-1 overflow-y-auto py-4">
-          {navLinks.map((link) => {
-            const isActive = pathname === link.href;
-            return (
-              <Link 
-                key={link.href}
-                href={link.href} 
-                className={`px-6 py-4 flex items-center gap-4 group ${isActive ? 'bg-zinc-900 border-l-2 border-[#00f3ff]' : 'border-l-2 border-transparent hover:bg-zinc-900 hover:border-[#00f3ff]'}`}
+      <NavList>
+        {navLinks.map((link, index) => {
+          const isActive = pathname === link.href;
+          return (
+            <NavLink
+              key={link.href}
+              href={link.href}
+              $isActive={isActive}
+              onMouseEnter={() => setHoveredIndex(index)}
+              onMouseLeave={() => setHoveredIndex(null)}
+            >
+              {/* Premium Framer Motion Hover Background */}
+              <AnimatePresence>
+                {hoveredIndex === index && (
+                  <motion.div
+                    layoutId="sidebar-hover-bg"
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      borderRadius: '2px',
+                      zIndex: -1
+                    }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  />
+                )}
+              </AnimatePresence>
+
+              {/* Active Indicator Sliding bar */}
+              {isActive && (
+                <ActiveLine 
+                  layoutId="sidebar-active-bar" 
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                />
+              )}
+
+              <IconSpan $isActive={isActive} className="material-symbols-outlined">
+                {link.icon}
+              </IconSpan>
+              
+              <motion.span
+                animate={{ x: hoveredIndex === index && !isActive ? 4 : 0 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 20 }}
               >
-                <span className={`material-symbols-outlined text-[20px] ${isActive ? 'text-[#00f3ff] drop-shadow-[0_0_8px_rgba(0,243,255,0.8)]' : 'text-zinc-500 group-hover:text-[#00f3ff] group-hover:drop-shadow-[0_0_8px_rgba(0,243,255,0.8)]'}`}>
-                  {link.icon}
-                </span>
-                <span className={`font-mono text-xs uppercase tracking-widest mt-0.5 ${isActive ? 'text-white font-bold drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]' : 'text-zinc-400 group-hover:text-white group-hover:drop-shadow-[0_0_5px_rgba(255,255,255,0.5)]'}`}>
-                  {link.label}
-                </span>
-              </Link>
-            );
-          })}
-        </nav>
-        
-        {/* The Bottom Action Button */}
-        <div className="p-6 border-t border-zinc-900 shrink-0">
-          <button className="w-full bg-zinc-900 border border-zinc-700 hover:border-[#00f3ff] hover:text-[#00f3ff] text-zinc-400 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-colors">
-            <span className="material-symbols-outlined text-[16px]">key</span>
-            MANAGE SWARM KEYS
-          </button>
-        </div>
-      </div>
-    </aside>
+                {link.label}
+              </motion.span>
+            </NavLink>
+          );
+        })}
+      </NavList>
+
+      <BottomSection>
+        <DiagnosticGroup>
+          <DiagnosticRow>
+            <DiagnosticLabel>Uptime</DiagnosticLabel>
+            <DiagnosticValue>14h 22m 09s</DiagnosticValue>
+          </DiagnosticRow>
+          <DiagnosticRow>
+            <DiagnosticLabel>Core Latency</DiagnosticLabel>
+            <DiagnosticValue>1.2 ms</DiagnosticValue>
+          </DiagnosticRow>
+          <DiagnosticRow>
+            <DiagnosticLabel>Active Peers</DiagnosticLabel>
+            <DiagnosticValue>08</DiagnosticValue>
+          </DiagnosticRow>
+        </DiagnosticGroup>
+
+        <ControlButton>
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>lock</span>
+          Lock Session
+        </ControlButton>
+      </BottomSection>
+    </SidebarContainer>
   );
 }

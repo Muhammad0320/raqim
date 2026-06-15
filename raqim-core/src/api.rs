@@ -939,6 +939,7 @@ pub async fn active_qurantine_endpoint(
     Ok(Json(quarantined_agents))
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TimelineNode {
     pub tx_id: u64,
     pub timestamp: String,
