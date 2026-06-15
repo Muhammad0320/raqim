@@ -1,5 +1,7 @@
 'use server';
 
+import { cookies } from 'next/headers';
+
 const BACKEND_BASE_URL = 'http://127.0.0.1:8081';
 
 function getHeaders() {
