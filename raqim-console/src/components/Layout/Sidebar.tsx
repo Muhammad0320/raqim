@@ -8,11 +8,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getCurrentSession } from '../../actions/admin';
 
 // Keyframe Animations
-const pulseGlow = keyframes`
-  0%, 100% { opacity: 0.5; filter: drop-shadow(0 0 2px rgba(0, 243, 255, 0.4)); }
-  50% { opacity: 1; filter: drop-shadow(0 0 8px rgba(0, 243, 255, 0.8)); }
-`;
-
 const blinkHeartbeat = keyframes`
   0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
@@ -43,35 +38,31 @@ const LogoSection = styled.div`
 `;
 
 const LogoWrapper = styled.div`
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   cursor: pointer;
 
-  svg path {
-    transition: stroke 0.3s ease;
+  svg path, svg line {
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  svg line {
-    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.3s ease;
-    transform-origin: center;
-  }
-
-  &:hover svg path {
-    stroke: #ffffff;
-  }
-
-  &:hover .core-slash-1 {
-    transform: rotate(10deg) scale(1.1);
+  &:hover svg .kernel-spine {
     stroke: #00f3ff;
+    filter: drop-shadow(0 0 3px rgba(0, 243, 255, 0.4));
   }
 
-  &:hover .core-slash-2 {
-    transform: rotate(-10deg) scale(1.1);
+  &:hover svg .enclave-loop {
+    stroke: #00f3ff;
+    filter: drop-shadow(0 0 5px rgba(0, 243, 255, 0.6));
+  }
+
+  &:hover svg .synapse-axon {
     stroke: #ffffff;
+    transform: translate(2px, 0);
   }
 `;
 
@@ -379,7 +370,6 @@ export function Sidebar() {
 
   const handleSessionAction = () => {
     if (session.authenticated) {
-      // Clear cookie and redirect to login page
       document.cookie = "raqim_license=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
       router.push('/login');
     } else {
@@ -400,13 +390,14 @@ export function Sidebar() {
       <LogoSection>
         <LogoWrapper>
           <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {/* Architectural minimalist bracket borders */}
-            <path d="M25,15 L12,15 L12,85 L25,85" stroke="#27272a" strokeWidth="6" strokeLinecap="round" />
-            <path d="M75,15 L88,15 L88,85 L75,85" stroke="#27272a" strokeWidth="6" strokeLinecap="round" />
+            {/* The Kernel Spine */}
+            <line className="kernel-spine" x1="28" y1="15" x2="28" y2="85" stroke="#ffffff" strokeWidth="8" strokeLinecap="round" />
             
-            {/* Crossed modern slash lines representing the synapse junction */}
-            <line className="core-slash-1" x1="32" y1="28" x2="68" y2="72" stroke="#ffffff" strokeWidth="11" strokeLinecap="round" />
-            <line className="core-slash-2" x1="68" y1="28" x2="32" y2="72" stroke="#00f3ff" strokeWidth="11" strokeLinecap="round" />
+            {/* The Enclave Loop */}
+            <path className="enclave-loop" d="M28,15 L62,15 C78,15 78,46 62,46 L28,46" stroke="#ffffff" strokeWidth="8" strokeLinejoin="round" />
+            
+            {/* The Synapse Axon (Glowing Cyan Leg) */}
+            <line className="synapse-axon" x1="43" y1="46" x2="72" y2="85" stroke="#00f3ff" strokeWidth="8" strokeLinecap="round" />
           </svg>
         </LogoWrapper>
         <BrandName>
