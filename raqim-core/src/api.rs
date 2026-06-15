@@ -1164,6 +1164,8 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
             post(lift_qurantine_and_resurrect),
         )
         .route("/v1/admin/time_travel", post(time_travel))
+        .route("/v1/time_travel/fork", post(time_travel))
+        .route("/v1/admin/time_travel/fork", post(time_travel))
         .route(
             "/v1/admin/time_travel/timeline/:agent_hex",
             get(fetch_agent_timeline),

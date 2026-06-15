@@ -1,4 +1,5 @@
-"use client";
+'use client';
+
 import React, { useState } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -6,7 +7,7 @@ import { MainLayout } from '../Layout/MainLayout';
 import { DagCanvas } from '../DagCanvas/DagCanvas';
 import { ScrubberDeck } from './ScrubberDeck';
 import { PhantomTerminal } from './PhantomTerminal';
-import { TimeMachineModal } from '../TimeMachineModal';
+import { RealityForkModal } from './RealityForkModal';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
 
@@ -17,6 +18,8 @@ const PageContainer = styled.div`
   width: 100vw;
   overflow: hidden;
   background-color: #09090b;
+  box-sizing: border-box;
+  font-family: monospace;
 `;
 
 const TopBar = styled.div`
@@ -27,15 +30,38 @@ const TopBar = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background-color: rgba(9, 9, 11, 0.9);
-  backdrop-filter: blur(10px);
-  z-index: 20;
+  background-color: #050505;
+  box-sizing: border-box;
 `;
 
 const TopBarLeft = styled.div`
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 20px;
+`;
+
+const TargetLabel = styled.span`
+  font-size: 9px;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-right: 12px;
+`;
+
+const SelectBox = styled.select`
+  background-color: #050505;
+  border: 1px solid #27272a;
+  color: #ffffff;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  
+  &:hover {
+    border-color: #ffffff;
+  }
 `;
 
 const TopBarRight = styled.div`
@@ -43,90 +69,50 @@ const TopBarRight = styled.div`
   align-items: center;
 `;
 
-const TargetAgentLabel = styled.span`
-  font-family: monospace;
-  font-size: 10px;
-  color: #71717a;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: 4px;
-  display: block;
-`;
-
-const SelectBox = styled.select`
-  background-color: #18181b;
-  border: 1px solid #3f3f46;
-  color: #ffffff;
-  font-family: monospace;
-  font-size: 12px;
-  padding: 6px 12px;
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.2s;
-
-  &:hover {
-    border-color: #a1a1aa;
-  }
-`;
-
 const StatusBadge = styled.div<{ $isForking: boolean }>`
-  background-color: ${props => props.$isForking ? 'rgba(255, 179, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)'};
+  background-color: ${props => props.$isForking ? '#100a00' : '#050505'};
   color: ${props => props.$isForking ? '#ffb300' : '#ffffff'};
-  border: 1px solid ${props => props.$isForking ? 'rgba(255, 179, 0, 0.3)' : 'rgba(255, 255, 255, 0.3)'};
+  border: 1px solid ${props => props.$isForking ? '#ffb300' : '#27272a'};
   padding: 6px 16px;
-  border-radius: 2px;
   font-size: 10px;
-  font-family: monospace;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 1.5px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  box-shadow: ${props => props.$isForking ? '0 0 15px rgba(255, 179, 0, 0.2)' : 'none'};
+  gap: 8px;
 `;
 
 const StatusDot = styled.span<{ $isForking: boolean }>`
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background-color: ${props => props.$isForking ? '#ffb300' : '#ffffff'};
-  box-shadow: ${props => props.$isForking ? '0 0 8px rgba(255, 179, 0, 0.8)' : '0 0 8px rgba(255, 255, 255, 0.8)'};
-  animation: pulse 2s infinite;
+  animation: pulse 1.5s infinite;
 
   @keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.4; }
-    100% { opacity: 1; }
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
   }
 `;
 
 const MainStage = styled.div`
-  flex: 1;
-  position: relative;
+  height: calc(100vh - 140px); /* Exactly 60px top bar + 80px scrubber */
   display: flex;
-  height: calc(100vh - 140px); /* 60px top bar + 80px scrubber */
+  width: 100%;
+  position: relative;
   overflow: hidden;
+  box-sizing: border-box;
 `;
 
 const DagContainer = styled(motion.div)`
   height: 100%;
   position: relative;
-  border-right: 1px solid #27272a;
+  overflow: hidden;
 `;
 
 const TerminalContainer = styled(motion.div)`
   height: 100%;
-  background-color: #09090b;
-`;
-
-const GridBackground = styled.div`
-  position: absolute;
-  inset: 0;
-  opacity: 0.03;
-  pointer-events: none;
-  background-image: radial-gradient(#ffffff 1px, transparent 1px);
-  background-size: 20px 20px;
+  overflow: hidden;
 `;
 
 interface TemporalClientLayoutProps {
@@ -134,9 +120,9 @@ interface TemporalClientLayoutProps {
 }
 
 export function TemporalClientLayout({ agentAliases }: TemporalClientLayoutProps) {
-  useSwarmStream();
+  useSwarmStream(); // Keep sync stream active
   const { isForking } = useSwarmStore();
-  const [selectedAgentHex, setSelectedAgentHex] = useState<string>("");
+  const [selectedAgentHex, setSelectedAgentHex] = useState<string>('');
 
   const handleAgentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedAgentHex(e.target.value);
@@ -148,11 +134,13 @@ export function TemporalClientLayout({ agentAliases }: TemporalClientLayoutProps
         <TopBar>
           <TopBarLeft>
             <div>
-              <TargetAgentLabel>Target Agent</TargetAgentLabel>
+              <TargetLabel>Target Agent:</TargetLabel>
               <SelectBox value={selectedAgentHex} onChange={handleAgentChange}>
                 <option value="">GLOBAL TIMELINE</option>
                 {Object.entries(agentAliases).map(([hex, alias]) => (
-                  <option key={hex} value={hex}>{alias} ({hex})</option>
+                  <option key={hex} value={hex}>
+                    {alias} ({hex})
+                  </option>
                 ))}
               </SelectBox>
             </div>
@@ -161,17 +149,16 @@ export function TemporalClientLayout({ agentAliases }: TemporalClientLayoutProps
           <TopBarRight>
             <StatusBadge $isForking={isForking}>
               <StatusDot $isForking={isForking} />
-              {isForking ? 'FORKED REALITY' : 'MAIN TIMELINE'}
+              {isForking ? 'REALITY_FORK_ACTIVE' : 'SYSTEM_TIMELINE_NOMINAL'}
             </StatusBadge>
           </TopBarRight>
         </TopBar>
 
         <MainStage>
-          <GridBackground />
           <DagContainer
             initial={false}
             animate={{ width: isForking ? '60%' : '100%' }}
-            transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+            transition={{ type: 'spring', stiffness: 120, damping: 18 }}
           >
             <DagCanvas />
           </DagContainer>
@@ -182,14 +169,14 @@ export function TemporalClientLayout({ agentAliases }: TemporalClientLayoutProps
                 initial={{ width: '0%', opacity: 0 }}
                 animate={{ width: '40%', opacity: 1 }}
                 exit={{ width: '0%', opacity: 0 }}
-                transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+                transition={{ type: 'spring', stiffness: 120, damping: 18 }}
               >
                 <PhantomTerminal />
               </TerminalContainer>
             )}
           </AnimatePresence>
-          
-          <TimeMachineModal />
+
+          <RealityForkModal />
         </MainStage>
 
         <ScrubberDeck selectedAgentHex={selectedAgentHex} />

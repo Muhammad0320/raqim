@@ -5,6 +5,8 @@ import { usePathname } from 'next/navigation';
 export function MainLayout({ children, title }: { children: React.ReactNode, title: string }) {
   const pathname = usePathname();
   const isTopology = pathname === '/topology';
+  const isRouter = pathname === '/router';
+  const isNoHeader = isTopology || isRouter;
 
   return (
     <div className="bg-surface text-on-surface antialiased h-screen w-screen overflow-hidden flex flex-col selection:bg-primary-container/30">
@@ -16,8 +18,8 @@ export function MainLayout({ children, title }: { children: React.ReactNode, tit
         <Sidebar />
 
         {/* Main column: flex col so footer stacks at the very bottom of THIS column only */}
-        <main className={`flex-1 flex flex-col ${isTopology ? 'bg-surface' : 'bg-surface-container-low'} overflow-hidden relative min-h-0`}>
-          {!isTopology && (
+        <main className={`flex-1 flex flex-col ${isNoHeader ? 'bg-surface' : 'bg-surface-container-low'} overflow-hidden relative min-h-0`}>
+          {!isNoHeader && (
             <header className="flex justify-between items-center w-full px-8 py-6 bg-surface z-30 shrink-0">
               <div className="flex items-center gap-4">
                 <h1 className="font-headline text-3xl font-black tracking-tight text-on-surface uppercase">{title}</h1>

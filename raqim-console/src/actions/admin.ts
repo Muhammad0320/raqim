@@ -178,5 +178,33 @@ export async function executeTimeTravel({
   target_tx_id: number;
   fork_config: any;
 }): Promise<{ success: boolean; error?: string }> {
-  return triggerRealityFork(agent_hex, target_tx_id, fork_config);
+  try {
+    const payload = {
+      agent_hex,
+      target_tx_id,
+      fork_config: {
+        override_seed: fork_config?.override_seed ?? null,
+        inject_network: fork_config?.inject_network ?? null,
+        env_overrides: fork_config?.env_overrides ?? {},
+        config_overrides: fork_config?.config_overrides ?? {},
+      },
+    };
+
+    const res = await fetch(`${BACKEND_BASE_URL}/v1/time_travel/fork`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      return { success: false, error: `${errorText} (${res.status})` };
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error in executeTimeTravel server action:', error);
+    return { success: false, error: error.message || 'Network error connecting to backend.' };
+  }
 }
