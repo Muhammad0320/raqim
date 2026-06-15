@@ -1,24 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import styled, { keyframes } from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getCurrentSession } from '../../actions/admin';
 
-// Animations
-const rotateOuter = keyframes`
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-`;
-
+// Keyframe Animations
 const pulseGlow = keyframes`
-  0%, 100% { opacity: 0.5; filter: drop-shadow(0 0 2px #00f3ff); }
-  50% { opacity: 1; filter: drop-shadow(0 0 8px #00f3ff); }
+  0%, 100% { opacity: 0.5; filter: drop-shadow(0 0 2px rgba(0, 243, 255, 0.4)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 8px rgba(0, 243, 255, 0.8)); }
 `;
 
 const blinkHeartbeat = keyframes`
-  0%, 100% { opacity: 0.3; }
+  0%, 100% { opacity: 0.35; }
   50% { opacity: 1; }
 `;
 
@@ -53,14 +49,29 @@ const LogoWrapper = styled.div`
   align-items: center;
   justify-content: center;
   position: relative;
+  cursor: pointer;
 
-  svg .outer-ring {
-    transform-origin: center;
-    animation: ${rotateOuter} 20s linear infinite;
+  svg path {
+    transition: stroke 0.3s ease;
   }
 
-  svg .inner-nucleus {
-    animation: ${pulseGlow} 2s ease-in-out infinite;
+  svg line {
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.3s ease;
+    transform-origin: center;
+  }
+
+  &:hover svg path {
+    stroke: #ffffff;
+  }
+
+  &:hover .core-slash-1 {
+    transform: rotate(10deg) scale(1.1);
+    stroke: #00f3ff;
+  }
+
+  &:hover .core-slash-2 {
+    transform: rotate(-10deg) scale(1.1);
+    stroke: #ffffff;
   }
 `;
 
@@ -114,27 +125,28 @@ const OperatorDetails = styled.div`
   gap: 12px;
 `;
 
-const TerminalAvatar = styled.div`
+const TerminalAvatar = styled.div<{ $isActive: boolean }>`
   width: 32px;
   height: 32px;
-  border: 1px solid #27272a;
+  border: 1px solid ${props => props.$isActive ? '#27272a' : '#ff003c'};
   background-color: #09090b;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  box-shadow: ${props => props.$isActive ? 'none' : '0 0 8px rgba(255, 0, 60, 0.15)'};
   
   &::after {
     content: '';
     position: absolute;
     inset: -3px;
-    border: 1px dashed rgba(255, 255, 255, 0.1);
+    border: 1px dashed ${props => props.$isActive ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 0, 60, 0.2)'};
   }
 `;
 
-const AvatarText = styled.span`
+const AvatarText = styled.span<{ $isActive: boolean }>`
   font-size: 11px;
-  color: #ffffff;
+  color: ${props => props.$isActive ? '#ffffff' : '#ff003c'};
   font-weight: bold;
 `;
 
@@ -142,12 +154,16 @@ const OperatorMeta = styled.div`
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow: hidden;
 `;
 
 const OperatorId = styled.span`
   font-size: 12px;
   font-weight: bold;
   color: #ffffff;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
 `;
 
 const OperatorStatus = styled.div`
@@ -156,20 +172,21 @@ const OperatorStatus = styled.div`
   gap: 6px;
 `;
 
-const HeartbeatDot = styled.span`
+const HeartbeatDot = styled.span<{ $isActive: boolean }>`
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background-color: #10b981;
-  box-shadow: 0 0 6px #10b981;
+  background-color: ${props => props.$isActive ? '#10b981' : '#ff003c'};
+  box-shadow: 0 0 6px ${props => props.$isActive ? '#10b981' : '#ff003c'};
   animation: ${blinkHeartbeat} 1.5s infinite;
 `;
 
-const StatusText = styled.span`
+const StatusText = styled.span<{ $isActive: boolean }>`
   font-size: 9px;
-  color: #a1a1aa;
+  color: ${props => props.$isActive ? '#a1a1aa' : '#ff003c'};
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  font-weight: bold;
 `;
 
 const LicenseRow = styled.div`
@@ -188,11 +205,11 @@ const LicenseLabel = styled.span`
   text-transform: uppercase;
 `;
 
-const LicenseValue = styled.span`
-  color: #00f3ff;
+const LicenseValue = styled.span<{ $isActive: boolean }>`
+  color: ${props => props.$isActive ? '#00f3ff' : '#71717a'};
   font-weight: bold;
   letter-spacing: 0.12em;
-  text-shadow: 0 0 5px rgba(0, 243, 255, 0.2);
+  text-shadow: ${props => props.$isActive ? '0 0 5px rgba(0, 243, 255, 0.2)' : 'none'};
 `;
 
 const NavList = styled.nav`
@@ -297,11 +314,11 @@ const DiagnosticValue = styled.span<{ $alert?: boolean }>`
   font-weight: bold;
 `;
 
-const ControlButton = styled.button`
+const ControlButton = styled.button<{ $authAction?: boolean }>`
   width: 100%;
   background-color: #050505;
-  border: 1px solid #27272a;
-  color: #a1a1aa;
+  border: 1px solid ${props => props.$authAction ? '#00f3ff' : '#27272a'};
+  color: ${props => props.$authAction ? '#00f3ff' : '#a1a1aa'};
   padding: 10px;
   font-family: monospace;
   font-size: 10px;
@@ -316,16 +333,59 @@ const ControlButton = styled.button`
   transition: all 0.2s;
 
   &:hover {
-    background-color: #ef4444;
+    background-color: ${props => props.$authAction ? '#00f3ff' : '#ef4444'};
     color: #000000;
-    border-color: #ef4444;
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+    border-color: ${props => props.$authAction ? '#00f3ff' : '#ef4444'};
+    box-shadow: 0 0 10px ${props => props.$authAction ? 'rgba(0, 243, 255, 0.4)' : 'rgba(239, 68, 68, 0.4)'};
   }
 `;
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [session, setSession] = useState<{
+    loading: boolean;
+    authenticated: boolean;
+    subject: string;
+    features: string[];
+  }>({
+    loading: true,
+    authenticated: false,
+    subject: '',
+    features: [],
+  });
+
+  useEffect(() => {
+    getCurrentSession()
+      .then((res) => {
+        setSession({
+          loading: false,
+          authenticated: res.authenticated,
+          subject: res.subject || '',
+          features: res.features || [],
+        });
+      })
+      .catch((err) => {
+        console.error("Failed to fetch session metadata:", err);
+        setSession({
+          loading: false,
+          authenticated: false,
+          subject: '',
+          features: [],
+        });
+      });
+  }, [pathname]);
+
+  const handleSessionAction = () => {
+    if (session.authenticated) {
+      // Clear cookie and redirect to login page
+      document.cookie = "raqim_license=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC;";
+      router.push('/login');
+    } else {
+      router.push('/login');
+    }
+  };
 
   const navLinks = [
     { href: '/', icon: 'dashboard', label: 'Dashboard' },
@@ -339,38 +399,14 @@ export function Sidebar() {
     <SidebarContainer>
       <LogoSection>
         <LogoWrapper>
-          <svg width="36" height="36" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {/* Outer Hexagon with slow rotate */}
-            <polygon 
-              className="outer-ring" 
-              points="50,5 90,28 90,72 50,95 10,72 10,28" 
-              stroke="#ffffff" 
-              strokeWidth="5" 
-              strokeLinejoin="round" 
-            />
-            {/* Inner Hexagon Synapse web */}
-            <polygon 
-              points="50,22 75,36 75,64 50,78 25,64 25,36" 
-              stroke="#00f3ff" 
-              strokeWidth="3.5" 
-              strokeLinejoin="round"
-              opacity="0.8" 
-            />
-            {/* Pulsing Synapse center nucleus */}
-            <circle 
-              className="inner-nucleus" 
-              cx="50" 
-              cy="50" 
-              r="8" 
-              fill="#00f3ff" 
-            />
-            {/* Connection axon struts */}
-            <line x1="50" y1="5" x2="50" y2="22" stroke="#ffffff" strokeWidth="2.5" />
-            <line x1="10" y1="28" x2="25" y2="36" stroke="#ffffff" strokeWidth="2.5" />
-            <line x1="90" y1="28" x2="75" y2="36" stroke="#ffffff" strokeWidth="2.5" />
-            <line x1="10" y1="72" x2="25" y2="64" stroke="#ffffff" strokeWidth="2.5" />
-            <line x1="90" y1="72" x2="75" y2="64" stroke="#ffffff" strokeWidth="2.5" />
-            <line x1="50" y1="95" x2="50" y2="78" stroke="#ffffff" strokeWidth="2.5" />
+          <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Architectural minimalist bracket borders */}
+            <path d="M25,15 L12,15 L12,85 L25,85" stroke="#27272a" strokeWidth="6" strokeLinecap="round" />
+            <path d="M75,15 L88,15 L88,85 L75,85" stroke="#27272a" strokeWidth="6" strokeLinecap="round" />
+            
+            {/* Crossed modern slash lines representing the synapse junction */}
+            <line className="core-slash-1" x1="32" y1="28" x2="68" y2="72" stroke="#ffffff" strokeWidth="11" strokeLinecap="round" />
+            <line className="core-slash-2" x1="68" y1="28" x2="32" y2="72" stroke="#00f3ff" strokeWidth="11" strokeLinecap="round" />
           </svg>
         </LogoWrapper>
         <BrandName>
@@ -381,22 +417,41 @@ export function Sidebar() {
 
       <ProfileSection>
         <ProfileHeader>Operator Session</ProfileHeader>
-        <OperatorDetails>
-          <TerminalAvatar>
-            <AvatarText>OP</AvatarText>
-          </TerminalAvatar>
-          <OperatorMeta>
-            <OperatorId>0x7F4B2D9</OperatorId>
-            <OperatorStatus>
-              <HeartbeatDot />
-              <StatusText>Enclave Nominal</StatusText>
-            </OperatorStatus>
-          </OperatorMeta>
-        </OperatorDetails>
-        <LicenseRow>
-          <LicenseLabel>License Node</LicenseLabel>
-          <LicenseValue>Enterprise</LicenseValue>
-        </LicenseRow>
+        {session.loading ? (
+          <div style={{ fontSize: '10px', color: '#71717a', letterSpacing: '1px' }}>
+            [ VERIFYING SESSION... ]
+          </div>
+        ) : (
+          <>
+            <OperatorDetails>
+              <TerminalAvatar $isActive={session.authenticated}>
+                <AvatarText $isActive={session.authenticated}>
+                  {session.authenticated ? 'OP' : '??'}
+                </AvatarText>
+              </TerminalAvatar>
+              <OperatorMeta>
+                <OperatorId title={session.subject}>
+                  {session.authenticated ? session.subject : 'UNAUTHENTICATED'}
+                </OperatorId>
+                <OperatorStatus>
+                  <HeartbeatDot $isActive={session.authenticated} />
+                  <StatusText $isActive={session.authenticated}>
+                    {session.authenticated ? 'Enclave Nominal' : 'DEGRADED / IDLE'}
+                  </StatusText>
+                </OperatorStatus>
+              </OperatorMeta>
+            </OperatorDetails>
+            <LicenseRow>
+              <LicenseLabel>License Node</LicenseLabel>
+              <LicenseValue $isActive={session.authenticated}>
+                {session.authenticated 
+                  ? (session.features.length > 0 ? 'Enterprise' : 'Open Core')
+                  : 'NONE // IDLE'
+                }
+              </LicenseValue>
+            </LicenseRow>
+          </>
+        )}
       </ProfileSection>
 
       <NavList>
@@ -457,21 +512,27 @@ export function Sidebar() {
         <DiagnosticGroup>
           <DiagnosticRow>
             <DiagnosticLabel>Uptime</DiagnosticLabel>
-            <DiagnosticValue>14h 22m 09s</DiagnosticValue>
+            <DiagnosticValue>{session.authenticated ? '14h 22m 09s' : '00h 00m 00s'}</DiagnosticValue>
           </DiagnosticRow>
           <DiagnosticRow>
             <DiagnosticLabel>Core Latency</DiagnosticLabel>
-            <DiagnosticValue>1.2 ms</DiagnosticValue>
+            <DiagnosticValue>{session.authenticated ? '1.2 ms' : '--- ms'}</DiagnosticValue>
           </DiagnosticRow>
           <DiagnosticRow>
             <DiagnosticLabel>Active Peers</DiagnosticLabel>
-            <DiagnosticValue>08</DiagnosticValue>
+            <DiagnosticValue>{session.authenticated ? '08' : '00'}</DiagnosticValue>
           </DiagnosticRow>
         </DiagnosticGroup>
 
-        <ControlButton>
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>lock</span>
-          Lock Session
+        <ControlButton 
+          $authAction={!session.authenticated}
+          onClick={handleSessionAction}
+          disabled={session.loading}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+            {session.authenticated ? 'lock' : 'login'}
+          </span>
+          {session.authenticated ? 'Lock Session' : 'Authenticate'}
         </ControlButton>
       </BottomSection>
     </SidebarContainer>
