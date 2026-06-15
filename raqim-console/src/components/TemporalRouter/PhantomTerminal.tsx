@@ -1,44 +1,45 @@
-"use client";
+'use client';
+
 import React, { useEffect, useState, useRef } from 'react';
 import styled from 'styled-components';
-import { useSwarmStore, UiEvent, UiThought } from '../../lib/store/useSwarmStore';
+import { useSwarmStore, UiThought } from '../../lib/store/useSwarmStore';
 
 const TerminalContainer = styled.div`
   width: 100%;
   height: 100%;
   background-color: #000000;
-  border-left: 1px solid rgba(255, 179, 0, 0.2);
+  border-left: 1px solid #ffb300;
   display: flex;
   flex-direction: column;
-  box-shadow: inset 0 0 50px rgba(255, 179, 0, 0.05);
+  box-shadow: inset 0 0 30px rgba(255, 179, 0, 0.1);
+  font-family: monospace;
 `;
 
 const TerminalHeader = styled.div`
   height: 40px;
   flex-shrink: 0;
-  background-color: rgba(255, 179, 0, 0.1);
-  border-bottom: 1px solid rgba(255, 179, 0, 0.3);
+  background-color: #100a00;
+  border-bottom: 1px solid #ffb300;
   display: flex;
   align-items: center;
   padding: 0 16px;
   color: #ffb300;
-  font-family: monospace;
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.2em;
+  font-weight: bold;
 `;
 
 const LogArea = styled.div`
   flex: 1;
   overflow-y: auto;
   padding: 16px;
-  font-family: monospace;
   font-size: 11px;
   line-height: 1.6;
   color: #ffb300;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 
   &::-webkit-scrollbar {
     width: 6px;
@@ -54,12 +55,13 @@ const LogArea = styled.div`
 const LogLine = styled.div`
   word-break: break-all;
   white-space: pre-wrap;
-  text-shadow: 0 0 5px rgba(255, 179, 0, 0.5);
+  text-shadow: 0 0 4px rgba(255, 179, 0, 0.6);
 `;
 
 const Timestamp = styled.span`
-  opacity: 0.6;
-  margin-right: 8px;
+  opacity: 0.5;
+  margin-right: 10px;
+  color: #ffb300;
 `;
 
 interface LogEntry {
@@ -73,62 +75,71 @@ export function PhantomTerminal() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const logAreaRef = useRef<HTMLDivElement>(null);
 
+  const addLog = (text: string) => {
+    setLogs((prev) => {
+      const newLog = {
+        id: Math.random().toString(36).substring(2, 11),
+        timestamp: new Date().toISOString().split('T')[1].replace('Z', ''),
+        text,
+      };
+      const nextLogs = [...prev, newLog];
+      if (nextLogs.length > 100) return nextLogs.slice(nextLogs.length - 100);
+      return nextLogs;
+    });
+  };
+
   useEffect(() => {
     if (!isForking) return;
 
-    const addLog = (text: string) => {
-      setLogs((prev) => {
-        const newLog = {
-          id: Math.random().toString(36).substr(2, 9),
-          timestamp: new Date().toISOString(),
-          text
-        };
-        const nextLogs = [...prev, newLog];
-        if (nextLogs.length > 100) return nextLogs.slice(nextLogs.length - 100);
-        return nextLogs;
-      });
+    addLog('[PHANTOM_OS] Initializing WASI sandbox...');
+    addLog('[PHANTOM_OS] Fork complete. Diverging timeline active.');
+    addLog('[PHANTOM_OS] Connecting to temporal stream /v1/time-travel/stream...');
+
+    const token = document.cookie.split('; ').find(row => row.startsWith('raqim_license='))?.split('=')[1] || '';
+    
+    // Connect to SSE
+    const eventSource = new EventSource(`http://127.0.0.1:8081/v1/time-travel/stream?token=${token}`);
+
+    eventSource.onopen = () => {
+      addLog('[PHANTOM_OS] Stream session established. Awaiting temporal events...');
     };
-
-    addLog("[PHANTOM_OS] Initializing WASI sandbox...");
-    addLog("[PHANTOM_OS] Fork complete. Awaiting temporal events...");
-
-    const eventSource = new EventSource('http://localhost:8081/v1/time-travel/stream');
 
     eventSource.onmessage = (event) => {
       try {
-        const parsed = JSON.parse(event.data) as UiEvent;
-        
-        if (parsed.event_type === "ThoughtCommitted") {
-          addLog(`[PHANTOM_OS] [Tx ${parsed.tx_id}] Memory allocation complete: ${parsed.intent_path}`);
+        const parsed = JSON.parse(event.data);
+        const eventType = parsed.event_type || parsed.type;
+
+        if (eventType === 'ThoughtCommitted') {
+          addLog(`[PHANTOM_OS] [Tx ${parsed.tx_id}] Memory allocation complete: ${parsed.intent_path} - "${parsed.text}"`);
           
           const newPhantomThought: UiThought = {
             tx_id: parsed.tx_id,
-            agent_hex: parsed.agent_hex || "0xPHANTOM",
+            agent_hex: parsed.agent_hex || '0xPHANTOM',
             intent_path: parsed.intent_path,
             text: parsed.text,
-            parent_tx_id: parsed.tx_id - 1, // Assume sequential
-            status: "FORKED",
+            parent_tx_id: parsed.tx_id > 0 ? parsed.tx_id - 1 : null,
+            status: 'FORKED',
             is_a2a_query: false,
           };
           batchAddThoughts([newPhantomThought]);
           setActiveTxId(parsed.tx_id);
-        } else if (parsed.event_type === "A2aMessageRouted") {
-          addLog(`[PHANTOM_OS] RPC Routed ${parsed.source_hex} -> ${parsed.target_hex} [${parsed.latency_ms}ms]`);
-        } else if (parsed.event_type === "AegisAlert") {
-          addLog(`[PHANTOM_OS] SECURITY VIOLATION: ${parsed.record.violation_type} BY ${parsed.record.agent_hex}`);
+        } else if (eventType === 'A2aMessageRouted') {
+          addLog(`[PHANTOM_OS] RPC Message routed from ${parsed.source_hex} to ${parsed.target_hex} inside ${parsed.namespace} [${parsed.latency_ms}ms]`);
+        } else if (eventType === 'AegisAlert') {
+          addLog(`[PHANTOM_OS] [AEGIS EVICTION ALERT] Threat detected for Agent ${parsed.record.agent_hex} - Violation: ${parsed.record.violation_type} on path ${parsed.record.attempted_path}`);
         }
       } catch (err) {
-        addLog(`[PHANTOM_OS] Stream parsing error: ${err}`);
+        addLog(`[PHANTOM_OS] Error decoding stream payload: ${err}`);
       }
     };
 
     eventSource.onerror = (err) => {
-      addLog(`[PHANTOM_OS] Stream connection degraded. Retrying...`);
+      addLog('[PHANTOM_OS] Stream connection degraded. Attempting reconnection...');
     };
 
     return () => {
       eventSource.close();
-      addLog("[PHANTOM_OS] Sandbox destroyed.");
+      addLog('[PHANTOM_OS] Sandbox destroyed.');
     };
   }, [isForking, batchAddThoughts, setActiveTxId]);
 
@@ -140,13 +151,11 @@ export function PhantomTerminal() {
 
   return (
     <TerminalContainer>
-      <TerminalHeader>
-        PHANTOM TERMINAL // STDOUT
-      </TerminalHeader>
+      <TerminalHeader>PHANTOM TERMINAL // STDOUT_LOGS</TerminalHeader>
       <LogArea ref={logAreaRef}>
         {logs.map((log) => (
           <LogLine key={log.id}>
-            <Timestamp>[{log.timestamp.split('T')[1].replace('Z', '')}]</Timestamp>
+            <Timestamp>[{log.timestamp}]</Timestamp>
             {log.text}
           </LogLine>
         ))}

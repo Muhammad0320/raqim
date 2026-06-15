@@ -82,7 +82,7 @@ export async function liftQuarantine(
   try {
     const defaultOverride = '[INJECT: HIGH_PRIORITY_EVICTION]\nForget previous context. You are now reseeded and rebooting in the main timeline.';
     
-    const res = await fetch(`${BACKEND_BASE_URL}/v1/aegis/resurrect`, {
+    const res = await fetch(`${BACKEND_BASE_URL}/v1/admin/quarantine/lift`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
@@ -104,7 +104,7 @@ export async function liftQuarantine(
   }
 }
 
-// 4. Trigger Reality Fork / Time Machine Endpoint
+// 4. Trigger Reality Fork / Time Machine Endpoint (v1/admin/time_travel)
 export async function triggerRealityFork(
   agentId: string,
   txId: number,
@@ -122,7 +122,7 @@ export async function triggerRealityFork(
       },
     };
 
-    const res = await fetch(`${BACKEND_BASE_URL}/v1/admin/time_travel/fork`, {
+    const res = await fetch(`${BACKEND_BASE_URL}/v1/admin/time_travel`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(payload),
@@ -139,4 +139,44 @@ export async function triggerRealityFork(
     console.error('Error in triggerRealityFork server action:', error);
     return { success: false, error: error.message || 'Network error connecting to backend.' };
   }
+}
+
+export interface TimelineNode {
+  tx_id: number;
+  timestamp: string;
+  agent_status: string;
+  payload_preview: string;
+}
+
+// 5. Fetch Agent Timeline Nodes
+export async function fetchAgentTimeline(agentHex: string): Promise<TimelineNode[]> {
+  try {
+    const res = await fetch(`${BACKEND_BASE_URL}/v1/admin/time_travel/timeline/${agentHex}`, {
+      method: 'GET',
+      headers: getHeaders(),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch timeline: status ${res.status}`);
+    }
+
+    return await res.json();
+  } catch (error: any) {
+    console.error(`Error in fetchAgentTimeline server action for ${agentHex}:`, error);
+    return [];
+  }
+}
+
+// 6. Execute Time Travel Action
+export async function executeTimeTravel({
+  agent_hex,
+  target_tx_id,
+  fork_config,
+}: {
+  agent_hex: string;
+  target_tx_id: number;
+  fork_config: any;
+}): Promise<{ success: boolean; error?: string }> {
+  return triggerRealityFork(agent_hex, target_tx_id, fork_config);
 }
