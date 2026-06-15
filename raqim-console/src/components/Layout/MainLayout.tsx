@@ -1,6 +1,7 @@
 'use client';
 import { Sidebar } from './Sidebar';
 import { usePathname } from 'next/navigation';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export function MainLayout({ children, title }: { children: React.ReactNode, title: string }) {
   const pathname = usePathname();
@@ -39,8 +40,19 @@ export function MainLayout({ children, title }: { children: React.ReactNode, tit
           )}
 
           {/* Scrollable page content */}
-          <div className="flex-1 min-h-0 overflow-hidden">
-            {children}
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={pathname}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ type: 'spring', stiffness: 350, damping: 28 }}
+                style={{ height: '100%', width: '100%' }}
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
           </div>
 
           {/* ── Footer: scoped to the content column, never overlaps the sidebar ── */}

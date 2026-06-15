@@ -210,3 +210,36 @@ export async function executeTimeTravel({
     return { success: false, error: error.message || 'Network error connecting to backend.' };
   }
 }
+
+export async function getCurrentSession(): Promise<{ authenticated: boolean; subject?: string; features?: string[] }> {
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get('raqim_license')?.value;
+    if (!token) {
+      return { authenticated: false };
+    }
+    
+    const parts = token.split('.');
+    if (parts.length < 2) {
+      return { authenticated: false };
+    }
+    
+    // Base64Url decode payload
+    const payloadEncoded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const payloadJson = Buffer.from(payloadEncoded, 'base64').toString('utf8');
+    const payload = JSON.parse(payloadJson);
+    
+    if (payload.exp && Date.now() / 1000 > payload.exp) {
+      return { authenticated: false };
+    }
+    
+    return {
+      authenticated: true,
+      subject: payload.sub || 'unknown-user',
+      features: payload.features || [],
+    };
+  } catch (e) {
+    console.error("Error decoding session JWT:", e);
+    return { authenticated: false };
+  }
+}
