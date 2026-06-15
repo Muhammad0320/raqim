@@ -38,31 +38,35 @@ const LogoSection = styled.div`
 `;
 
 const LogoWrapper = styled.div`
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   cursor: pointer;
+  flex-shrink: 0;
 
-  svg path, svg line {
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  svg .r-part, svg .r-accent, svg .hex-border, svg .hex-bg {
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  &:hover svg .kernel-spine {
+  &:hover svg .r-part {
+    fill: #ffffff;
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4));
+  }
+
+  &:hover svg .r-accent {
+    filter: drop-shadow(0 0 15px rgba(0, 243, 255, 0.9)) brightness(1.2);
+  }
+
+  &:hover svg .hex-border {
     stroke: #00f3ff;
-    filter: drop-shadow(0 0 3px rgba(0, 243, 255, 0.4));
+    opacity: 0.8;
   }
-
-  &:hover svg .enclave-loop {
-    stroke: #00f3ff;
-    filter: drop-shadow(0 0 5px rgba(0, 243, 255, 0.6));
-  }
-
-  &:hover svg .synapse-axon {
-    stroke: #ffffff;
-    transform: translate(2px, 0);
+  
+  &:hover svg .hex-bg {
+    fill: #121214;
   }
 `;
 
@@ -389,15 +393,56 @@ export function Sidebar() {
     <SidebarContainer>
       <LogoSection>
         <LogoWrapper>
-          <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            {/* The Kernel Spine */}
-            <line className="kernel-spine" x1="28" y1="15" x2="28" y2="85" stroke="#ffffff" strokeWidth="8" strokeLinecap="round" />
+          <svg width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="main-plate" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#ffffff" />
+                <stop offset="100%" stopColor="#a1a1aa" />
+              </linearGradient>
+              <linearGradient id="accent-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#00f3ff" />
+                <stop offset="100%" stopColor="#0088ff" />
+              </linearGradient>
+              <linearGradient id="dark-plate" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#18181b" />
+                <stop offset="100%" stopColor="#09090b" />
+              </linearGradient>
+            </defs>
+
+            {/* Outer Technical Hexagon */}
+            <polygon className="hex-bg" points="50,2 93,25 93,75 50,98 7,75 7,25" fill="url(#dark-plate)" stroke="#27272a" strokeWidth="2" />
             
-            {/* The Enclave Loop */}
-            <path className="enclave-loop" d="M28,15 L62,15 C78,15 78,46 62,46 L28,46" stroke="#ffffff" strokeWidth="8" strokeLinejoin="round" />
+            {/* Inner Hexagon Outline */}
+            <polygon className="hex-border" points="50,10 85,30 85,70 50,90 15,70 15,30" fill="none" stroke="#27272a" strokeWidth="1" opacity="0.5" />
+
+            {/* --- Intricate 'R' Construction --- */}
             
-            {/* The Synapse Axon (Glowing Cyan Leg) */}
-            <line className="synapse-axon" x1="43" y1="46" x2="72" y2="85" stroke="#00f3ff" strokeWidth="8" strokeLinecap="round" />
+            {/* Left Stem - Composed of two parallel bars for detail */}
+            <rect className="r-part" x="28" y="24" width="6" height="52" fill="url(#main-plate)" />
+            <rect className="r-part" x="36" y="24" width="4" height="52" fill="url(#main-plate)" opacity="0.8" />
+            
+            {/* Top Loop section - Outer plate */}
+            <path className="r-part" d="M42 24 L68 24 L76 32 L76 46 L68 54 L42 54 Z" fill="url(#main-plate)" />
+            
+            {/* Inner Hole for Top Loop */}
+            <path d="M42 32 L62 32 L66 36 L66 42 L62 46 L42 46 Z" fill="#09090b" />
+
+            {/* The Accent Leg - A dynamic glowing angular piece */}
+            <polygon className="r-accent" points="42,58 54,58 74,78 62,78" fill="url(#accent-cyan)" />
+
+            {/* --- Micro Details --- */}
+            <circle cx="31" cy="24" r="1.5" fill="#09090b" />
+            <circle cx="31" cy="76" r="1.5" fill="#09090b" />
+            <circle cx="76" cy="32" r="1.5" fill="#09090b" />
+            <circle cx="76" cy="46" r="1.5" fill="#09090b" />
+            
+            {/* Glowing base nodes */}
+            <rect className="r-accent" x="28" y="80" width="6" height="2" fill="url(#accent-cyan)" />
+            <rect className="r-accent" x="36" y="80" width="4" height="2" fill="url(#accent-cyan)" />
+
+            {/* Data lines */}
+            <line x1="54" y1="58" x2="80" y2="58" stroke="#27272a" strokeWidth="1" strokeDasharray="2 2" />
+            <line x1="80" y1="58" x2="80" y2="78" stroke="#27272a" strokeWidth="1" strokeDasharray="2 2" />
           </svg>
         </LogoWrapper>
         <BrandName>
