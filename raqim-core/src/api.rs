@@ -1159,8 +1159,11 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
         // Admin / Debugging endpoints
         .route("/v1/aegis/quarantine_list", get(active_qurantine_endpoint))
-        .route("/v1/aegis/resurrect", post(lift_qurantine_and_resurrect))
-        .route("/v1/admin/time_travel/fork", post(time_travel))
+        .route(
+            "/v1/admin/quarantine/lift",
+            post(lift_qurantine_and_resurrect),
+        )
+        .route("/v1/admin/time_travel", post(time_travel))
         .route("/v1/admin/cluster/info", get(cluster_info_endpoint))
         .route("/v1/admin/cluster/topology", get(cluster_topology_endpoint))
         // System / Deployment endpoints

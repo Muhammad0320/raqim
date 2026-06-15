@@ -5,7 +5,7 @@ use raqim_core::aegis::AegisGateKeeper;
 use raqim_core::api::{ApiState, EnterpriseClaim, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 
-use http::Method;
+use axum::http::Method;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::CortexDataPlane;
@@ -541,7 +541,6 @@ async fn main() {
 
     loop {
         tokio::select! {
-
                     // If cancelled is triggered, break the infinite loop.
                     _ = cancel_token.cancelled() => {
                         println!("[NETWORK] TCP Ingress halted. Rejecting new connections. ");
@@ -551,7 +550,7 @@ async fn main() {
                 // Otherwise, Accept connections normally.
                 accpet_res = listener.accept() => {
 
-                    let (mut socket, addr) = match accpet_res {
+                    let (socket, addr) = match accpet_res {
                         Ok(res) => res,
                         Err(_) => continue
                     };
@@ -727,7 +726,7 @@ async fn main() {
                         }
                     };
 
-                    let _ = task_ui_tx.send(UiEvent::ThoughtCommited {
+                    let _ = task_ui_tx.send(UiEvent::ThoughtCommitted {
                         agent_hex: agent_hex.clone(),
                         intent_path: path_intent.to_string(),
                         tx_id,

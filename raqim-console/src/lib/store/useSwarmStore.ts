@@ -14,14 +14,18 @@ export type UiEvent =
   | { event_type: "A2aMessageRouted"; source_hex: string; target_hex: string; namespace: string; question_payload: string; answer_payload: string; latency_ms: number; }
   | { event_type: "AegisAlert"; record: AegisRecord };
 
-export interface UiThought {
-  agent_hex: string;
-  intent_path: string;
-  text: string;
-  tx_id: number;
-  status: 'PENDING' | 'COMMITTED' | 'REJECTED' | 'FORKED';
-  is_a2a_query: boolean;
-  parent_tx_id: number | null;
+export interface SystemHealth {
+  cpu_load_percent: number;
+  wasm_memory_mb: number;
+  core_temp_celcius: number;
+  mesh_latency_ms: number;
+  time: number;
+}
+
+export interface ClusterShard {
+  namespace: string;
+  active_timelines: number;
+  total_crdt_operation: number;
 }
 
 interface SwarmState {
@@ -38,6 +42,7 @@ interface SwarmState {
   topologyNodes: Node[];
   topologyEdges: Edge[];
   namespaces: string[];
+  activeTopology: ClusterShard[];
 
   // Firewall State
   aegisAlerts: AegisRecord[];
@@ -47,6 +52,11 @@ interface SwarmState {
   isPaused: boolean;
   isForking: boolean;
 
+  // System Health Vitals
+  vitalsHistory: SystemHealth[];
+  currentVitals: SystemHealth | null;
+  initVitalsStream: (token: string) => () => void;
+
   fetchInitialTopology: () => Promise<void>;
   batchAddThoughts: (thoughts: UiThought[]) => void;
   processUiEvents: (events: UiEvent[]) => void;
@@ -55,6 +65,8 @@ interface SwarmState {
   liftQuarantine: (agent_hex: string) => void;
   setIsPaused: (paused: boolean) => void;
   setIsForking: (forking: boolean) => void;
+  setActiveTopology: (topology: ClusterShard[]) => void;
+  setQuarantinedAgents: (agents: string[]) => void;
   clear: () => void;
 }
 
