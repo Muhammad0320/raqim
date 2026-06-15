@@ -4,7 +4,7 @@ import { useSwarmStore } from '../lib/store/useSwarmStore';
 import { useSwarmStream } from '../lib/hooks/useSwarmStream';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { useEffect, useRef } from 'react';
-import { DashboardCardsData } from '@/actions/dashboard';
+import { DashboardCardsData } from '../actions/admin';
 import { useHardwareVitals } from '../lib/hooks/useHardwareVitals';
 import { LiveSemanticStream } from '../components/LiveSemanticStream';
 import styled from 'styled-components';
@@ -47,6 +47,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
   const currentTps = useSwarmStore(state => state.currentTps);
   const tpsHistory = useSwarmStore(state => state.tpsHistory);
   const highestTxId = useSwarmStore(state => state.highestTxId);
+  const vitalsHistory = useSwarmStore(state => state.vitalsHistory);
 
   const vitals = useHardwareVitals(token);
 
@@ -142,20 +143,20 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
               <div className="px-4 py-3 border-b border-outline-variant/15 flex items-center justify-between bg-surface-container-high">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-outline text-sm">show_chart</span>
-                  <h3 className="font-mono text-[11px] uppercase text-on-surface-variant tracking-[0.2em] font-bold">Velocity Graph</h3>
+                  <h3 className="font-mono text-[11px] uppercase text-on-surface-variant tracking-[0.2em] font-bold">Hardware Telemetry (CPU Load)</h3>
                 </div>
               </div>
               <div className="flex-1 p-4 pb-0 pl-0 relative">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={tpsHistory}>
+                  <AreaChart data={vitalsHistory}>
                     <defs>
-                      <linearGradient id="colorTps" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="colorCpu" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#00f3ff" stopOpacity={0.4}/>
                         <stop offset="95%" stopColor="#00f3ff" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
                     <XAxis dataKey="time" hide={true} />
-                    <YAxis domain={['auto', 'auto']} hide={true} />
+                    <YAxis domain={[0, 100]} hide={true} />
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#1c1b1b', border: '1px solid #414754', borderRadius: '4px', fontFamily: 'Space Mono', fontSize: '10px' }}
                       itemStyle={{ color: '#00f3ff' }}
@@ -163,11 +164,12 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
                     />
                     <Area 
                       type="monotone" 
-                      dataKey="tps" 
+                      dataKey="cpu_load_percent" 
+                      name="CPU Load %"
                       stroke="#00f3ff" 
                       strokeWidth={2}
                       fillOpacity={1} 
-                      fill="url(#colorTps)" 
+                      fill="url(#colorCpu)" 
                       isAnimationActive={false}
                     />
                   </AreaChart>

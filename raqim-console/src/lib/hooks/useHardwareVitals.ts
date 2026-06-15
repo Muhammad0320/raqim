@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { fetchEventSource } from '@microsoft/fetch-event-source';
+import { useEffect } from 'react';
+import { useSwarmStore } from '../store/useSwarmStore';
 
 export interface HardwareVitals {
   cpu_percent: number;
@@ -10,49 +10,26 @@ export interface HardwareVitals {
 }
 
 export function useHardwareVitals(token: string) {
-  const [vitals, setVitals] = useState<HardwareVitals | null>(null);
+  const initVitalsStream = useSwarmStore(state => state.initVitalsStream);
+  const currentVitals = useSwarmStore(state => state.currentVitals);
 
   useEffect(() => {
     if (!token) return;
-
-    const controller = new AbortController();
-
-    fetchEventSource('http://127.0.0.1:8081/v1/system/health/live', {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'text/event-stream',
-      },
-      signal: controller.signal,
-      async onopen(res) {
-        if (res.ok && res.headers.get('content-type') === 'text/event-stream') {
-          console.log("Connected to Hardware Vitals SSE");
-          return;
-        } else if (res.status >= 400 && res.status < 500 && res.status !== 429) {
-          throw new Error(`Client side error ${res.status}`);
-        }
-      },
-      onmessage(event) {
-        try {
-          const data: HardwareVitals = JSON.parse(event.data);
-          setVitals(data);
-        } catch (e) {
-          console.error('Failed to parse Hardware Vitals frame', e);
-        }
-      },
-      onclose() {
-        console.log("Hardware Vitals SSE Connection closed by server");
-      },
-      onerror(err) {
-        console.error("Hardware Vitals SSE Error", err);
-        throw err;
-      }
-    });
-
+    const cleanup = initVitalsStream(token);
     return () => {
-      controller.abort();
+      cleanup();
     };
-  }, [token]);
+  }, [token, initVitalsStream]);
 
-  return vitals;
+  if (!currentVitals) return null;
+
+  return {
+    cpu_percent: currentVitals.cpu_load_percent,
+    wasm_memory_gb: currentVitals.wasm_memory_mb,
+    // The backend provides memory usage in MB. 
+    // We display it in GB or MB as needed. Let's convert MB to GB.
+    wasm_memory_max_gb: 16.0, // Assuming 16GB max allocation limit
+    mesh_latency_ms: currentVitals.mesh_latency_ms,
+    core_temp_c: currentVitals.core_temp_celcius,
+  };
 }

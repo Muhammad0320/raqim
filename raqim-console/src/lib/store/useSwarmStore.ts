@@ -14,6 +14,16 @@ export type UiEvent =
   | { event_type: "A2aMessageRouted"; source_hex: string; target_hex: string; namespace: string; question_payload: string; answer_payload: string; latency_ms: number; }
   | { event_type: "AegisAlert"; record: AegisRecord };
 
+export interface UiThought {
+  agent_hex: string;
+  intent_path: string;
+  text: string;
+  tx_id: number;
+  status: 'PENDING' | 'COMMITTED' | 'REJECTED' | 'FORKED';
+  is_a2a_query: boolean;
+  parent_tx_id: number | null;
+}
+
 export interface SystemHealth {
   cpu_load_percent: number;
   wasm_memory_mb: number;
@@ -84,6 +94,7 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   topologyNodes: [],
   topologyEdges: [],
   namespaces: [],
+  activeTopology: [],
 
   // Firewall State
   aegisAlerts: [],
@@ -93,6 +104,70 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   isPaused: false,
   isForking: false,
 
+  // System Health Vitals
+  vitalsHistory: Array(60).fill(0).map((_, i) => ({
+    cpu_load_percent: 0,
+    wasm_memory_mb: 0,
+    core_temp_celcius: 0,
+    mesh_latency_ms: 0,
+    time: Date.now() - (60 - i) * 1000
+  })),
+  currentVitals: null,
+
+  initVitalsStream: (token: string) => {
+    if (typeof window === 'undefined') return () => {};
+    const controller = new AbortController();
+    
+    import('@microsoft/fetch-event-source').then(({ fetchEventSource }) => {
+      fetchEventSource('http://127.0.0.1:8081/v1/system/health/live', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'text/event-stream',
+        },
+        signal: controller.signal,
+        async onopen(res) {
+          if (res.ok && res.headers.get('content-type')?.includes('text/event-stream')) {
+             console.log("Connected to Swarm Health SSE");
+             return;
+          }
+        },
+        onmessage(event) {
+          try {
+            const rawData = JSON.parse(event.data);
+            const payload: SystemHealth = {
+              cpu_load_percent: rawData.cpu_load_percent ?? 0,
+              wasm_memory_mb: rawData.wasm_memory_mb ?? 0,
+              core_temp_celcius: rawData.core_temp_celcius ?? 0,
+              mesh_latency_ms: rawData.mesh_latency_ms ?? 0,
+              time: Date.now()
+            };
+            set((state) => {
+              const newHistory = [...state.vitalsHistory, payload];
+              if (newHistory.length > 60) {
+                newHistory.shift();
+              }
+              return {
+                currentVitals: payload,
+                vitalsHistory: newHistory
+              };
+            });
+          } catch (e) {
+            console.error('Failed to parse health frame', e);
+          }
+        },
+        onerror(err) {
+          console.error("Health SSE connection error, retrying...", err);
+          throw err;
+        }
+      });
+    });
+
+    return () => {
+      controller.abort();
+    };
+  },
+
   liftQuarantine: (agent_hex: string) => 
     set((state) => ({
       quarantinedAgents: state.quarantinedAgents.filter(a => a !== agent_hex)
@@ -100,6 +175,8 @@ export const useSwarmStore = create<SwarmState>((set) => ({
 
   setIsPaused: (paused: boolean) => set({ isPaused: paused }),
   setIsForking: (forking: boolean) => set({ isForking: forking }),
+  setActiveTopology: (topology: ClusterShard[]) => set({ activeTopology: topology }),
+  setQuarantinedAgents: (agents: string[]) => set({ quarantinedAgents: agents }),
 
   fetchInitialTopology: async () => {
     // In a real app, this would be a fetch to /v1/swarm/topology/snapshot
@@ -304,7 +381,8 @@ export const useSwarmStore = create<SwarmState>((set) => ({
     tpsHistory: Array(60).fill(0).map((_, i) => ({ time: Date.now() - (60 - i) * 1000, tps: 0 })),
     topologyNodes: [],
     topologyEdges: [],
-    namespaces: []
+    namespaces: [],
+    activeTopology: []
   }),
 }));
 

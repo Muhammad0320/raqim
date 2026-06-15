@@ -6,7 +6,7 @@ import { MainLayout } from '../Layout/MainLayout';
 import { DagCanvas } from '../DagCanvas/DagCanvas';
 import { ScrubberDeck } from './ScrubberDeck';
 import { PhantomTerminal } from './PhantomTerminal';
-import { RealityForkModal } from './RealityForkModal';
+import { TimeMachineModal } from '../TimeMachineModal';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
 
@@ -189,7 +189,7 @@ export function TemporalClientLayout({ agentAliases }: TemporalClientLayoutProps
             )}
           </AnimatePresence>
           
-          <RealityForkModal />
+          <TimeMachineModal />
         </MainStage>
 
         <ScrubberDeck selectedAgentHex={selectedAgentHex} />

@@ -6,6 +6,7 @@ import { ThreatRadar } from '../../components/Firewall/ThreatRadar';
 import { StdoutLogs } from '../../components/Firewall/StdoutLogs';
 import { ReseedModal } from '../../components/Firewall/ReseedModal';
 import { MainLayout } from '../../components/Layout/MainLayout';
+import { AegisPanel } from '../../components/AegisPanel';
 
 // CSS Grid Brutalist Layout
 const GridContainer = styled.div`
@@ -338,56 +339,7 @@ export function FirewallClientLayout({ initialMetrics, initialQuarantineList, to
         </MetricsContainer>
 
         {/* Quarantine Blocklist Table */}
-        <TableContainer>
-          <TableHeader>
-            <TableTitle>Active Quarantined Enclaves</TableTitle>
-            <SearchInput
-              type="text"
-              placeholder="Search quarantines..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-          </TableHeader>
-          <GridHeader>
-            <div>Agent ID Hex</div>
-            <div>Violation Class</div>
-            <div>Attempted Path</div>
-            <div style={{ textAlign: 'right' }}>Eviction</div>
-          </GridHeader>
-          <TableBody>
-            {filteredList.length === 0 ? (
-              <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#52525b', fontSize: '12px' }}>
-                NO ACTIVE QUARANTINES
-              </div>
-            ) : (
-              filteredList.map(record => (
-                <GridRow
-                  key={record.agent_hex}
-                  $selected={selectedAgentHex === record.agent_hex}
-                  onClick={() => setSelectedAgentHex(record.agent_hex)}
-                >
-                  <HexVal>{record.agent_hex}</HexVal>
-                  <div>
-                    <ViolationBadge $type={record.violation_type}>
-                      {record.violation_type}
-                    </ViolationBadge>
-                  </div>
-                  <PathVal title={record.attempted_path}>{record.attempted_path}</PathVal>
-                  <div style={{ textAlign: 'right' }}>
-                    <ActionBtn
-                      onClick={e => {
-                        e.stopPropagation();
-                        setReseedAgentHex(record.agent_hex);
-                      }}
-                    >
-                      Evict / Reseed
-                    </ActionBtn>
-                  </div>
-                </GridRow>
-              ))
-            )}
-          </TableBody>
-        </TableContainer>
+        <AegisPanel />
 
         {/* Live Stdout logs */}
         <StdoutLogs token={token} />
