@@ -11,6 +11,7 @@ export function A2aEdge({
   markerEnd,
   data
 }: EdgeProps) {
+  const edgeData = data as any;
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -86,13 +87,13 @@ export function A2aEdge({
           <div className="flex flex-col">
             <span className="font-mono text-[8px] text-[#ffb300] tracking-widest uppercase">A2A Route</span>
             <span className="font-mono text-[9px] text-white">
-              {data?.question_payload && (data.question_payload as string).length > 30 
-                ? (data.question_payload as string).substring(0, 30) + '...' 
-                : (data?.question_payload as string)}
+              {edgeData?.question_payload && (edgeData.question_payload as string).length > 30 
+                ? (edgeData.question_payload as string).substring(0, 30) + '...' 
+                : (edgeData?.question_payload as string)}
             </span>
           </div>
           <div className="h-4 w-px bg-zinc-800"></div>
-          <span className="font-mono text-[10px] text-white font-bold">{data?.latency || 0}ms</span>
+          <span className="font-mono text-[10px] text-white font-bold">{edgeData?.latency || 0}ms</span>
         </div>
       </EdgeLabelRenderer>
     </>

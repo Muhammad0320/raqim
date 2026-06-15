@@ -158,7 +158,7 @@ const pulse = keyframes`
   50% { opacity: 1; }
 `;
 
-const LoadingOverlay = styled.div`
+const LoadingOverlay = styled(motion.div)`
   position: absolute;
   inset: 0;
   background-color: rgba(2, 2, 2, 0.95);
@@ -183,7 +183,7 @@ const Spinner = styled.div`
   }
 `;
 
-const SuccessOverlay = styled.div`
+const SuccessOverlay = styled(motion.div)`
   position: absolute;
   inset: 0;
   background-color: rgba(2, 2, 2, 0.95);

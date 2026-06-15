@@ -179,6 +179,36 @@ const SecondaryButton = styled.button`
 `;
 
 export default function LoginPage() {
+  const [error, setError] = React.useState<string | null>(null);
+
+  const handleAuth = async (formData: FormData) => {
+    setError(null);
+    try {
+      const result = await authenticateConsole(formData);
+      if (result?.error) {
+        setError(result.error);
+      }
+    } catch (e: any) {
+      // Next.js redirects are thrown as errors. Let them bubble up.
+      if (e.message?.includes('NEXT_REDIRECT') || e.digest?.includes('NEXT_REDIRECT')) {
+        throw e;
+      }
+      setError(e.message || 'Authentication failed');
+    }
+  };
+
+  const handleBootOpenCore = async (formData: FormData) => {
+    setError(null);
+    try {
+      await bootOpenCore();
+    } catch (e: any) {
+      if (e.message?.includes('NEXT_REDIRECT') || e.digest?.includes('NEXT_REDIRECT')) {
+        throw e;
+      }
+      setError(e.message || 'Boot failed');
+    }
+  };
+
   return (
     <PageContainer>
       <LoginContainer>
@@ -189,7 +219,7 @@ export default function LoginPage() {
           <SystemStatus>Aegis Terminal Active</SystemStatus>
         </LogoWrapper>
         
-        <Form action={authenticateConsole}>
+        <Form action={handleAuth}>
           <InputGroup>
             <Label htmlFor="license_key">Enterprise License Key (JWT)</Label>
             <Input 
@@ -202,6 +232,12 @@ export default function LoginPage() {
             />
           </InputGroup>
           
+          {error && (
+            <div style={{ color: '#ff003c', fontSize: '0.75rem', textTransform: 'uppercase', borderLeft: '2px solid #ff003c', paddingLeft: '8px', margin: '4px 0' }}>
+              Error: {error}
+            </div>
+          )}
+          
           <ButtonContainer>
             <PrimaryButton type="submit">
               [ Authenticate Console ]
@@ -209,7 +245,7 @@ export default function LoginPage() {
           </ButtonContainer>
         </Form>
         
-        <form action={bootOpenCore}>
+        <form action={handleBootOpenCore}>
           <SecondaryButton type="submit">
             [ Boot Open Core (Local LAN) ]
           </SecondaryButton>

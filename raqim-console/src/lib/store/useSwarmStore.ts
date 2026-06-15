@@ -291,7 +291,7 @@ export const useSwarmStore = create<SwarmState>((set) => ({
       };
 
       for (const ev of events) {
-        if (ev.event_type === 'ThoughtCommitted' || ev.event_type === 'ThoughtCommited') {
+        if (ev.event_type === 'ThoughtCommitted') {
           ensureNamespaceNode(ev.intent_path);
           
           const agentNodeId = `agent-${ev.agent_hex}`;
@@ -352,14 +352,18 @@ export const useSwarmStore = create<SwarmState>((set) => ({
     set((state) => {
       const now = Date.now();
       // Keep edges created within the last 2000ms so popup can live
-      const activeEdges = state.topologyEdges.filter(e => now - (e.data?.timestamp || 0) < 2000);
+      const activeEdges = state.topologyEdges.filter(e => {
+        const timestamp = (e.data as any)?.timestamp || 0;
+        return now - timestamp < 2000;
+      });
       
       // Also turn off pulse for old nodes
       let nodesChanged = false;
       const updatedNodes = state.topologyNodes.map(n => {
-        if (n.type === 'agent' && n.data?.pulseTimestamp && now - n.data.pulseTimestamp > 3000) {
+        const data = n.data as any;
+        if (n.type === 'agent' && data?.pulseTimestamp && now - data.pulseTimestamp > 3000) {
           nodesChanged = true;
-          return { ...n, data: { ...n.data, pulseTimestamp: null } };
+          return { ...n, data: { ...data, pulseTimestamp: null } };
         }
         return n;
       });

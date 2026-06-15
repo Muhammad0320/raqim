@@ -98,7 +98,7 @@ export function PhantomTerminal() {
       try {
         const parsed = JSON.parse(event.data) as UiEvent;
         
-        if (parsed.event_type === "ThoughtCommitted" || parsed.event_type === "ThoughtCommited") {
+        if (parsed.event_type === "ThoughtCommitted") {
           addLog(`[PHANTOM_OS] [Tx ${parsed.tx_id}] Memory allocation complete: ${parsed.intent_path}`);
           
           const newPhantomThought: UiThought = {
