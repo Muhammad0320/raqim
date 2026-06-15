@@ -3,8 +3,15 @@ import { useSwarmStore, UiThought, UiEvent } from '../store/useSwarmStore';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { startMockStream } from '../mockGenerator';
 
+function getCookie(name: string): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(';').shift();
+  return undefined;
+}
+
 const SSE_URL = 'http://127.0.0.1:8081/v1/system/firehose';
-const JWT_TOKEN = 'mock_license_key_123'; // Replace with real auth token logic
 
 export function useSwarmStream() {
   const { batchAddThoughts, processUiEvents } = useSwarmStore();
@@ -12,6 +19,7 @@ export function useSwarmStream() {
   const eventsBufferRef = useRef<UiEvent[]>([]);
   const isMock = false; // Set to false to listen to the real Rust backend
   const rAF_Ref = useRef<number>(0);
+  const jwtToken = getCookie('raqim_license') || 'mock_license_key_123';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -36,7 +44,7 @@ export function useSwarmStream() {
       fetchEventSource(SSE_URL, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${JWT_TOKEN}`,
+          'Authorization': `Bearer ${jwtToken}`,
           'Accept': 'text/event-stream',
         },
         signal: controller.signal,

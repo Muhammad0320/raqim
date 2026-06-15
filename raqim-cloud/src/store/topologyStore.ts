@@ -133,17 +133,25 @@ export const useTopologyStore = create<TopologyState>((set, get) => ({
   },
 
   processEvent: (event) => {
-    if (event.event_type === 'ThoughtCommited') {
-      get().handleThoughtCommited({ hex: event.agent_hex, namespace: event.intent_path });
-    } else if (event.event_type === 'A2aMessageRouted') {
+    const eventType = event.event_type || event.type;
+    if (eventType === 'ThoughtCommited' || eventType === 'ThoughtCommitted') {
+      const hex = event.agent_hex || event.agent_id;
+      const namespace = event.intent_path || event.namespace;
+      if (hex && namespace) {
+        get().handleThoughtCommited({ hex, namespace });
+      }
+    } else if (eventType === 'A2aMessageRouted') {
       get().handleA2aMessageRouted({
         sourceHex: event.source_hex,
         targetHex: event.target_hex,
         namespace: event.namespace,
         question_payload: event.question_payload,
       });
-    } else if (event.event_type === 'AegisAlert') {
-      get().handleAegisAlert({ hex: event.record.agent_hex });
+    } else if (eventType === 'AegisAlert') {
+      const hex = event.record?.agent_hex || event.agent_hex;
+      if (hex) {
+        get().handleAegisAlert({ hex });
+      }
     }
   },
 
