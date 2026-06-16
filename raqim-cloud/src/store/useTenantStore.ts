@@ -3,7 +3,9 @@ import { createClient } from '@/utils/supabase/client';
 import { Database } from '@/types/supabase';
 
 export type Profile = Database['public']['Tables']['profiles']['Row'];
-export type Organization = Database['public']['Tables']['organizations']['Row'];
+export type Organization = Database['public']['Tables']['organizations']['Row'] & {
+  plan_tier?: string;
+};
 
 interface TenantState {
   profile: Profile | null;
@@ -70,6 +72,7 @@ export const useTenantStore = create<TenantState>((set, get) => ({
             display_name: 'Acme Corp (Dev Bypass)',
             sso_domain: 'acme.com',
             stripe_customer_id: null,
+            plan_tier: 'PRO',
           },
           {
             id: 'e0000000-0000-0000-0000-000000000001',
@@ -77,6 +80,7 @@ export const useTenantStore = create<TenantState>((set, get) => ({
             display_name: 'JPMorgan Chase (Dev Bypass)',
             sso_domain: 'jpmorgan.com',
             stripe_customer_id: null,
+            plan_tier: 'ENTERPRISE',
           },
         ];
 
@@ -121,13 +125,22 @@ export const useTenantStore = create<TenantState>((set, get) => ({
         throw new Error(memberError.message || 'Failed to fetch user organizations');
       }
 
+      // Fetch subscriptions to associate plan_tier
+      const { data: subsData } = await supabase
+        .from('subscriptions' as any)
+        .select('org_id, plan_tier');
+
+      const subsMap = new Map((subsData || []).map((s: any) => [s.org_id, s.plan_tier]));
+
       // Safeguard extraction in case organizations is an array or object
       const organizations = (memberData || [])
         .map((item) => {
-          if (Array.isArray(item.organizations)) {
-            return item.organizations[0];
-          }
-          return item.organizations;
+          const org = Array.isArray(item.organizations) ? item.organizations[0] : item.organizations;
+          if (!org) return null;
+          return {
+            ...org,
+            plan_tier: subsMap.get(org.id) || 'OPEN_CORE'
+          };
         })
         .filter((org): org is Organization => !!org);
 

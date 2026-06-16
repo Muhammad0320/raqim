@@ -1,14 +1,30 @@
 import React from 'react';
+import { cookies } from 'next/headers';
 import { createClient } from '@/utils/supabase/server';
 import { LicenseVendingMachine } from '@/components/dashboard/LicenseVendingMachine';
 import { TelemetryChart } from '@/components/dashboard/TelemetryChart';
 
 export default async function DashboardPage() {
   const supabase = await createClient();
+  const cookieStore = await cookies();
+  const activeOrgId = cookieStore.get('active-org-id')?.value;
 
-  // 1. Fetch organization (Mocking the current user session by picking the first org)
-  const { data: orgs } = await supabase.from('organizations').select('*').limit(1);
-  const org = orgs?.[0];
+  // 1. Fetch organization based on cookie or fallback to first org
+  let org = null;
+  if (activeOrgId) {
+    const { data: matchedOrg } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('id', activeOrgId)
+      .maybeSingle();
+    org = matchedOrg;
+  }
+
+  if (!org) {
+    const { data: orgs } = await supabase.from('organizations').select('*').limit(1);
+    org = orgs?.[0] || null;
+  }
+
   const orgId = org?.id || '00000000-0000-0000-0000-000000000000';
 
   // 2. Fetch subscription

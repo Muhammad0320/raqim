@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useTransition } from 'react';
-import { regenerateLicense } from '@/app/dashboard/actions';
+import React, { useState } from 'react';
+import { MintLicenseModal } from '@/components/MintLicenseModal';
 
 interface VendingMachineProps {
   orgId: string;
@@ -13,23 +13,13 @@ interface VendingMachineProps {
 export function LicenseVendingMachine({ orgId, planTier, activeJwt, issueDate }: VendingMachineProps) {
   const [showKey, setShowKey] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [isPending, startTransition] = useTransition();
+  const [isMintModalOpen, setIsMintModalOpen] = useState(false);
 
   const handleCopy = () => {
     if (!activeJwt) return;
     navigator.clipboard.writeText(activeJwt);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleRegenerate = () => {
-    startTransition(async () => {
-      try {
-        await regenerateLicense(orgId);
-      } catch (err) {
-        console.error("Failed to regenerate:", err);
-      }
-    });
   };
 
   const isEnterprise = planTier === 'ENTERPRISE';
@@ -49,11 +39,10 @@ export function LicenseVendingMachine({ orgId, planTier, activeJwt, issueDate }:
         </div>
         <div className="flex space-x-2">
           <button 
-            onClick={handleRegenerate}
-            disabled={isPending || isOpenCore}
-            className="px-3 py-1.5 text-xs font-medium border border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white rounded-lg transition-all disabled:opacity-50"
+            onClick={() => setIsMintModalOpen(true)}
+            className="px-3 py-1.5 text-xs font-medium border border-zinc-800/50 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 hover:text-white rounded-lg transition-all"
           >
-            {isPending ? "Regenerating..." : "Regenerate"}
+            Mint License
           </button>
           <button 
             onClick={() => setShowKey(!showKey)}
@@ -88,6 +77,15 @@ export function LicenseVendingMachine({ orgId, planTier, activeJwt, issueDate }:
           <span>{copied ? "Copied!" : "Copy to Clipboard"}</span>
         </button>
       </div>
+
+      <MintLicenseModal 
+        isOpen={isMintModalOpen} 
+        onClose={() => setIsMintModalOpen(false)} 
+        onSuccessCallback={() => {
+          // Force layout refresh of data
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }
