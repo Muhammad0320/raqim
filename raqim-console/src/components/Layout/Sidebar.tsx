@@ -28,72 +28,45 @@ const SidebarContainer = styled.aside`
 `;
 
 const LogoSection = styled.div`
-  padding: 24px;
+  padding: 28px 24px;
   border-bottom: 1px solid #1f1f23;
   display: flex;
   align-items: center;
-  gap: 16px;
-  background: linear-gradient(180deg, #09090b 0%, #050505 100%);
+  gap: 18px;
+  background-color: #050505;
   box-sizing: border-box;
 `;
 
 const LogoWrapper = styled.div`
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  cursor: pointer;
   flex-shrink: 0;
-
-  svg .r-part, svg .r-accent, svg .hex-border, svg .hex-bg {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  &:hover svg .r-part {
-    fill: #ffffff;
-    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4));
-  }
-
-  &:hover svg .r-accent {
-    filter: drop-shadow(0 0 15px rgba(0, 243, 255, 0.9)) brightness(1.2);
-  }
-
-  &:hover svg .hex-border {
-    stroke: #00f3ff;
-    opacity: 0.8;
-  }
-  
-  &:hover svg .hex-bg {
-    fill: #121214;
-  }
 `;
 
 const BrandName = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 `;
 
 const BrandTitle = styled.h1`
-  font-size: 14px;
+  font-size: 20px;
   font-weight: 900;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.15em;
   color: #ffffff;
   margin: 0;
   text-transform: uppercase;
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.15);
 `;
 
 const BrandSubtitle = styled.span`
-  font-size: 9px;
-  font-weight: bold;
-  letter-spacing: 0.28em;
-  color: #00f3ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #71717a;
   text-transform: uppercase;
-  opacity: 0.9;
-  text-shadow: 0 0 5px rgba(0, 243, 255, 0.3);
 `;
 
 const ProfileSection = styled.div`
@@ -393,56 +366,16 @@ export function Sidebar() {
     <SidebarContainer>
       <LogoSection>
         <LogoWrapper>
-          <svg width="44" height="44" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="main-plate" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#ffffff" />
-                <stop offset="100%" stopColor="#a1a1aa" />
-              </linearGradient>
-              <linearGradient id="accent-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#00f3ff" />
-                <stop offset="100%" stopColor="#0088ff" />
-              </linearGradient>
-              <linearGradient id="dark-plate" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#18181b" />
-                <stop offset="100%" stopColor="#09090b" />
-              </linearGradient>
-            </defs>
-
-            {/* Outer Technical Hexagon */}
-            <polygon className="hex-bg" points="50,2 93,25 93,75 50,98 7,75 7,25" fill="url(#dark-plate)" stroke="#27272a" strokeWidth="2" />
+          <svg width="52" height="52" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            {/* Pure Brutalist Functional Logo */}
+            {/* Stem */}
+            <rect x="18" y="15" width="14" height="80" fill="#ffffff" />
             
-            {/* Inner Hexagon Outline */}
-            <polygon className="hex-border" points="50,10 85,30 85,70 50,90 15,70 15,30" fill="none" stroke="#27272a" strokeWidth="1" opacity="0.5" />
-
-            {/* --- Intricate 'R' Construction --- */}
+            {/* Loop */}
+            <path fillRule="evenodd" clipRule="evenodd" d="M32 15 L68 15 L83 30 L83 50 L68 65 L32 65 Z M32 29 L69 29 L69 51 L32 51 Z" fill="#ffffff" />
             
-            {/* Left Stem - Composed of two parallel bars for detail */}
-            <rect className="r-part" x="28" y="24" width="6" height="52" fill="url(#main-plate)" />
-            <rect className="r-part" x="36" y="24" width="4" height="52" fill="url(#main-plate)" opacity="0.8" />
-            
-            {/* Top Loop section - Outer plate */}
-            <path className="r-part" d="M42 24 L68 24 L76 32 L76 46 L68 54 L42 54 Z" fill="url(#main-plate)" />
-            
-            {/* Inner Hole for Top Loop */}
-            <path d="M42 32 L62 32 L66 36 L66 42 L62 46 L42 46 Z" fill="#09090b" />
-
-            {/* The Accent Leg - A dynamic glowing angular piece */}
-            <polygon className="r-accent" points="42,58 54,58 74,78 62,78" fill="url(#accent-cyan)" />
-
-            {/* --- Micro Details --- */}
-            <circle cx="31" cy="24" r="1.5" fill="#09090b" />
-            <circle cx="31" cy="76" r="1.5" fill="#09090b" />
-            <circle cx="76" cy="32" r="1.5" fill="#09090b" />
-            <circle cx="76" cy="46" r="1.5" fill="#09090b" />
-            
-            {/* Glowing base nodes */}
-            <rect className="r-accent" x="28" y="80" width="6" height="2" fill="url(#accent-cyan)" />
-            <rect className="r-accent" x="36" y="80" width="4" height="2" fill="url(#accent-cyan)" />
-
-            {/* Data lines */}
-            <line x1="54" y1="58" x2="80" y2="58" stroke="#27272a" strokeWidth="1" strokeDasharray="2 2" />
-            <line x1="80" y1="58" x2="80" y2="78" stroke="#27272a" strokeWidth="1" strokeDasharray="2 2" />
+            {/* Accent Leg */}
+            <polygon points="45,65 63,65 83,95 65,95" fill="#00f3ff" />
           </svg>
         </LogoWrapper>
         <BrandName>
