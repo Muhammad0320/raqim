@@ -16,11 +16,11 @@ export default async function BillingPage() {
   let planTier = 'OPEN_CORE';
 
   if (orgId) {
-    const { data: sub } = await supabase
-      .from('subscriptions')
+    const { data: sub } = await (supabase
+      .from('subscriptions' as any)
       .select('*')
       .eq('org_id', orgId)
-      .single();
+      .single() as any);
     
     if (sub) {
       planTier = sub.plan_tier;

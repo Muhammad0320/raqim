@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 
 
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!); 
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
+  process.env.SUPABASE_SERVICE_ROLE_KEY || "placeholder"
+);
 const PUBLIC_KEY = process.env.RAQIM_RSA_PUBLIC_KEY;
 const PRIVATE_KEY = process.env.RAQIM_RSA_PRIVATE_KEY; 
 

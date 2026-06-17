@@ -4,7 +4,10 @@ import Stripe from "stripe"
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {apiVersion: "2025-12-18" as any});
 
-const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY! );
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
+  process.env.SUPABASE_SERVICE_ROLE_KEY || "placeholder"
+);
 
 export async function POST(req: Request) {
 
@@ -32,13 +35,13 @@ export async function POST(req: Request) {
 
         if (orgId) {
 
-            await supabaseAdmin.from("subscription").upsert({
+            await (supabaseAdmin.from("subscriptions" as any).upsert({
                 org_id: orgId,
                 stripe_subscription_id: subscription.id, 
                 plan_tier: tier, 
                 status: subscription.status,
                 current_period_end: new Date(subscription.current_period_end * 1000).toISOString() 
-            })
+            }) as any)
 
         }
 
@@ -56,7 +59,7 @@ export async function POST(req: Request) {
             const org_id = orgs[0].id;
             // Instantly revoke license in the db. 
             await supabaseAdmin.from("licenses").update({revoked: true}).eq("org_id", org_id); 
-            await supabaseAdmin.from("organization").update({plan_tier: "OPEN_CORE"}).eq("id", org_id);
+            await (supabaseAdmin.from("subscriptions" as any).update({plan_tier: "OPEN_CORE"}).eq("org_id", org_id) as any);
         }
     } 
 

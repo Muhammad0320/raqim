@@ -54,10 +54,10 @@ export default async function DashboardPage() {
     .limit(7) as any);
 
   // Calculate aggregates
-  const rawData = telemetryData || [];
-  const aggCrdt = rawData.reduce((acc, curr) => acc + (Number(curr.daily_crdt) || 0), 0);
-  const aggA2a = rawData.reduce((acc, curr) => acc + (Number(curr.daily_a2a) || 0), 0);
-  const aggTimeTravel = rawData.reduce((acc, curr) => acc + (Number(curr.daily_time_travel) || 0), 0);
+  const rawData = (telemetryData || []) as any[];
+  const aggCrdt = rawData.reduce((acc: number, curr: any) => acc + (Number(curr.daily_crdt) || 0), 0);
+  const aggA2a = rawData.reduce((acc: number, curr: any) => acc + (Number(curr.daily_a2a) || 0), 0);
+  const aggTimeTravel = rawData.reduce((acc: number, curr: any) => acc + (Number(curr.daily_time_travel) || 0), 0);
 
   // Format bytes for display
   const formatBytes = (bytes: number) => {
