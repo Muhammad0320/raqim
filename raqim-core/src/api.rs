@@ -883,10 +883,6 @@ pub async fn semantic_search_endpoint(
     State(state): State<ApiState>,
     Query(params): Query<RagQuery>,
 ) -> Result<Json<Vec<String>>, StatusCode> {
-    if !identity.0.features.contains(&"base_os".to_string()) {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
     let limit = params.limit.unwrap_or(5);
 
     match state
