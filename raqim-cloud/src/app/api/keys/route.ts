@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     let subData = null;
     
     const subRes = await supabase
-      .from("subscriptions")
+      .from("subscriptions" as any)
       .select("plan_tier")
       .eq("org_id", org_id)
       .single();

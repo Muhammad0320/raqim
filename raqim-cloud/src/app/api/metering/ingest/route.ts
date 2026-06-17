@@ -92,7 +92,7 @@ export async function POST(req: Request) {
     }));
 
     const { error: insertError } = await supabaseAdmin
-      .from("telemetry_events")
+      .from("telemetry_events" as any)
       .insert(rows);
 
     if (insertError) {

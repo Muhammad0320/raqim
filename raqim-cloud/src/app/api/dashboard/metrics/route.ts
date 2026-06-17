@@ -11,7 +11,7 @@ export async function GET(req: Request) {
 
     if (!orgId) {
       const cookieStore = await cookies();
-      orgId = cookieStore.get("active-org-id")?.value;
+      orgId = cookieStore.get("active-org-id")?.value || null;
     }
 
     if (!orgId) {
