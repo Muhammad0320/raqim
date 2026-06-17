@@ -83,25 +83,6 @@ impl AegisGateKeeper {
         gatekeeper
     }
 
-    /// Reads and deserialize the TOML file from the physical disk
-    fn parse_toml(path: &str) -> HashMap<String, AegisPolicy> {
-        match fs::read_to_string(&path) {
-            Ok(content) => match toml::from_str::<AegisManifest>(&content) {
-                Ok(manifest) => manifest.policies,
-                Err(e) => {
-                    eprintln!(
-                        "[AEGIS FATAL] Failed to parse aegis.toml: {}. Defaulting to lockdown. ",
-                        e
-                    );
-                    HashMap::new() // 
-                }
-            },
-            Err(_) => {
-                eprintln!("[AEGIS WARNING] aegis.toml not found system is open to attack.");
-                HashMap::new()
-            }
-        }
-    }
 
     /// The Semantic Interdiction Switch. Returns TRUE if allowed, FALSE if malicious.
     pub fn enforce_aegis_policy(&self, agent_hex: &str, intent_path: &str) -> bool {
@@ -240,4 +221,329 @@ impl AegisGateKeeper {
         );
         false
     }
+}
+
+==========================================
+use clap::{Parser, Subcommand};
+use ed25519_dalek::{SigningKey, Signer};
+use md5::{Md5, Digest};
+use rand::rngs::OsRng;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::fs;
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// The shared cryptographic token layout compiled across the ecosystem nodes
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CapabilityCertificate {
+    pub agent_hex: String,
+    pub group_name: String,
+    pub allowed_namespaces: Vec<String>,
+    pub blocked_namespaces: Vec<String>,
+    pub expiration_timestamp: u64,
+    pub master_signature: Vec<u8>,
+}
+
+#[derive(Parser)]
+#[command(name = "raqim", about = "Raqim OS Decentralized Administration CLI", version = "2.0")]
+struct Cli {
+    /// URL of the active Raqim OS Control Plane Daemon
+    #[arg(short, long, default_value = "http://127.0.0.1:8081", global = true)]
+    daemon_url: String,
+
+    /// Enterprise Master License JWT for control plane endpoint authentication
+    #[arg(short, long, env = "RAQIM_LICENSE_KEY", global = true)]
+    license_key: Option<String>,
+
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Decentralized Cryptographic Fleet Identity Management
+    Keys {
+        #[command(subcommand)]
+        action: KeyAction,
+    },
+
+    /// Aegis Live Firewall Control Matrix Management
+    Aegis {
+        #[command(subcommand)]
+        action: AegisAction,
+    },
+
+    /// Time Machine & Reality Forking Administration
+    TimeTravel {
+        /// Unique 16-byte identifying hex token of the target agent context
+        agent_id: String,
+        
+        /// Absolute immutable Transaction ID checkpoint to roll back to
+        tx_id: u64,
+
+        /// Optional file path pointing to a structured JSON ForkConfig payload
+        #[arg(short, long)]
+        fork_config: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum KeyAction {
+    /// Mints an isolated batch of verifiable agent identities signed by the Master CA Key
+    Generate {
+        /// Base filename stem prefix for the minted file bundle
+        #[arg(short, long)]
+        name: String,
+
+        /// The live policy target security group defined inside the server's aegis.toml
+        #[arg(short, long)]
+        group: String,
+
+        /// Total count of individual key/passport sets to generate concurrently
+        #[arg(short, long, default_value_t = 1)]
+        count: u32,
+
+        /// File system path pointing to the secret Master Private PEM/DAT Key block
+        #[arg(short, long, default_value = "./keys/swarm_master.pem", env = "RAQIM_MASTER_KEY")]
+        master_key_path: String,
+
+        /// Absolute path to the secure output storage container directory
+        #[arg(short, long, default_value = "./vault/identities")]
+        output_dir: String,
+
+        /// Lifetime duration constraint of the certificates in days
+        #[arg(short, long, default_value_t = 365)]
+        days: u64,
+    },
+}
+
+#[derive(Subcommand)]
+enum AegisAction {
+    /// Lists all runtime nodes currently isolated inside the Aegis quarantine map
+    List,
+
+    /// Lifts isolation bounds on a quarantined agent, restoring data plane access
+    Lift { 
+        agent_id: String 
+    },
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+    let http_client = Client::builder().build()?;
+
+    let get_auth = || -> String {
+        cli.license_key
+            .clone()
+            .expect("FATAL ERROR: Admin authorization token required. Pass via --license-key or set RAQIM_LICENSE_KEY")
+    };
+
+    match &cli.command {
+        Commands::Keys {
+            action: KeyAction::Generate {
+                name,
+                group,
+                count,
+                master_key_path,
+                output_dir,
+                days,
+            },
+        } => {
+            println!("[CA CLIENT] Initializing out-of-band identity minting pass...");
+
+            // 1. Load the Swarm Master Private CA Signing Key from disk
+            if !Path::new(master_key_path).exists() {
+                eprintln!("FATAL CA ERROR: Swarm Master Key file not found at path: '{}'", master_key_path);
+                std::process::exit(1);
+            }
+            let master_key_bytes = fs::read(master_key_path)?;
+            let master_array: &[u8; 32] = master_key_bytes.as_slice().try_into().map_err(|_| {
+                "Cryptographic Identity Failure: Master Key file footprint must be exactly 32 raw bytes long"
+            })?;
+            let master_signing_key = SigningKey::from_bytes(master_array);
+
+            // 2. Resolve target storage paths
+            fs::create_dir_all(output_dir)?;
+
+            // Calculate expiration timestamp bounds
+            let seconds_in_day = 86400;
+            let expiration_timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + (days * seconds_in_day);
+
+            let mut csprng = OsRng;
+            println!("[CA CLIENT] Stamping certificates for Role Group: '{}'", group);
+
+            // 3. Loop through execution allocations to generate the identities
+            for i in 1..=*count {
+                let current_signing_key = SigningKey::generate(&mut csprng);
+                let current_public_key = current_signing_key.verifying_key();
+
+                // Derive the 16-byte unique identifying token via MD5 hash pass
+                let mut hasher = Md5::new();
+                hasher.update(current_public_key.to_bytes());
+                let agent_id_bytes: [u8; 16] = hasher.finalize().into();
+                let agent_hex = hex::encode(agent_id_bytes);
+
+                // 4. Construct the unsigned CapabilityCertificate template frame
+                let mut certificate = CapabilityCertificate {
+                    agent_hex: agent_hex.clone(),
+                    group_name: group.clone(),
+                    allowed_namespaces: Vec::new(), // Enforced via server-side hot manifests instead
+                    blocked_namespaces: Vec::new(),
+                    expiration_timestamp,
+                    master_signature: Vec::new(),
+                };
+
+                // 5. Generate the authentic signature over the structural bytes
+                let serialized_unsigned = postcard::to_allocvec(&certificate)?;
+                let master_signature = master_signing_key.sign(&serialized_unsigned);
+                certificate.master_signature = master_signature.to_bytes().to_vec();
+
+                // Pack the final token payload using postcard
+                let final_certificate_payload = postcard::to_allocvec(&certificate)?;
+
+                // 6. Enforce file naming stems to ensure compatibility with hot reloaders
+                let file_suffix = if *count > 1 { format!("{}_{:03}", name, i) } else { name.clone() };
+                let key_dest_path = format!("{}/{}.key", output_dir, file_suffix);
+                let cert_dest_path = format!("{}/{}.cert", output_dir, file_suffix);
+
+                // Write the components out to disk
+                fs::write(&key_dest_path, current_signing_key.to_bytes())?;
+                fs::write(&cert_dest_path, final_certificate_payload)?;
+
+                // Unix Security Guard: Restrict private key read permissions to owner
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(&key_dest_path, fs::Permissions::from_mode(0o600))?;
+                }
+
+                println!(
+                    "  [+] Minted node [{}/{}]: ID: {} -> Files: {}.key/.cert", 
+                    i, count, agent_hex, file_suffix
+                );
+            }
+            println!("✅ Fleet generation completed successfully. Output isolated inside: '{}'", output_dir);
+        }
+
+        Commands::Aegis { action: AegisAction::List } => {
+            let url = format!("{}/v1/admin/quarantine", cli.daemon_url);
+            let res = http_client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", get_auth()))
+                .send()
+                .await?;
+
+            if res.status().is_success() {
+                let agents: Vec<String> = res.json().await?;
+                println!("🔒 Quarantined Nodes Inside Active Memory: {:?}", agents);
+            } else {
+                eprintln!("❌ Operational Failure: Control plane returned status: {}", res.status());
+            }
+        }
+
+        Commands::Aegis { action: AegisAction::Lift { agent_id } } => {
+            let url = format!("{}/v1/admin/quarantine/lift", cli.daemon_url);
+            let res = http_client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", get_auth()))
+                .json(&json!({ "agent_id": agent_id }))
+                .send()
+                .await?;
+
+            if res.status().is_success() {
+                println!("🔓 Aegis perimeter updated. Lifted isolation bounds for agent: {}", agent_id);
+            } else {
+                eprintln!("❌ Operational Failure: Control plane rejected request. Status: {}", res.status());
+            }
+        }
+
+        Commands::TimeTravel { agent_id, tx_id, fork_config } => {
+            let mut payload = json!({
+                "agent_id": agent_id,
+                "target_tx_id": tx_id,
+                "fork_config": null
+            });
+
+            if let Some(config_path) = fork_config {
+                let config_str = fs::read_to_string(config_path)?;
+                let fork_json: serde_json::Value = serde_json::from_str(&config_str)?;
+                payload["fork_config"] = fork_json;
+            }
+
+            let url = format!("{}/v1/admin/time_travel", cli.daemon_url);
+            println!("⌛ Communicating with Time Machine... Forking reality loop for agent {} down to checkpoint TxID: {}...", agent_id, tx_id);
+
+            let res = http_client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", get_auth()))
+                .json(&payload)
+                .send()
+                .await?;
+
+            if res.status().is_success() {
+                println!("⚡ Reality branch successfully initialized. Isolated simulation task active on core pipeline.");
+            } else {
+                eprintln!("❌ Time Travel Failure: Control plane rejected execution context. Status: {}", res.status());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+-----------------
+/// The uncomprormising local listener. Runs in a dedicated background thread.
+pub fn listen_for_local_thoughts(
+    topic_name: String,
+    brain: Arc<SwarmStateRegistry>,
+    axon: Arc<AxonGateKeeper>,
+    tx: Sender<SystemEvent>,
+) {
+    //  Subscriber is created on this specific thrad, so it doesn't cross boundaries.
+    std::thread::spawn(move || {
+        //  Initialize inside the thread
+        let cortex = CortexDataPlane::new(&topic_name);
+
+        let subscriber = cortex
+            .create_subscriber()
+            .expect("Failed to create local subscriber");
+
+        println!("Cortx Data Plane: Listening for zero-copy local thoughts...");
+
+        //  Read from shared physical RAM
+        loop {
+            if let Ok(Some(sample)) = subscriber.receive() {
+                let payload_bytes = sample.payload();
+
+                // Zero copy deserialization of the dynamic bytes
+                let archived_log = unsafe {
+                    rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload_bytes)
+                };
+
+                // The Circuit Breaker
+                if axon.verify_foreign_thoughts(&archived_log) {
+                    brain
+                        .get_or_create_brain(&archived_log.state.namespace)
+                        .assimilate_foreign_thought(&archived_log.delta.as_slice())
+                        .expect("FATAL: failed to assimilate thought");
+                    println!(
+                        "Cortex: Assimilated thought from Agent: {:?}",
+                        archived_log.agent_id.as_slice()
+                    );
+                } else {
+                    println!("CRITICAL ALERT: Local tampering detected. Dropping thoughts.");
+                    let _ = tx.send(SystemEvent::SecurityBreach {
+                        agent_id: hex::encode(&archived_log.agent_id.as_slice()),
+                        reason: "Local tampering detected - Markle Hash Mismatch ".to_string(),
+                        culprit_text: archived_log.state.text.as_str().to_string(),
+                    });
+                }
+            }
+
+            std::thread::yield_now();
+        }
+    });
 }
