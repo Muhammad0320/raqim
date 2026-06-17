@@ -28,11 +28,11 @@ export default async function DashboardPage() {
   const orgId = org?.id || '00000000-0000-0000-0000-000000000000';
 
   // 2. Fetch subscription
-  const { data: sub } = await supabase
-    .from('subscriptions')
+  const { data: sub } = await (supabase
+    .from('subscriptions' as any)
     .select('plan_tier, status')
     .eq('org_id', orgId)
-    .single();
+    .single() as any);
 
   const planTier = sub?.plan_tier || 'OPEN_CORE';
   const subStatus = sub?.status || 'inactive';
@@ -46,12 +46,12 @@ export default async function DashboardPage() {
     .single();
 
   // 4. Fetch telemetry rollups (last 7 days)
-  const { data: telemetryData } = await supabase
-    .from('telemetry_daily_rollups')
+  const { data: telemetryData } = await (supabase
+    .from('telemetry_daily_rollups' as any)
     .select('*')
     .eq('org_id', orgId)
     .order('day', { ascending: false })
-    .limit(7);
+    .limit(7) as any);
 
   // Calculate aggregates
   const rawData = telemetryData || [];

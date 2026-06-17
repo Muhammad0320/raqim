@@ -1,5 +1,5 @@
 import React, { memo, useEffect } from 'react';
-import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import styled from 'styled-components';
 import { motion, useAnimation } from 'framer-motion';
 import { AgentData } from '../store/topologyStore';
@@ -55,7 +55,7 @@ const StatusDot = styled.div<{ $status: string }>`
   box-shadow: 0 0 6px ${props => props.$status === 'Quarantined' ? '#ef4444' : '#06b6d4'};
 `;
 
-const AgentNode = ({ data }: NodeProps<{ data: AgentData }>) => {
+const AgentNode = ({ data }: NodeProps<Node<AgentData, 'agentNode'>>) => {
   const controls = useAnimation();
 
   useEffect(() => {

@@ -10,11 +10,11 @@ export async function regenerateLicense(orgId: string) {
   const supabase = await createClient();
 
   // 1. Validate subscription tier
-  const { data: sub, error: subError } = await supabase
-    .from('subscriptions')
+  const { data: sub, error: subError } = await (supabase
+    .from('subscriptions' as any)
     .select('plan_tier')
     .eq('org_id', orgId)
-    .single();
+    .single() as any);
 
   if (subError || !sub) {
     throw new Error('Subscription not found');

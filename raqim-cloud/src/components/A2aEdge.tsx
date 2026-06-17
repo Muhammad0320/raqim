@@ -1,5 +1,5 @@
 import React from 'react';
-import { EdgeProps, getBezierPath, EdgeLabelRenderer } from '@xyflow/react';
+import { type EdgeProps, type Edge, getBezierPath, EdgeLabelRenderer } from '@xyflow/react';
 import styled, { keyframes } from 'styled-components';
 import { A2aEdgeData } from '../store/topologyStore';
 
@@ -47,7 +47,7 @@ const A2aEdge = ({
   sourcePosition,
   targetPosition,
   data,
-}: EdgeProps<A2aEdgeData>) => {
+}: EdgeProps<Edge<A2aEdgeData, 'a2aEdge'>>) => {
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,

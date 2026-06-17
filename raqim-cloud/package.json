@@ -24,10 +24,12 @@
     "@xyflow/react": "^12.10.2",
     "zustand": "^5.0.12",
     "@microsoft/fetch-event-source": "^2.0.1",
-    "stripe": "^14.25.0"
+    "stripe": "^14.25.0",
+    "jose": "^5.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/jsonwebtoken": "^9.0.8",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

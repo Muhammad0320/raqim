@@ -156,7 +156,7 @@ const Node = styled.div<{ $isPulsing?: boolean }>`
   z-index: 2;
   backdrop-filter: blur(10px);
   animation: ${props => props.$isPulsing ? pulseAnimation : 'none'} 2s infinite;
-  box-shadow: ${props => props.$isPulsing ? \`0 0 20px rgba(6, 182, 212, 0.2)\` : 'none'};
+  box-shadow: ${props => props.$isPulsing ? '0 0 20px rgba(6, 182, 212, 0.2)' : 'none'};
   transition: all 0.3s ease;
   min-width: 140px;
   
@@ -181,7 +181,7 @@ const SvgLines = styled.svg`
   }
 `;
 
-const VerticalLine = styled.div\`
+const VerticalLine = styled.div`
   display: none;
   width: 2px;
   height: 30px;
@@ -191,7 +191,7 @@ const VerticalLine = styled.div\`
   @media (max-width: 1024px) {
     display: block;
   }
-\`;
+`;
 
 export const ZeroCopyDiagram = () => {
   return (

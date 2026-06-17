@@ -9,11 +9,11 @@ const resend = new Resend(process.env.RESEND_API_KEY!);
 export async function GET(req: Request) {
 
     // Fetch only organizations whose Stripe payment has failed (past_due)
-    const {data: orgs} = await supabaseAdmin.from("subscriptions").select(`
+    const {data: orgs} = await (supabaseAdmin.from("subscriptions" as any).select(`
         org_id, 
         current_period_end, organizations (alias),
          organization_members (auth.users (email) )
-          `).eq("status", "past_due");
+          `).eq("status", "past_due") as any);
 
     if (!orgs) return NextResponse.json({processed: 0})
 

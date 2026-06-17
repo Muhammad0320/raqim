@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 import { redirect } from 'next/navigation';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock', {
-  apiVersion: '2025-02-24.acacia',
+  apiVersion: '2025-02-24.acacia' as any,
 });
 
 export async function createStripeCheckoutSession(orgId: string, priceId: string) {

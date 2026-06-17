@@ -12,11 +12,11 @@ export const getCachedUserTenantContext = cache(async () => {
     return { alias: "JPM_CHASE_PROD", planTier: "ENTERPRISE", licenseKey: "eyJhb..." } // Default mock if DB is empty
   }
 
-  const { data: sub } = await supabase
-    .from('subscriptions')
+  const { data: sub } = await (supabase
+    .from('subscriptions' as any)
     .select('plan_tier')
     .eq('org_id', org.id)
-    .single()
+    .single() as any)
 
   const { data: license } = await supabase
     .from('licenses')
@@ -112,11 +112,11 @@ export async function getTelemetry(orgId: string) {
 
 export async function getSubscriptionDetails(orgId: string) {
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('subscriptions')
+  const { data, error } = await (supabase
+    .from('subscriptions' as any)
     .select('*')
     .eq('org_id', orgId)
-    .single()
+    .single() as any)
   
   if (error) {
     console.error('Error fetching subscription details:', error)

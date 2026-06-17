@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import Stripe from "stripe"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {apiVersion: "2025-12-18"});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {apiVersion: "2025-12-18" as any});
 
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY! );
 
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
 
     // SUCCESS
-    if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.updated" ) {
+    if (event.type as string === "customer.subscription.updated" || event.type as string === "customer.subscription.created" ) {
 
         const subscription = event.data.object as Stripe.Subscription;
         const orgId = subscription.metadata.org_id;
@@ -45,9 +45,10 @@ export async function POST(req: Request) {
     }
  
     // THE KILL SWITCH: Their monthly card declined
-    if (event.type ===  "invoice.payment_failed" || event.type === "customer.subscription.deleted" ) {
+    if (event.type as string ===  "invoice.payment_failed" || event.type as string === "customer.subscription.deleted" ) {
         const obj = event.data.object as any;
         const subscriptionId = obj.subscription || obj.id; 
+        const customerId = obj.customer;
 
         const {data: orgs} = await supabaseAdmin.from("organizations").select("id").eq("stripe_customer_id", customerId);
 

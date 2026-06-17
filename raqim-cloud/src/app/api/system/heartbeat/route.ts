@@ -16,13 +16,13 @@ export async function GET(req:Request) {
     let tenant_id: String; 
 
     try {
-        const decoded = jwt.verify(token, PUBLIC_KEY, {algorithms: ["RS256"]}) as any; 
+        const decoded = jwt.verify(token, (PUBLIC_KEY || "") as string, {algorithms: ["RS256"]}) as any; 
         tenant_id = decoded.sub;
     } catch (err) {
             return NextResponse.json({error: "Invalid Token"}, {status: 401})
     }
 
-    const {data: sub} = await supabaseAdmin.from("subsciptions").select("status, plan_tier, current_period_end").eq("org_id", tenant_id).single();
+    const {data: sub} = await (supabaseAdmin.from("subsciptions" as any).select("status, plan_tier, current_period_end").eq("org_id", tenant_id).single() as any);
 
     if (!sub) return NextResponse.json({error: "No subsciption"}, {status: 404});
 
@@ -40,7 +40,7 @@ export async function GET(req:Request) {
         if (now > graceEnd) {
 
             // Grace Period is exceeded
-            const fallbackToken = jwt.sign({sub: tenant_id, features: []}, PRIVATE_KEY, {algorithm: "RS256", exp: "30d"} );
+            const fallbackToken = jwt.sign({sub: tenant_id, features: []}, (PRIVATE_KEY || "") as string, {algorithm: "RS256", expiresIn: "30d"} );
             return NextResponse.json({ new_license: fallbackToken }, {status: 402});
 
         }
@@ -48,7 +48,7 @@ export async function GET(req:Request) {
     }
 
     // Subscriptions is Active or Within the 72-h grace period. Mint the Premium 7-Day JWT. 
-    const premiumToken = jwt.sign({sub: tenant_id, features}, PRIVATE_KEY, {algorithm: 'RS256', exp: '7d'});
+    const premiumToken = jwt.sign({sub: tenant_id, features}, (PRIVATE_KEY || "") as string, {algorithm: 'RS256', expiresIn: '7d'});
     
     return NextResponse.json({new_license: premiumToken});
 }
