@@ -23,6 +23,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 
+use crate::aegis::QuarantineRecord;
 use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine};
@@ -204,6 +205,10 @@ pub enum SystemEvent {
     },
     LicenseUpdated {
         new_jwt: String,
+    },
+
+    GlobalQuarantineSync {
+        record: QuarantineRecord,
     },
 }
 

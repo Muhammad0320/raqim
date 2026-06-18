@@ -4,6 +4,7 @@ use crate::network::GlobalNetworkBridge;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
+use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::channel;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -33,7 +34,7 @@ pub struct AegisGroupManifest {
     pub groups: HashMap<String, AegisGroupPolicy>,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Archive, Serialize, Deserialize)]
 pub struct QuarantineRecord {
     pub agent_hex: String,
     pub violation_type: String,
@@ -48,7 +49,6 @@ pub struct AegisGateKeeper {
     master_public_key: VerifyingKey,
     tx: Sender<SystemEvent>,
     ui_tx: Sender<UiEvent>,
-    net: Arc<GlobalNetworkBridge>,
 }
 
 impl AegisGateKeeper {
@@ -57,7 +57,6 @@ impl AegisGateKeeper {
         master_pub_hex: &str,
         tx: Sender<SystemEvent>,
         ui_tx: Sender<UiEvent>,
-        net: Arc<GlobalNetworkBridge>,
     ) -> Arc<Self> {
         let group_config = Self::parse_group_toml(aegis_path);
 
@@ -71,7 +70,6 @@ impl AegisGateKeeper {
             master_public_key,
             tx,
             ui_tx,
-            net,
         });
 
         // Spawn a dedicated bg thread for the C-level fs watcher
@@ -141,13 +139,7 @@ impl AegisGateKeeper {
     }
 
     /// Locks down the agent globally across the OS
-    pub async fn trigger_quarantine(
-        &self,
-        agent_hex: &str,
-        target: &str,
-        v_type: &str,
-        reason: &str,
-    ) {
+    pub fn trigger_quarantine(&self, agent_hex: &str, target: &str, v_type: &str, reason: &str) {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -176,8 +168,6 @@ impl AegisGateKeeper {
         let _ = self.ui_tx.send(UiEvent::AegisAlert {
             record: record.clone(),
         });
-
-        self.net.broadcast_quarantine_sync(record).await;
 
         let _ = eprintln!(
             "\n[AEGIS RED ALERT] Unauthorized access attempts by {} on path: {}, Violation Type: {}, Reason: {} ",
