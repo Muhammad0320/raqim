@@ -4,7 +4,7 @@ use crate::network::GlobalNetworkBridge;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
-use rkyv::{Archive, Deserialize, Serialize};
+use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::channel;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,7 +34,7 @@ pub struct AegisGroupManifest {
     pub groups: HashMap<String, AegisGroupPolicy>,
 }
 
-#[derive(Serialize, Clone, Debug, Archive, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive)]
 pub struct QuarantineRecord {
     pub agent_hex: String,
     pub violation_type: String,
