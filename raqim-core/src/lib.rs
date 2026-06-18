@@ -206,3 +206,22 @@ pub enum SystemEvent {
         new_jwt: String,
     },
 }
+
+#[derive(Debug, Clone)]
+pub struct KernelEntitlements {
+    pub global_wan_mesh: bool,
+    pub global_crdt_mesh: bool,
+    pub global_aegis: bool,
+    pub time_travel: bool,
+}
+
+impl KernelEntitlements {
+    fn new() -> Self {
+        Self {
+            global_wan_mesh: false,
+            global_crdt_mesh: false,
+            global_aegis: false,
+            time_travel: false,
+        }
+    }
+}
