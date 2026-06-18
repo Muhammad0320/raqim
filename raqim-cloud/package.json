@@ -9,23 +9,24 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@microsoft/fetch-event-source": "^2.0.1",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.3",
     "@types/styled-components": "^5.1.36",
+    "@xyflow/react": "^12.10.2",
+    "framer-motion": "^11.0.0",
+    "jose": "^5.2.4",
     "jsonwebtoken": "^9.0.3",
+    "lightningcss": "^1.32.0",
     "lucide-react": "^0.468.0",
     "next": "16.2.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",
     "resend": "^6.12.3",
-    "styled-components": "^6.4.1",
-    "framer-motion": "^11.0.0",
-    "@xyflow/react": "^12.10.2",
-    "zustand": "^5.0.12",
-    "@microsoft/fetch-event-source": "^2.0.1",
     "stripe": "^14.25.0",
-    "jose": "^5.2.4"
+    "styled-components": "^6.4.1",
+    "zustand": "^5.0.12"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
