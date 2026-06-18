@@ -10,7 +10,7 @@ use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 use zenoh::Session;
 
-use crate::aegis::AegisGateKeeper;
+use crate::aegis::{AegisGateKeeper, QuarantineRecord};
 use tokio::time::{Duration, timeout};
 
 pub struct GlobalNetworkBridge {
@@ -18,7 +18,10 @@ pub struct GlobalNetworkBridge {
     workspace_prefix: String,
     aegis: Arc<AegisGateKeeper>,
     pub os_node_id: String,
-    egress_tx: mpsc::Sender<Vec<u8>>, // The high-speed funnel
+    egress_tx: mpsc::Sender<Vec<u8>>,
+
+    allow_global_a2a: bool,
+    allow_global_aegis: bool,
 }
 
 impl GlobalNetworkBridge {
@@ -29,6 +32,9 @@ impl GlobalNetworkBridge {
         aegis: Arc<AegisGateKeeper>,
         allow_wan: bool,
         os_node_id: String,
+
+        allow_global_a2a: bool,
+        allow_global_aegis: bool,
     ) -> Self {
         println!("Bismillah. Initialializing Zenoh Global Network Bridge...");
 
@@ -86,6 +92,8 @@ impl GlobalNetworkBridge {
             aegis,
             os_node_id,
             egress_tx,
+            allow_global_a2a,
+            allow_global_aegis,
         }
     }
 
@@ -97,6 +105,127 @@ impl GlobalNetworkBridge {
 
         // Applies healthy async backprpessure if WAN is slow, without spawning tokio task.
         let _ = self.egress_tx.send(bytes).await;
+    }
+
+    /// Asks a a question to the swarm. Returns the answer
+    pub async fn execute_a2a_rpc(
+        &self,
+        envelope: A2AEnvelope,
+        aegis: Arc<AegisGateKeeper>,
+        telemetry: Arc<TelemetryEngine>,
+    ) -> Result<(Vec<u8>, String), anyhow::Error> {
+        let sender_hex = hex::encode(envelope.sender_id.clone());
+
+        // 1. AEGIS INTERCEPTION: Does this agent have clearance this question?
+        let mut packet_sig = [0u8; 64];
+        packet_sig.copy_from_slice(envelope.signature.as_slice());
+
+        let mut sender_pub_bytes: [u8; 32] = [0; 32];
+        sender_pub_bytes.copy_from_slice(envelope.sender_public_key.as_slice());
+
+        let (agent_hex, group_name) = match aegis
+            .verify_session_lineage(envelope.sender_capability_cert.as_slice())
+        {
+            Ok((agent, group)) => (agent, group),
+            Err(e) => {
+                eprintln!(
+                    "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Reason: {}",
+                    e
+                );
+
+                return Err(anyhow::anyhow!(""));
+            }
+        };
+
+        if let Err(e) = aegis.authorize_packet_fast(
+            agent_hex.as_str(),
+            group_name.as_str(),
+            &sender_pub_bytes,
+            &envelope.payload,
+            &packet_sig,
+            &envelope.target_capability,
+        ) {
+            return Err(anyhow::anyhow!(
+                "[AEGIS INTERDICTION]: A2A Transmission Violation: {} ",
+                e
+            ));
+        }
+
+        // If they don't have global A2A we force zenoh to route the GET requests only to subscribers currently residing on thier local machine.
+        let query_target = if self.allow_global_a2a {
+            zenoh::query::QueryTarget::All
+        } else {
+            zenoh::query::QueryTarget::BestMatching
+        };
+
+        // 2. Zero-Copy Serializarion of envelope
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope)
+            .unwrap()
+            .into_vec();
+        let key_expr = format!(
+            "{}/a2a/{}",
+            self.workspace_prefix, envelope.target_capability
+        );
+
+        // Billing: Record the outbound request size
+        telemetry.record_a2a_bytes(bytes.len() as u64);
+
+        // 3. Zenoh GET request (The RPC )
+        // We broadcast the question and wait for the authoritative answer to reply.
+        let replies = self
+            .session
+            .get(&key_expr)
+            .target(query_target)
+            .payload(bytes)
+            .await
+            .unwrap();
+
+        let reply_future = replies.recv_async();
+
+        // 4. Await the response from the target agent
+        if let Ok(Ok(reply)) = timeout(Duration::from_secs(15), reply_future).await {
+            if let Ok(sample) = reply.result() {
+                // Return the answer bytes back to the caller
+                let res_bytes = sample.payload().to_bytes().to_vec();
+                telemetry.record_a2a_bytes(res_bytes.len() as u64);
+
+                // Attempt to parse the pythons SDK's envelope to extract the true responder and answer
+                if let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(&res_bytes) {
+                    let actual_responder = json_val["responder_hex"]
+                        .as_str()
+                        .unwrap_or(&sender_hex)
+                        .to_string();
+
+                    // Reselialize the answer bytes to send back to the original caller
+                    let clean_answer = json_val["answer"]
+                        .as_str()
+                        .unwrap_or("")
+                        .as_bytes()
+                        .to_vec();
+
+                    return Ok((clean_answer, actual_responder));
+                }
+
+                // Fallback if the payload was shitly formatted
+                return Ok((res_bytes, sender_hex.clone()));
+            }
+        }
+
+        Err(anyhow::anyhow!(
+            "A2A Timeout: No agent responded to capability {}",
+            envelope.target_capability
+        ))
+    }
+
+    /// Executed  by AegisGateKeeper when quarantine is triggered locally.
+    pub async fn broadcast_quarantine_sync(&self, record: QuarantineRecord) {
+        if !self.allow_global_aegis {
+            return;
+        }
+
+        let key_expr = format!("{}/system/queatine", self.workspace_prefix);
+        let bytes = postcard::to_allocvec(&record).unwrap();
+        let _ = self.session.put(key_expr, bytes).await;
     }
 
     /// Listens for foreign thoughts from the global network using a wildcard, dropping echoes from outselves
@@ -260,103 +389,6 @@ impl GlobalNetworkBridge {
                 query.reply(query.key_expr(), answer_bytes).await.unwrap();
             }
         });
-    }
-
-    /// Asks a a question to the swarm. Returns the answer
-    pub async fn execute_a2a_rpc(
-        &self,
-        envelope: A2AEnvelope,
-        aegis: Arc<AegisGateKeeper>,
-        telemetry: Arc<TelemetryEngine>,
-    ) -> Result<(Vec<u8>, String), anyhow::Error> {
-        let sender_hex = hex::encode(envelope.sender_id.clone());
-
-        // 1. AEGIS INTERCEPTION: Does this agent have clearance this question?
-        let mut packet_sig = [0u8; 64];
-        packet_sig.copy_from_slice(envelope.signature.as_slice());
-
-        let mut sender_pub_bytes: [u8; 32] = [0; 32];
-        sender_pub_bytes.copy_from_slice(envelope.sender_public_key.as_slice());
-
-        let (agent_hex, group_name) = match aegis
-            .verify_session_lineage(envelope.sender_capability_cert.as_slice())
-        {
-            Ok((agent, group)) => (agent, group),
-            Err(e) => {
-                eprintln!(
-                    "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Reason: {}",
-                    e
-                );
-
-                return Err(anyhow::anyhow!(""));
-            }
-        };
-
-        if let Err(e) = aegis.authorize_packet_fast(
-            agent_hex.as_str(),
-            group_name.as_str(),
-            &sender_pub_bytes,
-            &envelope.payload,
-            &packet_sig,
-            &envelope.target_capability,
-        ) {
-            return Err(anyhow::anyhow!(
-                "[AEGIS INTERDICTION]: A2A Transmission Violation: {} ",
-                e
-            ));
-        }
-
-        // 2. Zero-Copy Serializarion of envelope
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope)
-            .unwrap()
-            .into_vec();
-        let key_expr = format!(
-            "{}/a2a/{}",
-            self.workspace_prefix, envelope.target_capability
-        );
-
-        // Billing: Record the outbound request size
-        telemetry.record_a2a_bytes(bytes.len() as u64);
-
-        // 3. Zenoh GET request (The RPC )
-        // We broadcast the question and wait for the authoritative answer to reply.
-        let replies = self.session.get(&key_expr).payload(bytes).await.unwrap();
-
-        let reply_future = replies.recv_async();
-
-        // 4. Await the response from the target agent
-        if let Ok(Ok(reply)) = timeout(Duration::from_secs(15), reply_future).await {
-            if let Ok(sample) = reply.result() {
-                // Return the answer bytes back to the caller
-                let res_bytes = sample.payload().to_bytes().to_vec();
-                telemetry.record_a2a_bytes(res_bytes.len() as u64);
-
-                // Attempt to parse the pythons SDK's envelope to extract the true responder and answer
-                if let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(&res_bytes) {
-                    let actual_responder = json_val["responder_hex"]
-                        .as_str()
-                        .unwrap_or(&sender_hex)
-                        .to_string();
-
-                    // Reselialize the answer bytes to send back to the original caller
-                    let clean_answer = json_val["answer"]
-                        .as_str()
-                        .unwrap_or("")
-                        .as_bytes()
-                        .to_vec();
-
-                    return Ok((clean_answer, actual_responder));
-                }
-
-                // Fallback if the payload was shitly formatted
-                return Ok((res_bytes, sender_hex.clone()));
-            }
-        }
-
-        Err(anyhow::anyhow!(
-            "A2A Timeout: No agent responded to capability {}",
-            envelope.target_capability
-        ))
     }
 
     /// Dispatches a highly privileged system command directly to an agent's Python SDK

@@ -110,33 +110,33 @@ async fn main() {
 
     let validation = Validation::new(jsonwebtoken::Algorithm::RS256);
 
-    let mut allow_wan = false;
+    let mut allow_global_crdt = false;
+    let mut allow_global_aegis = false;
+    let mut allow_global_a2a = false;
+    let mut allow_time_travel = false;
     let mut verified_tenat_id = String::from("local_open_core");
 
     if let Ok(token_data) =
         decode::<EnterpriseClaim>(&config.license_key, &decoding_key, &validation)
     {
         verified_tenat_id = token_data.claims.sub.clone();
-        if token_data
-            .claims
-            .features
-            .contains(&"global_a2a".to_string())
-            || token_data
-                .claims
-                .features
-                .contains(&"global_crdt".to_string())
-        {
-            allow_wan = true;
-            println!(
-                "[SYSTEM] Enterprise Global WAN Authorized for Tenant: {} ",
-                token_data.claims.sub
-            );
-        } else {
-            println!("[SYSTEM] Open Core License detected. WAN routing disabled.");
-        }
+
+        let features = &token_data.claims.features;
+        allow_global_crdt = features.contains(&"global_crdt".to_string());
+        allow_global_a2a = features.contains(&"global_a2a".to_string());
+        allow_global_aegis = features.contains(&"global_aegis".to_string());
+        allow_time_travel = features.contains(&"time_travel".to_string());
+
+        println!(
+            "[SYSTEM] Cryptographic License Decoded for Tenant: {} ",
+            verified_tenat_id
+        );
     } else {
-        println!("[WARNING] Invalid License. Defaulting to Local LAN Swarm mode.");
+        println!("[WARNING] Open Core License detected. Enterprise features disabled.");
     }
+
+    // Determine if Zenoh needs to connect to the cloud router at all.
+    let allow_wan = allow_global_a2a || allow_global_aegis || allow_global_crdt;
 
     // Securely loads the swarm key from disk. Generate it if it doesn't exist/
     let key_dir = Path::new("./ca-keys");
@@ -187,6 +187,7 @@ async fn main() {
         event_tx.clone(),
         ui_tx.clone(),
     );
+
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
         GlobalNetworkBridge::new(
@@ -195,6 +196,8 @@ async fn main() {
             aegis.clone(),
             allow_wan,
             os_node_id,
+            allow_global_a2a.clone(),
+            allow_global_aegis.clone(),
         )
         .await,
     );
@@ -273,6 +276,7 @@ async fn main() {
         tx_counter.clone(),
         event_tx.clone(),
         master_signing_key.clone(),
+        allow_time_travel.clone(),
     ));
 
     // Initialize global tracker ONCE outside the loop

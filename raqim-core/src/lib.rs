@@ -216,6 +216,7 @@ pub struct KernelEntitlements {
 }
 
 impl KernelEntitlements {
+    // The fallbackk for open_core / unlicensed nodes.
     fn new() -> Self {
         Self {
             global_wan_mesh: false,

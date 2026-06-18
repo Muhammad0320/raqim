@@ -53,6 +53,7 @@ pub struct MemoryRouter {
     global_tx_counter: Arc<AtomicU64>,
     event_tx: Sender<SystemEvent>,
     master_signing_key: SigningKey,
+    allow_time_travel: bool,
 }
 
 impl MemoryRouter {
@@ -70,6 +71,7 @@ impl MemoryRouter {
         global_tx_counter: Arc<AtomicU64>,
         event_tx: Sender<SystemEvent>,
         master_signing_key: SigningKey,
+        allow_time_travel: bool,
     ) -> Self {
         Self {
             config,
@@ -85,10 +87,11 @@ impl MemoryRouter {
             global_tx_counter,
             event_tx,
             master_signing_key,
+            allow_time_travel,
         }
     }
 
-    /// PRIVATE DRY HELPER: Scans the WAL and executes a closure on the Zero-Copy Archived data
+    /// : Scans the WAL and executes a closure on the Zero-Copy Archived data
     pub fn scan_wal_zero_copy<F>(&self, mut callback: F)
     where
         F: FnMut(&Archived<OpLog>),
@@ -454,6 +457,13 @@ impl MemoryRouter {
         is_isolated_debug: bool,
         phantom_ui_tx: tokio::sync::broadcast::Sender<UiEvent>,
     ) -> Result<(), anyhow::Error> {
+        if is_isolated_debug && !self.allow_time_travel {
+            return Err(anyhow::anyhow!(
+                "LICENCE VIOLATION: Agent {} attempted to initiate a Temporal Reality Fork. Enterprise 'time_travel' claim required.",
+                agent_hex
+            ));
+        }
+
         let fetch_target = target_tx_id.unwrap_or(u64::MAX);
 
         let (memory_blob, historical_oplog, snapshot_tx, snapshot_timestamp) = self
@@ -542,6 +552,8 @@ impl MemoryRouter {
                 self.aegis.clone(),
                 false,
                 format!("phantom_{}", sandbox_agent_hex).to_string(),
+                true,
+                true,
             )
             .await,
         );
