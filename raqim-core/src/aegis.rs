@@ -33,7 +33,7 @@ pub struct AegisGroupManifest {
     pub groups: HashMap<String, AegisGroupPolicy>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive)]
+#[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize)]
 pub struct QuarantineRecord {
     pub agent_hex: String,
     pub violation_type: String,

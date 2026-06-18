@@ -237,7 +237,6 @@ async fn main() {
     let mut valut_rx = event_tx.subscribe();
     let lance_vault_clone = lance_engine.clone();
     let lance_net = global_net.clone();
-    
 
     tokio::spawn(async move {
         println!("[SYSTEM] Audit Valult Telemetry Sinker Active.");
@@ -249,10 +248,9 @@ async fn main() {
                 SystemEvent::GlobalQuarantineSync { record } => {
                     lance_net.broadcast_quarantine_sync(record).await;
                 }
-            } 
 
-            _ => {}
-
+                _ => {}
+            }
         }
     });
 
