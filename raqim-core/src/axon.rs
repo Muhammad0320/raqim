@@ -2,7 +2,6 @@ use crate::OpLog;
 use blake3::Hasher;
 use dashmap::DashMap;
 use rkyv::Archived;
-use std::sync::Mutex;
 
 /// The active Governance GateKeeper.
 pub struct AxonGateKeeper {
