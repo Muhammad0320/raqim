@@ -268,6 +268,8 @@ impl LanceEngine {
                 "SYSTEM".to_string(),
                 format!(" {{ \"message\": \"{}\" }} ", "License Key was updated"),
             ),
+
+            _ => ("default", "default".to_string(), "default".to_string()),
         };
 
         let time_arr = Arc::new(Int64Array::from(vec![timestamp]));

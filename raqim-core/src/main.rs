@@ -236,12 +236,23 @@ async fn main() {
     // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
     let mut valut_rx = event_tx.subscribe();
     let lance_vault_clone = lance_engine.clone();
+    let lance_net = global_net.clone();
+    
 
     tokio::spawn(async move {
         println!("[SYSTEM] Audit Valult Telemetry Sinker Active.");
 
         while let Ok(event) = valut_rx.recv().await {
             lance_vault_clone.log_system_events(&event).await;
+
+            match event {
+                SystemEvent::GlobalQuarantineSync { record } => {
+                    lance_net.broadcast_quarantine_sync(record).await;
+                }
+            } 
+
+            _ => {}
+
         }
     });
 

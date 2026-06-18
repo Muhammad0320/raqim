@@ -1,6 +1,5 @@
 use crate::SystemEvent;
 use crate::api::UiEvent;
-use crate::network::GlobalNetworkBridge;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
@@ -155,6 +154,11 @@ impl AegisGateKeeper {
         // Lock the agent down at network layer instantly.
         self.quarantine_blocklist
             .insert(agent_hex.to_string(), record.clone());
+
+        // Shout into the event bus
+        let _ = self.tx.send(SystemEvent::GlobalQuarantineSync {
+            record: record.clone(),
+        });
 
         // Fire the durable WAL log
         let _ = self.tx.send(SystemEvent::AegisInterdiction {
