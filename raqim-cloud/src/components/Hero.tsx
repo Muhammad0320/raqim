@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 
 const HeroContainer = styled.section`
@@ -41,14 +41,14 @@ const ContentWrapper = styled.div`
 
 const Headline = styled(motion.h1)`
   font-family: var(--font-geist-sans), sans-serif;
-  font-size: clamp(3rem, 8vw, 6rem);
-  font-weight: 800;
+  font-size: clamp(3.5rem, 8vw, 7rem);
+  font-weight: 900;
   color: #ffffff;
   letter-spacing: -0.04em;
   line-height: 1.1;
   text-align: center;
   margin: 0 0 24px 0;
-  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  text-shadow: 4px 4px 0px #00E5FF;
 `;
 
 const SubHeadline = styled(motion.p)`
@@ -145,14 +145,26 @@ const BenchmarkHud = styled.div`
   position: relative;
 `;
 
+const pulseGlow = keyframes`
+  0% {
+    text-shadow: 0 0 10px rgba(0, 229, 255, 0.4), 0 0 20px rgba(0, 229, 255, 0.2);
+  }
+  50% {
+    text-shadow: 0 0 20px rgba(0, 229, 255, 0.8), 0 0 35px rgba(0, 229, 255, 0.5), 0 0 50px rgba(0, 229, 255, 0.3);
+  }
+  100% {
+    text-shadow: 0 0 10px rgba(0, 229, 255, 0.4), 0 0 20px rgba(0, 229, 255, 0.2);
+  }
+`;
+
 const BenchmarkValue = styled(motion.div)`
   font-family: var(--font-geist-mono), monospace;
   font-size: clamp(3rem, 6vw, 4.5rem);
   font-weight: 700;
-  color: #ffffff;
-  text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+  color: #00E5FF;
   line-height: 1;
   margin-bottom: 8px;
+  animation: ${pulseGlow} 2s infinite ease-in-out;
 `;
 
 const BenchmarkLabel = styled.div`
@@ -179,36 +191,44 @@ const CODE_LINES = [
 
 export default function Hero() {
   const [typedLines, setTypedLines] = useState<string[]>([]);
-  const [currentLineIndex, setCurrentLineIndex] = useState(0);
-  const [currentCharIndex, setCurrentCharIndex] = useState(0);
+  const [isTypingComplete, setIsTypingComplete] = useState(false);
 
   useEffect(() => {
-    if (currentLineIndex >= CODE_LINES.length) return;
+    let active = true;
+    const runTypewriter = async () => {
+      setTypedLines([]);
+      setIsTypingComplete(false);
+      const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    const currentTargetLine = CODE_LINES[currentLineIndex];
+      for (let i = 0; i < CODE_LINES.length; i++) {
+        if (!active) return;
+        const line = CODE_LINES[i];
+        setTypedLines((prev) => [...prev, ""]);
 
-    if (currentCharIndex < currentTargetLine.length) {
-      const timeout = setTimeout(() => {
-        setTypedLines((prev) => {
-          const newLines = [...prev];
-          if (newLines[currentLineIndex] === undefined) {
-            newLines[currentLineIndex] = "";
-          }
-          newLines[currentLineIndex] += currentTargetLine[currentCharIndex];
-          return newLines;
-        });
-        setCurrentCharIndex((prev) => prev + 1);
-      }, Math.random() * 30 + 20); // Typewriter speed
+        for (let j = 0; j < line.length; j++) {
+          if (!active) return;
+          setTypedLines((prev) => {
+            const copy = [...prev];
+            copy[i] = line.substring(0, j + 1);
+            return copy;
+          });
+          await delay(20 + Math.random() * 15);
+        }
 
-      return () => clearTimeout(timeout);
-    } else {
-      const timeout = setTimeout(() => {
-        setCurrentLineIndex((prev) => prev + 1);
-        setCurrentCharIndex(0);
-      }, 300); // Pause between lines
-      return () => clearTimeout(timeout);
-    }
-  }, [currentCharIndex, currentLineIndex]);
+        if (i < CODE_LINES.length - 1) {
+          await delay(500); // Pause 500ms between lines
+        }
+      }
+      if (active) {
+        setIsTypingComplete(true);
+      }
+    };
+
+    runTypewriter();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const count = useMotionValue(0);
   const rounded = useTransform(count, (latest) => Math.round(latest).toLocaleString());
@@ -255,15 +275,20 @@ export default function Hero() {
               <MacDot $color="#27c93f" />
             </TerminalHeader>
             <TerminalBody>
-              {typedLines.map((line, index) => (
-                <TerminalLine key={index}>
-                  <pre>{line}</pre>
-                </TerminalLine>
-              ))}
-              {currentLineIndex < CODE_LINES.length && (
+              {typedLines.map((line, index) => {
+                const isLastLine = index === typedLines.length - 1;
+                return (
+                  <TerminalLine key={index}>
+                    <pre>
+                      {line}
+                      {isLastLine && <Cursor />}
+                    </pre>
+                  </TerminalLine>
+                );
+              })}
+              {typedLines.length === 0 && (
                 <TerminalLine>
                   <pre>
-                    {typedLines[currentLineIndex] || ""}
                     <Cursor />
                   </pre>
                 </TerminalLine>

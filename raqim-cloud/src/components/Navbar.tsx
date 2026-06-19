@@ -30,22 +30,16 @@ const LeftSection = styled.div`
 const LogoIcon = styled.svg`
   width: 32px;
   height: 32px;
-  color: #00f3ff;
-  filter: drop-shadow(0 0 8px rgba(0, 243, 255, 0.6));
+  color: #ffffff;
 `;
 
 const LogoText = styled.span`
   font-family: var(--font-geist-mono), monospace;
   font-size: 1.125rem;
-  font-weight: 900;
+  font-weight: 700;
   color: #ffffff;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  
-  span {
-    color: #00f3ff;
-    margin-left: 4px;
-  }
 `;
 
 const CenterSection = styled.nav`
@@ -131,17 +125,20 @@ export default function Navbar() {
     <NavContainer>
       <LeftSection>
         <LogoIcon viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M50 5 L90 25 L90 75 L50 95 L10 75 L10 25 Z" stroke="currentColor" strokeWidth="4" fill="none" />
-          <path d="M50 25 L75 38 L75 62 L50 75 L25 62 L25 38 Z" stroke="currentColor" strokeWidth="2" fill="none" />
-          <circle cx="50" cy="50" r="6" fill="currentColor" />
-          <line x1="50" y1="5" x2="50" y2="25" stroke="currentColor" strokeWidth="2" />
-          <line x1="10" y1="25" x2="25" y2="38" stroke="currentColor" strokeWidth="2" />
-          <line x1="90" y1="25" x2="75" y2="38" stroke="currentColor" strokeWidth="2" />
-          <line x1="10" y1="75" x2="25" y2="62" stroke="currentColor" strokeWidth="2" />
-          <line x1="90" y1="75" x2="75" y2="62" stroke="currentColor" strokeWidth="2" />
-          <line x1="50" y1="95" x2="50" y2="75" stroke="currentColor" strokeWidth="2" />
+          <defs>
+            <filter id="logo-glow" x="-30%" y="-30%" width="160%" height="160%">
+              <feGaussianBlur stdDeviation="4" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+          {/* Heavy vertical spine monolith */}
+          <path d="M28 15v70" stroke="currentColor" strokeWidth="8" strokeLinecap="square" />
+          {/* Sharp, geometric upper loop */}
+          <path d="M28 19h36l12 16l-12 16H28" stroke="currentColor" strokeWidth="8" strokeLinecap="square" strokeLinejoin="miter" />
+          {/* Intersecting sharp, glowing cyan diagonal zero-copy bypass path */}
+          <path d="M46 49l28 36" stroke="#00E5FF" strokeWidth="8" strokeLinecap="square" filter="url(#logo-glow)" />
         </LogoIcon>
-        <LogoText>RAQIM<span>CLOUD</span></LogoText>
+        <LogoText>RAQIM CLOUD</LogoText>
       </LeftSection>
 
       <CenterSection>

@@ -9,7 +9,7 @@ const SectionContainer = styled.section`
   padding: 120px 24px;
   display: flex;
   justify-content: center;
-  border-top: 1px solid rgba(39, 39, 42, 0.5); /* zinc-800 */
+  border-top: 1px solid #27272a; /* strict 1px border-zinc-800 */
 `;
 
 const ContentWrapper = styled.div`
@@ -96,8 +96,11 @@ const SvgContainer = styled.div`
   border: 1px solid #27272a;
   border-radius: 8px;
   padding: 24px;
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 `;
 
 const SvgVisual = styled.svg`
@@ -105,11 +108,34 @@ const SvgVisual = styled.svg`
   height: auto;
 `;
 
-const CodeContainer = styled.div`
+const CodeTerminal = styled.div`
   background: #000000;
   border: 1px solid #27272a;
-  border-left: 2px solid #06b6d4;
-  border-radius: 4px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+`;
+
+const CodeTerminalHeader = styled.div`
+  height: 32px;
+  background: #18181b;
+  border-bottom: 1px solid #27272a;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 8px;
+`;
+
+const MacDot = styled.div<{ $color: string }>`
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: ${(props) => props.$color};
+`;
+
+const CodeTerminalBody = styled.div`
   padding: 24px;
   overflow-x: auto;
 `;
@@ -119,11 +145,12 @@ const Pre = styled.pre`
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.875rem;
   line-height: 1.6;
-  color: #e4e4e7;
+  color: #abb2bf;
 `;
 
 const Comment = styled.span`
-  color: #71717a;
+  color: #5c6370;
+  font-style: italic;
 `;
 
 const Keyword = styled.span`
@@ -138,6 +165,14 @@ const Variable = styled.span`
   color: #e06c75;
 `;
 
+const TypeName = styled.span`
+  color: #e5c07b;
+`;
+
+const Operator = styled.span`
+  color: #56b6c2;
+`;
+
 export default function MemoryPhysics() {
   return (
     <SectionContainer>
@@ -149,7 +184,7 @@ export default function MemoryPhysics() {
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
         >
           <SectionTag>[ MEMORY ARCHITECTURE ]</SectionTag>
-          <Headline>Stop Deserializing. Start Casting.</Headline>
+          <Headline>Eradicate Deserialization. Cast Directly to Memory.</Headline>
           <SubHeadline>
             Raqim abandons JSON and HTTP overhead. By weaponizing rkyv, mmap2, and iceoryx2, TCP packets are cast directly to Rust structs. Zero parsing. Zero Garbage Collection pauses. O(1) memory access.
           </SubHeadline>
@@ -180,7 +215,7 @@ export default function MemoryPhysics() {
                 </linearGradient>
                 <linearGradient id="raqimLine" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="0%" stopColor="#0891b2" />
-                  <stop offset="100%" stopColor="#06b6d4" />
+                  <stop offset="100%" stopColor="#00E5FF" />
                 </linearGradient>
                 <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
                   <feGaussianBlur stdDeviation="4" result="blur" />
@@ -248,14 +283,14 @@ export default function MemoryPhysics() {
 
               {/* Raqim OS Background */}
               <rect x="10" y="180" width="580" height="180" rx="4" fill="#09090b" stroke="#18181b" />
-              <text x="30" y="205" fill="#06b6d4" fontSize="12" fontFamily="monospace" fontWeight="bold">RAQIM OS (ZERO-COPY)</text>
+              <text x="30" y="205" fill="#00E5FF" fontSize="12" fontFamily="monospace" fontWeight="bold">RAQIM OS (ZERO-COPY)</text>
 
               {/* Raqim Line */}
               <line x1="80" y1="260" x2="520" y2="260" stroke="url(#raqimLine)" strokeWidth="2" />
               
               <motion.line
                 x1="350" y1="260" x2="350" y2="320"
-                stroke="#06b6d4" strokeWidth="2" strokeDasharray="4 4"
+                stroke="#00E5FF" strokeWidth="2" strokeDasharray="4 4"
                 initial={{ opacity: 0 }}
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
@@ -269,13 +304,13 @@ export default function MemoryPhysics() {
                 viewport={{ once: true }}
                 transition={{ duration: 0.5 }}
               >
-                <rect x="40" y="240" width="140" height="40" rx="4" fill="#000000" stroke="#0891b2" />
-                <text x="50" y="264" fill="#67e8f9" fontSize="12" fontFamily="monospace">TCP Ingress (Bytes)</text>
+                <rect x="40" y="240" width="140" height="40" rx="4" fill="#000000" stroke="#00E5FF" />
+                <text x="50" y="264" fill="#00E5FF" fontSize="12" fontFamily="monospace">TCP Ingress (Bytes)</text>
               </motion.g>
 
               {/* Fast Path Payload Animation */}
               <motion.rect
-                width="140" height="40" rx="4" fill="rgba(6, 182, 212, 0.2)" stroke="#06b6d4"
+                width="140" height="40" rx="4" fill="rgba(0, 229, 255, 0.15)" stroke="#00E5FF"
                 filter="url(#glowCyan)"
                 initial={{ x: 40, y: 240 }}
                 whileInView={{ x: 230 }}
@@ -290,9 +325,9 @@ export default function MemoryPhysics() {
                 viewport={{ once: true }}
                 transition={{ duration: 0.2, delay: 0.9 }}
               >
-                <rect x="230" y="235" width="140" height="50" rx="4" fill="rgba(6, 182, 212, 0.1)" stroke="#22d3ee" strokeWidth="2" filter="url(#glowCyan)" />
+                <rect x="230" y="235" width="140" height="50" rx="4" fill="rgba(0, 229, 255, 0.1)" stroke="#00E5FF" strokeWidth="2" filter="url(#glowCyan)" />
                 <text x="260" y="255" fill="#ffffff" fontSize="14" fontFamily="monospace" fontWeight="bold">#[repr(C)]</text>
-                <text x="245" y="275" fill="#67e8f9" fontSize="10" fontFamily="monospace">rkyv::access_unchecked</text>
+                <text x="245" y="275" fill="#00E5FF" fontSize="10" fontFamily="monospace">rkyv::access_unchecked</text>
               </motion.g>
 
               {/* Telemetry Process IPC */}
@@ -302,12 +337,12 @@ export default function MemoryPhysics() {
                 viewport={{ once: true }}
                 transition={{ duration: 0.4, delay: 1.2 }}
               >
-                <rect x="280" y="320" width="140" height="30" rx="4" fill="#18181b" stroke="#06b6d4" />
+                <rect x="280" y="320" width="140" height="30" rx="4" fill="#18181b" stroke="#00E5FF" />
                 <text x="295" y="340" fill="#a1a1aa" fontSize="11" fontFamily="monospace">Telemetry Process</text>
               </motion.g>
 
               <motion.text
-                x="360" y="295" fill="#67e8f9" fontSize="10" fontFamily="monospace"
+                x="360" y="295" fill="#a1a1aa" fontSize="10" fontFamily="monospace"
                 initial={{ opacity: 0 }}
                 whileInView={{ opacity: 1 }}
                 viewport={{ once: true }}
@@ -317,7 +352,7 @@ export default function MemoryPhysics() {
               </motion.text>
               
               <motion.text
-                x="440" y="340" fill="#22d3ee" fontSize="12" fontFamily="monospace" fontWeight="bold" filter="url(#glowCyan)"
+                x="440" y="340" fill="#00E5FF" fontSize="12" fontFamily="monospace" fontWeight="bold" filter="url(#glowCyan)"
                 initial={{ opacity: 0 }}
                 whileInView={{ opacity: [0, 1, 0.5, 1] }}
                 viewport={{ once: true }}
@@ -329,17 +364,25 @@ export default function MemoryPhysics() {
             </SvgVisual>
           </SvgContainer>
 
-          <CodeContainer>
-            <Pre>
-              <Comment>// Zero-Copy Cast: The packet IS the memory.</Comment>
-              <br />
-              <Keyword>let</Keyword> <Variable>archived_state</Variable> = <Keyword>unsafe</Keyword> {'{'}
-              <br />
-              {'    '}rkyv::<FunctionName>access_unchecked</FunctionName>::&lt;&lt;AgentState <Keyword>as</Keyword> Archive&gt;::Archived&gt;(&amp;payload_bytes)
-              <br />
-              {'}'};
-            </Pre>
-          </CodeContainer>
+          <CodeTerminal>
+            <CodeTerminalHeader>
+              <MacDot $color="#ff5f56" />
+              <MacDot $color="#ffbd2e" />
+              <MacDot $color="#27c93f" />
+              <span style={{ marginLeft: '8px', color: '#71717a', fontFamily: 'var(--font-geist-mono)', fontSize: '11px' }}>memory_cast.rs</span>
+            </CodeTerminalHeader>
+            <CodeTerminalBody>
+              <Pre>
+                <Comment>// Zero-Copy Cast: The packet IS the memory.</Comment>
+                <br />
+                <Keyword>let</Keyword> <Variable>archived_state</Variable> = <Keyword>unsafe</Keyword> <Operator>{'{'}</Operator>
+                <br />
+                {'    '}<TypeName>rkyv</TypeName><Operator>::</Operator><FunctionName>access_unchecked</FunctionName><Operator>::&lt;&lt;</Operator><TypeName>AgentState</TypeName> <Keyword>as</Keyword> <TypeName>Archive</TypeName><Operator>&gt;::</Operator><TypeName>Archived</TypeName><Operator>&gt;(&amp;</Operator><Variable>payload_bytes</Variable><Operator>)</Operator>
+                <br />
+                <Operator>{'}'};</Operator>
+              </Pre>
+            </CodeTerminalBody>
+          </CodeTerminal>
         </RightColumn>
       </ContentWrapper>
     </SectionContainer>
