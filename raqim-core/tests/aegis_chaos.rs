@@ -110,7 +110,7 @@ async fn test_adversarial_crytographic_gates() {
     let malicious_payload = b"Transfer 10,000 to offshore Account";
     let malicious_intent_path = "/finance/ledger";
     let malicious_signature = agent_b_key.sign(malicious_payload);
-
+    
     let fast_audit_res = aegis.authorize_packet_fast(
         &agent_b_hex,
         "logistics_worker",

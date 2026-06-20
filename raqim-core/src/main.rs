@@ -48,7 +48,7 @@ async fn main() {
     // ================================
     let cancel_token = CancellationToken::new();
     let ct_clone = cancel_token.clone();
-
+    
     tokio::spawn(async move {
         let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM");
         let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT");

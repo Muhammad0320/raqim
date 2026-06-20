@@ -46,7 +46,7 @@ async fn test_crdt_split_brain_convergence() {
         .get_or_create_brain(namespace)
         .assimilate_foreign_thought(&delta_a1)
         .unwrap();
-
+    
     let state_b1 = forge_state(3, "NODE B: Reply to A");
     let delta_b1 = registry_b
         .get_or_create_brain(namespace)

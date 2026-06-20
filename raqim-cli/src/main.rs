@@ -315,7 +315,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .header("Authorization", format!("Bearer {}", get_auth()))
                 .send()
                 .await?;
-
+            
             if res.status().is_success() {
                 let info: serde_json::Value = res.json().await?;
                 println!("🌐 Raqim Core Kernel Metrics:");
