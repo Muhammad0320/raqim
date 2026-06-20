@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { getCachedUserTenantContext } from "@/lib/supabase/db";
 import { DocsProvider } from "@/components/docs/DocsProvider";
+import NavLink from "@/components/docs/NavLink";
+import { TableOfContents } from "@/components/docs/TableOfContents";
 
 export default async function DocsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { alias, planTier, licenseKey } = await getCachedUserTenantContext();
+  const { alias, planTier, licenseKey, isAuthenticated } = await getCachedUserTenantContext();
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-300 font-sans selection:bg-zinc-800 selection:text-white flex flex-col md:flex-row">
@@ -16,18 +18,28 @@ export default async function DocsLayout({
         {/* Header */}
         <div className="p-6 border-b border-zinc-800/50 flex flex-col gap-4">
           <Link href="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="2" y="2" width="20" height="20" rx="4" className="fill-white" />
-              <path d="M8 12L12 8L16 12M12 16V8" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <svg className="w-6 h-6 text-white" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <filter id="docs-logo-glow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feGaussianBlur stdDeviation="4" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+              {/* Heavy vertical spine monolith */}
+              <path d="M28 15v70" stroke="currentColor" strokeWidth="8" strokeLinecap="square" />
+              {/* Sharp, geometric upper loop */}
+              <path d="M28 19h36l12 16l-12 16H28" stroke="currentColor" strokeWidth="8" strokeLinecap="square" strokeLinejoin="miter" />
+              {/* Intersecting sharp, glowing cyan diagonal zero-copy bypass path */}
+              <path d="M46 49l28 36" stroke="#00E5FF" strokeWidth="8" strokeLinecap="square" filter="url(#docs-logo-glow)" />
             </svg>
-            <span className="font-semibold text-white tracking-tight text-lg">raqim docs</span>
+            <span className="font-semibold text-white tracking-tight text-lg font-mono">raqim docs</span>
           </Link>
           
-          {alias && (
-            <div className="flex items-center space-x-2 px-3 py-2 bg-zinc-900/50 border border-zinc-800 rounded-lg">
-              <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+          {isAuthenticated && (
+            <div className="flex items-center space-x-2 px-3 py-2 bg-zinc-950 border border-zinc-800 rounded-none">
+              <div className="w-2 h-2 rounded-full bg-cyan-500"></div>
               <span className="text-xs font-mono text-zinc-400 truncate">{alias}</span>
-              <span className="ml-auto text-[10px] font-mono text-cyan-500 bg-cyan-950/30 px-1.5 py-0.5 rounded uppercase">{planTier}</span>
+              <span className="ml-auto text-[10px] font-mono text-cyan-500 bg-cyan-950/30 px-1.5 py-0.5 rounded-none border border-cyan-800 uppercase">{planTier}</span>
             </div>
           )}
         </div>
@@ -37,30 +49,36 @@ export default async function DocsLayout({
           <div>
             <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Foundation</div>
             <div className="space-y-0.5">
-              <NavLink href="/docs" active>Introduction & Quickstart</NavLink>
+              <NavLink href="/docs">Introduction & Quickstart</NavLink>
             </div>
           </div>
 
           <div>
             <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Core Systems</div>
             <div className="space-y-0.5">
-              <NavLink href="/docs/swarm">Swarm Brain</NavLink>
-              <NavLink href="/docs/aegis">Aegis Firewall</NavLink>
+              <NavLink href="/docs/core-systems/aegis-firewall">Aegis Firewall</NavLink>
+              <NavLink href="/docs/core-systems/temporal-router">Temporal Router</NavLink>
+            </div>
+          </div>
+
+          <div>
+            <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Toolchain</div>
+            <div className="space-y-0.5">
+              <NavLink href="/docs/toolchain">Toolchain & SDKs</NavLink>
             </div>
           </div>
 
           <div>
             <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Deployment</div>
             <div className="space-y-0.5">
-              <NavLink href="/docs/k8s">Kubernetes (K8s)</NavLink>
-              <NavLink href="/docs/aws">AWS Architecture</NavLink>
+              <NavLink href="/docs/deployment/kubernetes">Kubernetes (K8s)</NavLink>
             </div>
           </div>
 
           <div>
             <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Physics</div>
             <div className="space-y-0.5">
-              <NavLink href="/docs/zero-copy">Zero-Copy TCP</NavLink>
+              <NavLink href="/docs/physics/architecture">Internal Physics</NavLink>
             </div>
           </div>
         </nav>
@@ -79,30 +97,8 @@ export default async function DocsLayout({
         </div>
       </main>
 
-      {/* 3. Right TOC (Sticky) */}
-      <aside className="hidden xl:block w-64 flex-shrink-0 sticky top-0 h-screen py-20 px-8 border-l border-zinc-800/50">
-        <h4 className="text-xs font-semibold text-white uppercase tracking-widest mb-4">On this page</h4>
-        <nav className="space-y-2.5 text-sm text-zinc-500">
-          <a href="#byoc" className="block hover:text-zinc-300 transition-colors">Bring-Your-Own-Compute</a>
-          <a href="#install" className="block hover:text-zinc-300 transition-colors">Daemon Installation</a>
-          <a href="#sdk" className="block hover:text-zinc-300 transition-colors">Python SDK Boot</a>
-        </nav>
-      </aside>
+      {/* 3. Right TOC (Sticky Dynamic Component) */}
+      <TableOfContents />
     </div>
-  );
-}
-
-function NavLink({ href, children, active = false }: { href: string, children: React.ReactNode, active?: boolean }) {
-  return (
-    <Link 
-      href={href} 
-      className={`block px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
-        active 
-          ? "bg-zinc-800/80 text-white shadow-sm border border-zinc-700/50" 
-          : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50"
-      }`}
-    >
-      {children}
-    </Link>
   );
 }

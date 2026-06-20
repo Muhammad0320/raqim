@@ -1,45 +1,55 @@
 import { ZeroCopyDiagram, BenchmarkHUD } from '@/components/docs/PhysicsDiagrams';
 import { DynamicCodeBlock } from '@/components/docs/DynamicCodeBlock';
 
-# Altitude 4: Internal Physics
+export const metadata = {
+  title: "Altitude 4: Internal Physics & Bare-Metal Sympathy | Raqim OS",
+  description: "Mechanical Sympathy and Low-Level Rust Optimizations inside Raqim Swarm",
+};
+
+# Altitude 4: Internal Physics & Bare-Metal Sympathy
 
 <BenchmarkHUD />
 
-## The 100k Benchmark: Bypassing the Garbage Collector
+## Cracking the 790k TPS Barrier (Syscall Starvation)
 
-Raqim Cloud is architected on a foundation of absolute mechanical sympathy. To achieve a sustained ingestion rate of over 104,000 logs per second on a single node, we had to eliminate the primary bottleneck in modern systems: the garbage collector.
+Raqim Cloud is architected on a foundation of absolute mechanical sympathy. To achieve a sustained ingestion rate of over 790,946 logs per second on a single node, we had to eliminate the primary bottlenecks in modern systems: garbage collection and kernel context switches.
 
-Traditional platforms deserialize incoming JSON payloads, allocate them on the heap, and rely on sweeping algorithms to reclaim memory. This introduces unpredictable latencies and CPU overhead. Raqim fundamentally bypasses this. By utilizing memory-mapped files (`mmap`), we append bytes directly to a continuous disk sector. When a log is ingested, the kernel handles the page cache synchronization asynchronously. There are zero heap allocations in the hot path. The system operates entirely outside the boundaries of a conventional runtime, delivering sub-millisecond latencies under crushing loads.
+A naive TCP loop invoking `socket.read_exact()` for every packet forces the CPU to context-switch into the OS kernel millions of times, causing Syscall Starvation. Raqim wraps the TCP stream in a 1MB BufReader, swallowing 10,000 thoughts in a single kernel boundary crossing.
 
-## The Zero-Copy Layout: rkyv
+To prevent the global memory allocator from fragmenting the RAM, Raqim pre-allocates a single 1MB Scratch Buffer outside the loop. Packets are sliced directly into this persistent memory block, reducing dynamic heap allocations to absolute zero. By utilizing memory-mapped files (`mmap`) and native `io_uring` system interfaces, we append bytes directly to a continuous disk sector. When a log is ingested, the kernel handles the page cache synchronization asynchronously. The system operates entirely outside the boundaries of a conventional runtime, delivering sub-millisecond latencies under crushing loads.
 
-The core enabler of our throughput is `rkyv`, a zero-copy deserialization framework. When a TCP packet arrives at the ingestion layer, we do not parse it. Instead, we cast the raw byte array directly to a Rust struct memory layout.
+## Zero-Copy Casts (rkyv)
 
-By explicitly defining the memory layout with `#[repr(C)]`, we ensure that the byte representation on the wire identically matches the struct layout in memory. Accessing the payload takes `O(1)` time and requires 0 CPU cycles for deserialization.
+The core enabler of our throughput is `rkyv`, a zero-copy deserialization framework. Raqim abandons JSON and Protobuf entirely.
+
+The TCP packet IS the memory. By enforcing `#[repr(C)]` memory layouts, Raqim performs an unsafe pointer cast over the raw network buffer. Accessing the inner state takes `O(1)` time and exactly 0 CPU cycles of deserialization overhead.
 
 <DynamicCodeBlock 
   language="Rust"
   codeTemplate={`#[derive(Archive, Deserialize, Serialize)]
-#[repr(C)] // Enforce predictable memory layout
+#[repr(C)]
 pub struct IngressEnvelope {
     pub intent_path: String,
     pub public_key: [u8; 32],
     pub signature: [u8; 64],
+    pub capability_cert: Vec<u8>,
     pub state_bytes: Vec<u8>,
 }
-// Accessing the payload takes O(1) time and 0 CPU cycles.`} 
+// The byte representation on the wire identically matches the RAM layout.`} 
 />
 
 <ZeroCopyDiagram />
 
-## The Ed25519 Handshake
+## The Sovereign Certificate Authority & Passports
 
-Security at this scale requires cryptographic isolation at the socket layer. Every payload ingested into Raqim must be cryptographically signed using Ed25519 elliptic curve signatures.
+Security at this scale requires cryptographic isolation at the socket layer. Every payload ingested into Raqim must be cryptographically signed using Ed25519 elliptic curve signatures and carry a valid passport.
 
-The `IngressEnvelope` carries both the 32-byte public key and the 64-byte signature. Upon receiving the bytes, the ingestion node performs an immediate cryptographic handshake. We do not query a database to verify agent identities. The Agent ID itself is a mathematically locked MD5 derivative of the Public Key. Because the derivation is mathematically deterministic, hackers cannot spoof Agent IDs—they would need the corresponding private key to generate a valid Ed25519 signature. This guarantees that rogue nodes can never inject unauthorized state into the swarm.
+Instead of manual per-agent hardcoding, the `raqim-cloud` CA mints a `CapabilityCertificate` (Passport) signed by the Swarm Master's RSA Private Key. To prevent Elliptic Curve math from starving the CPU, Aegis splits the firewall. The heavy Lineage Verification (Master Signature) runs once per TCP handshake. Subsequent packets hit the ultra-fast RAM cache for `O(1)` Integrity Audits. Deterministic MD5 public key derivation ensures hackers cannot spoof agent identities without owning the corresponding private key credentials.
 
-## The Rolling License Matrix
+## The TimescaleDB Telemetry Firehose
 
-Raqim Cloud enforces licensing without compromising the availability of your global swarm. We employ a fault-tolerant billing state machine known as the Rolling License Matrix.
+Raqim Cloud enforces license limits and audits analytics without compromising localized edge nodes.
 
-The matrix operates on a continuous 24-hour heartbeat. Every node in your BYOC swarm independently verifies its cryptographic license entitlement locally. If Raqim Cloud experiences an outage and the 24-hour heartbeat cannot be renewed, the system automatically degrades into a 72-hour grace period. During this window, all localized CRDT replication, state synchronization, and append-only logging continue flawlessly. Your global swarm survives our downtime. The license matrix mathematically guarantees that the network partition of the control plane will never sever the data plane.
+Edge nodes do not spam the cloud. The Raqim daemon aggregates `crdt_merges` and `a2a_bytes` internally. Every 60 seconds, it flushes a single, compressed NDJSON payload authenticated via an RSA JWT to `raqim-cloud`.
+
+The Cloud API writes blindly to a TimescaleDB Hypertable. Continuous Aggregates calculate the billing rollups in the background, isolating analytic compute from ingestion throughput. This ensures WAN network partitions never degrade local mesh executions.

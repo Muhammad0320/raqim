@@ -21,62 +21,52 @@ Deploying Raqim requires abandoning traditional, ephemeral cloud paradigms. We s
 
 ## The Distroless Armor
 
-When you execute a Swarm deployment, every node boots from the `ghcr.io/raqim-os/raqim-core` image. This is not a standard Ubuntu or Alpine container. It is a strictly deterministic, 40MB `scratch` binary.
+Every node boots from a 40MB scratch binary. There is no package manager, no /bin/bash, and no glibc overhead. The attack surface is mathematically minimized.
 
-There is no package manager. There is no `/bin/bash`. There are no coreutils.
+By enforcing a pure distroless architecture, we achieve a near-zero threat boundary. The resulting container configuration means that even if remote code execution occurs at the WASM layer, there is literally no shell or utility library to pivot into. The operating system is the binary, and the binary is immutable.
 
-By enforcing a pure distroless architecture, we achieve a mathematically near-zero attack surface. The resulting container physics mean that even if an adversary achieves remote code execution at the WASM layer, there is literally no shell environment to pivot into. The operating system is the binary, and the binary is immutable.
+## Data Gravity & StatefulSets
 
-## The StatefulSet & Data Gravity
+Raqim is a Database OS. Standard K8s Deployments destroy data gravity. We enforce StatefulSets to guarantee stable DNS resolution (raqim-0.raqim-headless.svc.cluster.local) and strict binding to local NVMe Persistent Volumes (PVCs).
 
-A classic Kubernetes `Deployment` is designed for stateless web servers, randomly scheduling pods and destroying them at will. Applying this to Raqim OS breaks the fundamental laws of data gravity.
+If `raqim-0` experiences a hardware fault, the scheduler is forced to mount the exact same physical block storage unit upon restart. This volume anchors the Write-Ahead Log (WAL) and index structures, avoiding slow, network-bound replication by anchoring execution direct to local storage.
 
-Raqim demands a strict `StatefulSet` topology. The cryptographic identity and live vector memory of a node are intrinsically tied to its physical disk. If `raqim-0` experiences a hardware fault and crashes, the Kubernetes scheduler must mathematically guarantee that the resurrected pod is re-attached to the exact same NVMe block storage drive. 
+## The Headless Mesh
 
-This dedicated volume acts as the memory anchor, containing the node's Write-Ahead Log (WAL) and its LanceDB vector indices. We do not stream state over the network; we bind the execution engine directly to the silicon where the state resides.
+Standard K8s Services inject iptables or IPVS overhead. Raqim bypasses this using a Headless Service (ClusterIP: None), allowing the Zenoh mesh to map the exact physical IP of every peer pod for direct TCP handshakes.
 
-## The Zenoh Headless Service
-
-Standard Kubernetes networking routes traffic through a `ClusterIP` Service, effectively creating a load-balanced proxy that round-robins requests. This architecture is lethal to peer-to-peer topologies. 
-
-Raqim agents communicate via the Zenoh protocol, requiring direct, un-proxied TCP connections to form the A2A (Agent-to-Agent) Mesh. To bypass the internal Kubernetes load balancer, we utilize a `ClusterIP: None` Headless Service. 
-
-This configuration instructs the CoreDNS controller to return the actual, distinct IP addresses of every running pod rather than a single virtual IP. Each agent receives a stable, resolvable DNS record (e.g., `raqim-0.raqim-mesh.raqim-system.svc.cluster.local`), enabling pure point-to-point TCP firehose routing and a truly decentralized gossip network.
+This bypasses virtual load balancer IP allocations and iptables routing loops. CORE DNS resolves individual, stable records directly pointing to the real interface IP addresses (e.g. `raqim-0.raqim-headless.raqim-system.svc.cluster.local`), establishing pure, low-level point-to-point TCP tunnels between swarm nodes.
 
 <RequiresEnterprise>
-  ### Multi-Cluster Global Mesh Routing
-  
-  For Global Sovereign deployments, local cluster networking is insufficient. The Enterprise edition unlocks Zenoh's cross-cluster peering capabilities via direct eBPF routing.
-  
-  By injecting the Enterprise routing daemon into the CNI layer, we bypass standard Ingress controllers entirely, establishing zero-trust WireGuard tunnels between independent K3s clusters across global regions.
+  ### License Cryptography (Helm Injection)
+
+  To unlock Global WAN synchronization (global_crdt, global_a2a), the Enterprise RSA JWT must be injected into the daemon's hypervisor via Kubernetes Secrets.
+
+  Deploying the Enterprise Swarm requires provisioning values that register the license keys and bind storage resources directly to bare-metal hardware.
 </RequiresEnterprise>
-
-## Configuration Injections
-
-Executing the deployment requires absolute precision. Below is the strict declarative configuration for the Sovereign Helm Chart.
 
 <DynamicCodeBlock 
   language="yaml" 
   codeTemplate={`# raqim-values.yaml
-cluster:
-  name: "eu-central-sovereign-1"
+replicaCount: 3
 
 image:
   repository: ghcr.io/raqim-os/raqim-core
-  tag: "v1.0.0-distroless"
+  tag: v2.1.0
 
 storage:
   size: 500Gi
-  className: "local-path" # Direct NVMe binding
+  className: "local-nvme"
 
-auth:
-  tenantAlias: "{{TENANT_ALIAS}}"
-  licenseKey: "{{LICENSE_KEY}}"`}
+licenseKey: "{{LICENSE_KEY}}" # Injected securely via K8s Secret
+
+features:
+  aegisFirewall: true`}
 />
 
-To actualize the configuration and ignite the cluster, execute the following strict imperative command:
+To apply the custom Helm attributes and instantiate the cluster systems, run the installation command below:
 
 <DynamicCodeBlock 
   language="bash" 
-  codeTemplate={`helm install swarm-alpha raqim/raqim-os -f raqim-values.yaml --namespace raqim-system --create-namespace`}
+  codeTemplate={`$ helm install swarm-alpha raqim/raqim-os -f raqim-values.yaml --namespace raqim-system`}
 />

@@ -10,23 +10,31 @@ import {
 } from './styles';
 
 export default function ToolchainPage() {
-  const cliCode = `$ raqim-cli keys generate
-Generating Ed25519 identity pair...
+  const cliCode = `$ raqim-cli keys forge --name finance_node --group finance_worker --count 3 --env external
 
-Public Key:  0x9a8f2e7b...
-Private Key: [HIDDEN]
+Bismillah. Initiating Sovereign Fleet Forge...
+Target Group : [finance_worker]
+Requested Size : [3] Nodes
+Environment Scope : [external]
 
-Deriving Routing ID...
-> MD5(PubKey) -> 16-byte determinism
-> Agent ID (Hex): 8f3a9b2c4e1d7f6a
+  [OK] Certified Node Provisioned: finance_node_01 -> 8f3a9b2c...
+  [OK] Certified Node Provisioned: finance_node_02 -> 4e1d7f6a...
+  [OK] Certified Node Provisioned: finance_node_03 -> d8cd98f0...
 
-Identity fully established. Ready for mesh deployment.`;
+✅ Fleet Forge Completed. Generated 3/3 secure identities inside ./vault/identities`;
 
   const wasmCompileCode = `# Compile your agent to standard WASI architecture
 cargo build --target wasm32-wasi --release
 
 # The resulting binary is a completely isolated module
 # ready to be executed in-process by the Raqim OS hypervisor.`;
+
+  const telemetryCode = `$ raqim-cli cluster topology --license {{LICENSE_KEY}}
+
+🧠 Allocated Swarm Brain Shards (Loro Documents):
+  Shard Space Namespace: [/finance/ledger]
+    Active Peer Timelines: 14
+    Total Memory Size    : 143,872 bytes`;
 
   return (
     <ArticleWrapper>
@@ -43,17 +51,16 @@ cargo build --target wasm32-wasi --release
       <ToolchainTopology />
 
       <div>
-        <ContentSection id="cryptographic-identity">
-          <SectionTitle>The Cryptographic Identity (CLI)</SectionTitle>
+        <ContentSection id="fleet-forge">
+          <SectionTitle>The Sovereign Fleet Forge (CLI)</SectionTitle>
           <Paragraph>
             Every agent deployed in the Raqim Swarm requires absolute cryptographic isolation. 
-            The foundation of this isolation is deterministic identity generation at the network edge.
+            Raqim abandons manual, one-off key generation for batch Certificate Authority (CA) minting at the network edge.
           </Paragraph>
           <Paragraph>
-            Using the <InlineCode>raqim-cli keys generate</InlineCode> utility, the system produces a raw Ed25519 cryptographic key pair. 
-            To optimize mesh routing without sacrificing security, we hash the Public Key via MD5. 
-            This derives a deterministic 16-byte <InlineCode>agent_hex</InlineCode> which acts as the ultimate Routing ID 
-            across the entire Zenoh network.
+            Using the <InlineCode>raqim-cli keys forge</InlineCode> utility, operators batch-provision node credentials directly. 
+            The Swarm Master CA generates and signs capabilities, packaging them into deterministic 16-byte identities 
+            stored securely inside local cryptographic storage.
           </Paragraph>
           
           <DynamicCodeBlock 
@@ -70,34 +77,29 @@ cargo build --target wasm32-wasi --release
           </Paragraph>
 
           <h3 style={{ color: '#fff', fontSize: '1.25rem', marginTop: '2rem', marginBottom: '1rem', fontWeight: 500 }}>
-            Vector 2: The Python SDK (Out-of-Process)
-          </h3>
-          <Paragraph>
-            Python environments cannot natively run inside our WASM hypervisor. Thus, the Python SDK runs entirely <EmphasizedText>out-of-process</EmphasizedText>. 
-            It communicates with the Core via a heavy <InlineCode>TCP Firehose</InlineCode>. 
-          </Paragraph>
-          <Paragraph>
-            Because the Python interpreter maintains its own memory heap, we cannot forcefully drop its state. 
-            Instead, it relies heavily on the <InlineCode>Zenoh Control Plane</InlineCode> to receive external eviction hooks. 
-            When a Reality Fork occurs, the Control Plane signals the Python process to manually clear the LLM context buffers.
-          </Paragraph>
-
-          <h3 style={{ color: '#fff', fontSize: '1.25rem', marginTop: '2rem', marginBottom: '1rem', fontWeight: 500 }}>
             Vector 1: The WASM SDK (In-Process)
           </h3>
           <Paragraph>
             For maximum performance, Rust agents utilize the WASM SDK and run directly <EmphasizedText>in-process</EmphasizedText> within the Raqim OS WASI sandbox.
           </Paragraph>
           <Paragraph>
-            Unlike Python, WASM agents require zero Zenoh eviction hooks. During a Reality Fork, the OS simply executes a physical drop 
-            of the entire WASM linear memory and reboots the compiled binary. The state is guaranteed to be obliterated at the memory 
-            allocator level, achieving zero-latency context flushing.
+            Because WASM runs natively inside the Raqim hypervisor, Reality Forking occurs with zero network latency. The OS physically drops the linear memory block and injects a historical snapshot in microseconds.
           </Paragraph>
           
           <DynamicCodeBlock 
             codeTemplate={wasmCompileCode} 
             language="bash" 
           />
+
+          <h3 style={{ color: '#fff', fontSize: '1.25rem', marginTop: '2.5rem', marginBottom: '1rem', fontWeight: 500 }}>
+            Vector 2: The Python SDK (Out-of-Process)
+          </h3>
+          <Paragraph>
+            Python environments cannot natively run inside our WASM hypervisor. Thus, the Python SDK runs entirely <EmphasizedText>out-of-process</EmphasizedText>.
+          </Paragraph>
+          <Paragraph>
+            External SDKs communicate over two sovereign channels: The TCP Data Plane for zero-copy CRDT ingestion, and the Zenoh Control Plane. When Aegis mandates a reality reseed, it bypasses the LLM execution loop entirely, firing a cryptographic command down the Zenoh mesh to physically wipe the Python array.
+          </Paragraph>
         </ContentSection>
 
         <ContentSection id="mcp-bridge">
@@ -112,6 +114,23 @@ cargo build --target wasm32-wasi --release
             The commercial AI pipes inputs to the MCP Server, which bridges the gap to the Raqim Core via secure TCP sockets, 
             allowing external systems to perform read/write operations against the Swarm memory matrix.
           </Paragraph>
+        </ContentSection>
+
+        <ContentSection id="cluster-observability">
+          <SectionTitle>Headless Cluster Observability</SectionTitle>
+          <Paragraph>
+            During network partitions, enterprise operators cannot rely on web dashboards. Raqim-CLI delivers low-level diagnostics 
+            straight from local loops.
+          </Paragraph>
+          <Paragraph>
+            Operators can run the <InlineCode>cluster topology</InlineCode> utility to audit memory allocations, inspect active timelines, 
+            and assert direct synchronization status of Loro CRDT document shards across the swarm.
+          </Paragraph>
+          
+          <DynamicCodeBlock 
+            codeTemplate={telemetryCode} 
+            language="bash" 
+          />
         </ContentSection>
       </div>
     </ArticleWrapper>

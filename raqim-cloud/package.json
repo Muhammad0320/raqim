@@ -9,9 +9,13 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@mdx-js/loader": "^3.1.1",
+    "@mdx-js/react": "^3.1.1",
     "@microsoft/fetch-event-source": "^2.0.1",
+    "@next/mdx": "^16.2.9",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.3",
+    "@types/mdx": "^2.0.14",
     "@types/styled-components": "^5.1.36",
     "@xyflow/react": "^12.10.2",
     "framer-motion": "^11.0.0",

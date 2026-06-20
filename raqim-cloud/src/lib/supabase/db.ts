@@ -1,34 +1,97 @@
 import { createClient } from './server'
 import { cache } from 'react'
+import { cookies } from 'next/headers'
 
 export const getCachedUserTenantContext = cache(async () => {
-  const supabase = await createClient()
-  
-  // Mocking the active session by taking the first org for demonstration
-  const { data: orgs } = await supabase.from('organizations').select('*').limit(1)
-  const org = orgs?.[0]
-  
-  if (!org) {
-    return { alias: "JPM_CHASE_PROD", planTier: "ENTERPRISE", licenseKey: "eyJhb..." } // Default mock if DB is empty
+  if (process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true') {
+    return { 
+      alias: "DEV_TENANT_LOCAL", 
+      planTier: "ENTERPRISE", 
+      licenseKey: "DEV_RSA_BYPASS_KEY",
+      isAuthenticated: true 
+    }
   }
 
-  const { data: sub } = await (supabase
-    .from('subscriptions' as any)
-    .select('plan_tier')
-    .eq('org_id', org.id)
-    .single() as any)
+  try {
+    const supabase = await createClient()
+    
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return { 
+        alias: "YOUR_TENANT_ALIAS", 
+        planTier: "OPEN_CORE", 
+        licenseKey: "YOUR_RSA_LICENSE_KEY",
+        isAuthenticated: false 
+      }
+    }
 
-  const { data: license } = await supabase
-    .from('licenses')
-    .select('jwt_hash')
-    .eq('org_id', org.id)
-    .eq('revoked', false)
-    .single()
+    // Fetch user organizations through organization_members table
+    const { data: memberData, error: memberError } = await supabase
+      .from('organization_members')
+      .select('org_id, organizations(*)')
+      .eq('user_id', user.id)
 
-  return {
-    alias: org.alias,
-    planTier: sub?.plan_tier || 'OPEN_CORE',
-    licenseKey: license?.jwt_hash || 'eyJhb...'
+    if (memberError || !memberData || memberData.length === 0) {
+      return { 
+        alias: "YOUR_TENANT_ALIAS", 
+        planTier: "OPEN_CORE", 
+        licenseKey: "YOUR_RSA_LICENSE_KEY",
+        isAuthenticated: false 
+      }
+    }
+
+    // Safely extract organizations
+    const userOrgs = memberData
+      .map((item) => {
+        const org = Array.isArray(item.organizations) ? item.organizations[0] : item.organizations
+        return org
+      })
+      .filter((org): org is NonNullable<typeof org> => !!org)
+
+    if (userOrgs.length === 0) {
+      return { 
+        alias: "YOUR_TENANT_ALIAS", 
+        planTier: "OPEN_CORE", 
+        licenseKey: "YOUR_RSA_LICENSE_KEY",
+        isAuthenticated: false 
+      }
+    }
+
+    // Resolve the active organization context from cookie
+    const cookieStore = await cookies()
+    const activeOrgId = cookieStore.get('active-org-id')?.value
+    let activeOrg = userOrgs.find((org) => org.id === activeOrgId) || userOrgs[0]
+
+    // Fetch subscription
+    const { data: sub } = await (supabase
+      .from('subscriptions' as any)
+      .select('plan_tier')
+      .eq('org_id', activeOrg.id)
+      .single() as any)
+
+    // Fetch active license
+    const { data: license } = await supabase
+      .from('licenses')
+      .select('jwt_hash')
+      .eq('org_id', activeOrg.id)
+      .eq('revoked', false)
+      .single()
+
+    return {
+      alias: activeOrg.alias,
+      planTier: sub?.plan_tier || 'OPEN_CORE',
+      licenseKey: license?.jwt_hash || 'YOUR_RSA_LICENSE_KEY',
+      isAuthenticated: true
+    }
+  } catch (error) {
+    console.error('Error fetching cached user tenant context:', error)
+    return {
+      alias: "YOUR_TENANT_ALIAS",
+      planTier: "OPEN_CORE",
+      licenseKey: "YOUR_RSA_LICENSE_KEY",
+      isAuthenticated: false
+    }
   }
 })
 

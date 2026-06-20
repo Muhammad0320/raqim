@@ -4,9 +4,15 @@ import React from 'react';
 import styled, { keyframes } from 'styled-components';
 
 const pulse = keyframes`
-  0% { filter: drop-shadow(0 0 8px rgba(6, 182, 212, 0.4)); }
-  50% { filter: drop-shadow(0 0 16px rgba(6, 182, 212, 0.8)); }
-  100% { filter: drop-shadow(0 0 8px rgba(6, 182, 212, 0.4)); }
+  0% { filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4)); stroke: #00E5FF; }
+  50% { filter: drop-shadow(0 0 16px rgba(0, 229, 255, 0.9)); stroke: #00E5FF; }
+  100% { filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4)); stroke: #00E5FF; }
+`;
+
+const pinkPulse = keyframes`
+  0% { filter: drop-shadow(0 0 3px rgba(236, 72, 153, 0.4)); stroke: #ec4899; }
+  50% { filter: drop-shadow(0 0 12px rgba(236, 72, 153, 0.8)); stroke: #ec4899; }
+  100% { filter: drop-shadow(0 0 3px rgba(236, 72, 153, 0.4)); stroke: #ec4899; }
 `;
 
 const flowDots = keyframes`
@@ -34,9 +40,9 @@ const Container = styled.div`
   justify-content: center;
   margin: 3rem 0;
   padding: 2rem;
-  background: rgba(9, 9, 11, 0.8);
-  border: 1px solid rgba(39, 39, 42, 0.6);
-  border-radius: 12px;
+  background: #000000;
+  border: 1px solid #27272a; /* zinc-800 */
+  border-radius: 0px; /* brutalist sharp */
   overflow: hidden;
 `;
 
@@ -45,69 +51,59 @@ const Svg = styled.svg`
   max-width: 800px;
   height: auto;
   overflow: visible;
-  font-family: var(--font-geist-sans), sans-serif;
+  font-family: var(--font-geist-mono), monospace;
 `;
 
 const CoreBox = styled.rect`
-  fill: rgba(6, 182, 212, 0.05);
-  stroke: rgba(6, 182, 212, 0.6);
-  stroke-width: 2;
+  fill: #09090b;
+  stroke: #00E5FF;
+  stroke-width: 2.5;
   animation: ${pulse} 4s infinite ease-in-out;
-  rx: 8;
+  rx: 0;
 `;
 
 const NodeBox = styled.rect`
-  fill: #18181b;
-  stroke: #3f3f46;
+  fill: #09090b;
+  stroke: #27272a;
   stroke-width: 2;
-  rx: 6;
+  rx: 0;
 `;
 
 const InnerNodeBox = styled.rect`
-  fill: rgba(16, 185, 129, 0.1);
+  fill: rgba(16, 185, 129, 0.02);
   stroke: #10b981;
   stroke-width: 2;
-  rx: 6;
+  rx: 0;
 `;
 
 const TextBase = styled.text`
   fill: #a1a1aa;
-  font-size: 14px;
+  font-size: 13px;
   text-anchor: middle;
   dominant-baseline: middle;
 `;
 
 const TitleText = styled(TextBase)`
-  fill: #f4f4f5;
-  font-weight: 600;
-  font-size: 16px;
+  fill: #fafafa;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.05em;
 `;
 
 const SubText = styled(TextBase)`
-  font-size: 12px;
+  font-size: 11px;
   fill: #71717a;
 `;
 
 const ConnectionLine = styled.path`
   fill: none;
-  stroke: #52525b;
+  stroke: #27272a;
   stroke-width: 2;
 `;
 
-const TcpFirehose = styled(ConnectionLine)`
-  stroke: #f59e0b;
-  stroke-width: 3;
-`;
-
-const ZenohControl = styled(ConnectionLine)`
-  stroke: #ec4899;
-  stroke-dasharray: 4 4;
-`;
-
 const FlowPath = styled(ConnectionLine)`
-  stroke: rgba(6, 182, 212, 0.8);
   stroke-dasharray: 4 8;
-  animation: ${flowDots} 1s linear infinite;
+  animation: ${flowDots} 1.2s linear infinite;
 `;
 
 const FloatingGroup = styled.g`
@@ -133,24 +129,25 @@ export function ToolchainTopology() {
       <Svg viewBox="0 0 800 500">
         <defs>
           <linearGradient id="coreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="rgba(6, 182, 212, 0.1)" />
-            <stop offset="100%" stopColor="rgba(6, 182, 212, 0.02)" />
+            <stop offset="0%" stopColor="rgba(0, 229, 255, 0.08)" />
+            <stop offset="100%" stopColor="rgba(0, 0, 0, 0.2)" />
           </linearGradient>
         </defs>
 
         {/* Core Raqim OS */}
         <g transform="translate(250, 100)">
           <CoreBox width="300" height="300" style={{ fill: 'url(#coreGradient)' }} />
-          <TitleText x="150" y="30" style={{ fill: '#06b6d4' }}>The Core (Raqim OS)</TitleText>
+          <TitleText x="150" y="30" style={{ fill: '#00E5FF' }}>THE CORE (RAQIM OS)</TitleText>
           
           {/* Vector 1: WASM SDK (Inside Core) */}
-          <g transform="translate(50, 80)">
-            <InnerNodeBox width="200" height="180" />
+          <g transform="translate(50, 75)">
+            <InnerNodeBox width="200" height="185" />
             <TitleText x="100" y="30" style={{ fill: '#10b981' }}>WASM Sandbox</TitleText>
-            <SubText x="100" y="50">Vector 1: In-Process</SubText>
+            <SubText x="100" y="52" style={{ fill: '#10b981', opacity: 0.8 }}>Vector 1: In-Process</SubText>
+            <SubText x="100" y="150" style={{ fill: '#71717a', fontSize: '9px' }}>DETERMINISTIC ISOLATION</SubText>
             
             {/* Zero latency dots */}
-            <g transform="translate(60, 100)">
+            <g transform="translate(60, 95)">
               <FastDot cx="0" cy="0" r="4" />
               <FastDot2 cx="20" cy="20" r="3" />
               <FastDot cx="40" cy="-10" r="5" style={{ animationDuration: '4s' }} />
@@ -159,50 +156,47 @@ export function ToolchainTopology() {
           </g>
         </g>
 
-        {/* Vector 2: Python SDK (Outside Core, Bottom Left) */}
-        <FloatingGroup transform="translate(30, 200)">
+        {/* Vector 2: Python SDK (Outside Core, Left) */}
+        <FloatingGroup transform="translate(30, 210)">
           <NodeBox width="160" height="80" />
-          <TitleText x="80" y="30">Python SDK</TitleText>
-          <SubText x="80" y="55">Vector 2: Out-of-Process</SubText>
+          <TitleText x="80" y="30" style={{ fill: '#fafafa' }}>PYTHON SDK</TitleText>
+          <SubText x="80" y="52">Vector 2: Out-of-Process</SubText>
         </FloatingGroup>
 
         {/* Vector 3: MCP Bridge (Outside Core, Top Right) */}
-        <FloatingGroup transform="translate(600, 120)">
+        <FloatingGroup transform="translate(610, 120)">
           <NodeBox width="160" height="80" />
-          <TitleText x="80" y="30">Claude / Cursor</TitleText>
-          <SubText x="80" y="55">External UI</SubText>
+          <TitleText x="80" y="30">CLAUDE / CURSOR</TitleText>
+          <SubText x="80" y="52">External UI Client</SubText>
         </FloatingGroup>
 
-        <FloatingGroup transform="translate(600, 300)">
+        {/* MCP Server Node (Right) */}
+        <FloatingGroup transform="translate(610, 300)">
           <NodeBox width="160" height="80" />
-          <TitleText x="80" y="30">MCP Server</TitleText>
-          <SubText x="80" y="55">Vector 3: TCP Layer</SubText>
+          <TitleText x="80" y="30">MCP SERVER</TitleText>
+          <SubText x="80" y="52" style={{ fill: '#00E5FF' }}>Vector 3: Bridge</SubText>
         </FloatingGroup>
 
-        {/* Connections Python -> Core */}
-        {/* TCP Firehose */}
-        <path d="M 190 230 L 250 230" fill="none" stroke="#f59e0b" strokeWidth="3" />
-        <FlowPath d="M 190 230 L 250 230" />
-        <rect x="200" y="210" width="40" height="16" fill="#18181b" />
-        <SubText x="220" y="218" style={{ fontSize: '10px', fill: '#f59e0b' }}>TCP Firehose</SubText>
+        {/* Python Connection Paths -> Core OS */}
+        {/* TCP Data Plane: Thick Glowing Cyan */}
+        <path d="M 190 230 L 250 230" fill="none" stroke="#00E5FF" strokeWidth="4.5" style={{ filter: 'drop-shadow(0 0 6px rgba(0, 229, 255, 0.8))' }} />
+        <FlowPath d="M 190 230 L 250 230" stroke="#ffffff" strokeWidth="1.5" />
+        <text x="220" y="215" fill="#00E5FF" fontSize="8px" fontWeight="700" textAnchor="middle">Zero-Copy State Sync</text>
 
-        {/* Zenoh Control Plane */}
-        <path d="M 190 250 L 250 250" fill="none" stroke="#ec4899" strokeWidth="2" strokeDasharray="4 4" />
-        <rect x="195" y="255" width="50" height="16" fill="#18181b" />
-        <SubText x="220" y="263" style={{ fontSize: '10px', fill: '#ec4899' }}>Zenoh Control</SubText>
+        {/* Zenoh Control Plane: Dashed Glowing Pink */}
+        <path d="M 190 270 L 250 270" fill="none" stroke="#ec4899" strokeWidth="2.5" strokeDasharray="5 5" style={{ filter: 'drop-shadow(0 0 4px rgba(236, 72, 153, 0.6))' }} />
+        <FlowPath d="M 190 270 L 250 270" stroke="#ffffff" strokeWidth="1" />
+        <text x="220" y="290" fill="#ec4899" fontSize="8px" fontWeight="700" textAnchor="middle">OOB Context Eviction</text>
 
-        {/* Connections Claude -> MCP Server -> Core */}
-        {/* Claude to MCP */}
-        <path d="M 680 200 L 680 300" fill="none" stroke="#52525b" strokeWidth="2" />
-        <FlowPath d="M 680 200 L 680 300" />
-        <rect x="660" y="242" width="40" height="16" fill="#18181b" />
-        <SubText x="680" y="250" style={{ fontSize: '10px' }}>MCP Stdout</SubText>
+        {/* Connections: Claude -> MCP Server */}
+        <path d="M 690 200 L 690 300" fill="none" stroke="#27272a" strokeWidth="2.5" />
+        <FlowPath d="M 690 200 L 690 300" stroke="#00E5FF" strokeWidth="1.5" />
+        <text x="735" y="250" fill="#a1a1aa" fontSize="9px" textAnchor="middle">MCP Protocol</text>
 
-        {/* MCP Server to Core */}
-        <path d="M 600 340 L 550 340" fill="none" stroke="#f59e0b" strokeWidth="3" />
-        <FlowPath d="M 600 340 L 550 340" />
-        <rect x="560" y="320" width="30" height="16" fill="#18181b" />
-        <SubText x="575" y="328" style={{ fontSize: '10px', fill: '#f59e0b' }}>TCP</SubText>
+        {/* Connections: MCP Server to Core OS */}
+        <path d="M 610 340 L 550 340" fill="none" stroke="#00E5FF" strokeWidth="3" style={{ filter: 'drop-shadow(0 0 4px rgba(0, 229, 255, 0.5))' }} />
+        <FlowPath d="M 610 340 L 550 340" stroke="#ffffff" strokeWidth="1" />
+        <text x="580" y="328" fill="#00E5FF" fontSize="9px" fontWeight="700" textAnchor="middle">Secure TCP</text>
 
       </Svg>
     </Container>

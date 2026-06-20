@@ -6,19 +6,44 @@ export default function DocsPage() {
   const pythonCode = `from raqim import RaqimClient
 
 agent = RaqimClient(
-    alias="MY_FIRST_AGENT", 
-    tenant="{{TENANT_ALIAS}}", 
-    license="{{LICENSE_KEY}}"
+    alias="MY_FIRST_AGENT",
+    tenant="{{TENANT_ALIAS}}",
+    private_key_path="/etc/raqim/keys/private.key"
 )
-await agent.boot()`;
+await agent.boot()
+
+# Query the swarm memory database using the RSA license key
+results = await agent.query_memory(
+    intent_path="/finance/ledger",
+    query="active balances",
+    license_key="{{LICENSE_KEY}}"
+)`;
+
+  const rustCode = `use raqim_wasm_sdk::{RaqimAgent, Context};
+
+#[no_mangle]
+pub extern "C" fn agent_main() {
+    // The agent boots directly inside the hypervisor ring
+    let mut agent = RaqimAgent::init();
+
+    // Mutate the local CRDT state. The OS handles Zenoh mesh gossip automatically.
+    agent.commit_thought(
+        "/finance/ledger/update", 
+        "Reconciling cross-border state."
+    );
+}`;
 
   return (
-    <article className="prose prose-invert prose-zinc max-w-none prose-headings:tracking-tight prose-a:text-cyan-400 hover:prose-a:text-cyan-300">
+    <article className="prose prose-lg prose-invert prose-zinc max-w-none prose-headings:tracking-tight prose-a:text-cyan-400 hover:prose-a:text-cyan-300">
       <div className="mb-16">
+        <div className="text-cyan-500 font-mono text-sm uppercase tracking-[0.1em] mb-4">Foundation</div>
         <h1 className="text-4xl md:text-5xl font-semibold text-white mb-6">Introduction & Quickstart</h1>
-        <p className="text-xl text-zinc-400 leading-relaxed">
+        <p className="text-2xl text-zinc-400 leading-relaxed">
           Welcome to Raqim OS. This documentation covers the architecture, deployment, and operation 
           of the Sovereign, Zero-Copy Agent platform.
+        </p>
+        <p className="text-zinc-400 leading-relaxed mt-6">
+          Raqim OS is a bare-metal, zero-copy database engine and deterministic WASM hypervisor engineered for autonomous multi-agent swarms. By abandoning traditional JSON/HTTP overhead and garbage-collected runtimes, it casts TCP packets directly into memory via rkyv, achieving 790,000+ TPS. It provides an unforgeable cryptographic firewall (Aegis) and lock-free global state synchronization via Loro CRDTs over a peer-to-peer Zenoh mesh.
         </p>
       </div>
 
@@ -62,6 +87,17 @@ await agent.boot()`;
           />
         </section>
 
+        <section id="rust-sdk" className="scroll-mt-24">
+          <h2 className="text-2xl font-medium text-zinc-100 border-b border-zinc-800/80 pb-3 mb-6">Rust SDK (In-Process WASM)</h2>
+          <p className="text-zinc-400 mb-6">
+            For maximum performance, agents can be compiled to wasm32-wasi and deployed directly inside the Raqim OS hypervisor. This grants the agent zero-latency memory access and allows the Temporal Router to fork its reality instantly.
+          </p>
+          <DynamicCodeBlock 
+            codeTemplate={rustCode} 
+            language="rust" 
+          />
+        </section>
+
         <section className="bg-gradient-to-br from-zinc-900/50 to-zinc-950 border border-zinc-800 rounded-2xl p-8 lg:p-10 mt-16 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-emerald-500 opacity-50"></div>
           <h3 className="text-xl font-medium text-white mb-4">Ready for Production?</h3>
@@ -71,9 +107,9 @@ await agent.boot()`;
           </p>
           <div className="flex flex-wrap gap-4">
             <a href="/dashboard" className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium bg-white text-black rounded-lg hover:bg-zinc-200 transition-colors">
-              View Fleet Dashboard
+              Provision License Keys
             </a>
-            <a href="/docs/swarm" className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium border border-zinc-700 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-colors">
+            <a href="/docs/physics/architecture" className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-medium border border-zinc-700 bg-zinc-900 text-white rounded-lg hover:bg-zinc-800 transition-colors">
               Understand The Swarm
             </a>
           </div>

@@ -72,7 +72,7 @@ export const useTenantStore = create<TenantState>((set, get) => ({
             display_name: 'Acme Corp (Dev Bypass)',
             sso_domain: 'acme.com',
             stripe_customer_id: null,
-            plan_tier: 'PRO',
+            plan_tier: 'STARTUP',
           },
           {
             id: 'e0000000-0000-0000-0000-000000000001',
@@ -81,6 +81,14 @@ export const useTenantStore = create<TenantState>((set, get) => ({
             sso_domain: 'jpmorgan.com',
             stripe_customer_id: null,
             plan_tier: 'ENTERPRISE',
+          },
+          {
+            id: 'e0000000-0000-0000-0000-000000000002',
+            alias: 'open-source-lab',
+            display_name: 'Open Source Lab (Dev Bypass)',
+            sso_domain: 'oslab.org',
+            stripe_customer_id: null,
+            plan_tier: 'OPEN_CORE',
           },
         ];
 

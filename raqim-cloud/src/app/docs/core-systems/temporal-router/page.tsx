@@ -11,12 +11,10 @@ import {
 } from './styles';
 
 export default function TemporalRouterPage() {
-  const pythonCode = `# Define how your specific LLM clears its memory buffer
-def reality_reseed_hook(new_system_prompt: str):
-    llm_memory.clear()
-    llm_memory.save_context({"input": "SYSTEM"}, {"output": new_system_prompt})
+  const pythonCode = `def reality_reseed_hook(new_system_prompt: str):
+    print(f"[OS DIRECTIVE]: {new_system_prompt}")
+    llm_memory.clear() # Memory wiped. Reality reset.
 
-# Bind your hook to the Raqim OS Control Plane via Zenoh
 agent.register_eviction_hook(reality_reseed_hook)`;
 
   return (
@@ -57,6 +55,11 @@ agent.register_eviction_hook(reality_reseed_hook)`;
             It physically mutates the OS-level environment variables presented to the WASM sandbox during instantiation. 
             The agent wakes up under the absolute illusion of a new reality—complete with alternate database URIs or 
             mocked API endpoints—without requiring a daemon reboot or disrupting the parent process.
+          </Paragraph>
+          
+          <SectionSubtitle>The Zenoh Control Plane: Out-of-Band Eviction</SectionSubtitle>
+          <Paragraph>
+            External SDKs hold memory in their own process. To cure a hallucinating Python agent, Raqim fires a highly-privileged <code>SystemCommand::EvictContext</code> down an Out-of-Band (OOB) Zenoh topic (<code>raqim/tenant/control/agent_hex</code>). The SDK intercepts this bypassing the LLM, triggering a developer-defined <code>_reality_fork_hook</code> to instantly wipe the local array.
           </Paragraph>
         </ContentSection>
 
