@@ -493,9 +493,16 @@ impl MemoryRouter {
         phantom_bytes.copy_from_slice(&original_bytes);
 
         if is_isolated_debug {
-            // Flip every bit to create a mathematically isolated Phantom ID
-            for b in &mut phantom_bytes {
-                *b ^= 0xFF;
+            // Deriving a deterministic salt from target_tx_id
+            let tx_id_bytes = target_tx_id.unwrap_or(0).to_be_bytes();
+            let mut salt = [0u8; 16];
+            salt[0..8].copy_from_slice(&tx_id_bytes);
+            salt[8..16].copy_from_slice(&tx_id_bytes);
+
+            // Apply the cryptograhic XOR mutation
+            for i in 0..16 {
+                phantom_bytes[i] ^= salt[i];
+                phantom_bytes[i] ^= 0xFF;
             }
         }
 
