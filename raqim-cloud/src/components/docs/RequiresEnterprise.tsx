@@ -7,9 +7,11 @@ import Link from 'next/link';
 
 interface RequiresEnterpriseProps {
   children: React.ReactNode;
+  title?: string;
+  description?: string;
 }
 
-export function RequiresEnterprise({ children }: RequiresEnterpriseProps) {
+export function RequiresEnterprise({ children, title, description }: RequiresEnterpriseProps) {
   const { planTier } = useDocsContext();
 
   if (planTier === 'ENTERPRISE') {
@@ -28,10 +30,9 @@ export function RequiresEnterprise({ children }: RequiresEnterpriseProps) {
         <div className="w-12 h-12 rounded-full bg-zinc-900 border border-zinc-700 flex items-center justify-center mb-4 shadow-2xl">
           <Lock className="w-5 h-5 text-zinc-400" />
         </div>
-        <h3 className="text-xl font-medium text-white mb-2">Enterprise Feature</h3>
+        <h3 className="text-xl font-medium text-white mb-2">{title || "Enterprise Feature"}</h3>
         <p className="text-sm text-zinc-400 max-w-md mb-6">
-          The Aegis Firewall interdiction engine is reserved for Enterprise-tier Swarms. 
-          Upgrade your organization to access deep-packet cryptographic inspection.
+          {description || "The Aegis Firewall interdiction engine is reserved for Enterprise-tier Swarms. Upgrade your organization to access deep-packet cryptographic inspection."}
         </p>
         <Link 
           href="/dashboard/billing" 

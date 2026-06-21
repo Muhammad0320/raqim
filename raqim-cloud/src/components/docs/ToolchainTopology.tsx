@@ -1,49 +1,21 @@
 'use client';
 
-import React from 'react';
-import styled, { keyframes } from 'styled-components';
-
-const pulse = keyframes`
-  0% { filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4)); stroke: #00E5FF; }
-  50% { filter: drop-shadow(0 0 16px rgba(0, 229, 255, 0.9)); stroke: #00E5FF; }
-  100% { filter: drop-shadow(0 0 4px rgba(0, 229, 255, 0.4)); stroke: #00E5FF; }
-`;
-
-const pinkPulse = keyframes`
-  0% { filter: drop-shadow(0 0 3px rgba(236, 72, 153, 0.4)); stroke: #ec4899; }
-  50% { filter: drop-shadow(0 0 12px rgba(236, 72, 153, 0.8)); stroke: #ec4899; }
-  100% { filter: drop-shadow(0 0 3px rgba(236, 72, 153, 0.4)); stroke: #ec4899; }
-`;
-
-const flowDots = keyframes`
-  0% { stroke-dashoffset: 24; }
-  100% { stroke-dashoffset: 0; }
-`;
-
-const float = keyframes`
-  0% { transform: translateY(0px); }
-  50% { transform: translateY(-4px); }
-  100% { transform: translateY(0px); }
-`;
-
-const moveInside = keyframes`
-  0% { transform: translate(0, 0); }
-  25% { transform: translate(40px, -20px); }
-  50% { transform: translate(80px, 10px); }
-  75% { transform: translate(20px, 30px); }
-  100% { transform: translate(0, 0); }
-`;
+import React, { useState } from 'react';
+import styled from 'styled-components';
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 
 const Container = styled.div`
+  position: relative;
   width: 100%;
   display: flex;
   justify-content: center;
   margin: 3rem 0;
-  padding: 2rem;
-  background: #000000;
+  padding: 2.5rem;
+  background: #09090b;
   border: 1px solid #27272a; /* zinc-800 */
   border-radius: 0px; /* brutalist sharp */
   overflow: hidden;
+  cursor: crosshair;
 `;
 
 const Svg = styled.svg`
@@ -52,152 +24,173 @@ const Svg = styled.svg`
   height: auto;
   overflow: visible;
   font-family: var(--font-geist-mono), monospace;
-`;
-
-const CoreBox = styled.rect`
-  fill: #09090b;
-  stroke: #00E5FF;
-  stroke-width: 2.5;
-  animation: ${pulse} 4s infinite ease-in-out;
-  rx: 0;
+  position: relative;
+  z-index: 2;
+  user-select: none;
 `;
 
 const NodeBox = styled.rect`
   fill: #09090b;
   stroke: #27272a;
-  stroke-width: 2;
-  rx: 0;
+  stroke-width: 1;
 `;
 
-const InnerNodeBox = styled.rect`
-  fill: rgba(16, 185, 129, 0.02);
-  stroke: #10b981;
-  stroke-width: 2;
-  rx: 0;
-`;
-
-const TextBase = styled.text`
-  fill: #a1a1aa;
-  font-size: 13px;
-  text-anchor: middle;
-  dominant-baseline: middle;
-`;
-
-const TitleText = styled(TextBase)`
-  fill: #fafafa;
-  font-weight: 700;
-  font-size: 14px;
-  letter-spacing: 0.05em;
-`;
-
-const SubText = styled(TextBase)`
-  font-size: 11px;
-  fill: #71717a;
-`;
-
-const ConnectionLine = styled.path`
-  fill: none;
+const CoreDaemonBox = styled.rect`
+  fill: #09090b;
   stroke: #27272a;
-  stroke-width: 2;
+  stroke-width: 1;
 `;
 
-const FlowPath = styled(ConnectionLine)`
-  stroke-dasharray: 4 8;
-  animation: ${flowDots} 1.2s linear infinite;
+const SandboxBox = styled.rect`
+  fill: rgba(16, 185, 129, 0.01);
+  stroke: #10b981;
+  stroke-width: 1;
 `;
 
-const FloatingGroup = styled.g`
-  animation: ${float} 6s infinite ease-in-out;
+const TitleText = styled.text`
+  fill: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-anchor: middle;
 `;
 
-const FastDot = styled.circle`
-  fill: #10b981;
-  filter: drop-shadow(0 0 4px #10b981);
-  animation: ${moveInside} 3s infinite alternate ease-in-out;
+const LabelText = styled.text`
+  fill: #a1a1aa; /* zinc-400 */
+  font-size: 10px;
+  text-anchor: middle;
 `;
 
-const FastDot2 = styled.circle`
-  fill: #10b981;
-  filter: drop-shadow(0 0 4px #10b981);
-  animation: ${moveInside} 2s infinite alternate-reverse ease-in-out;
-  animation-delay: -1s;
+const ValueText = styled.text`
+  fill: #52525b; /* zinc-600 */
+  font-size: 9px;
+  text-anchor: middle;
 `;
 
 export function ToolchainTopology() {
+  const [isHovered, setIsHovered] = useState(false);
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+
+  // Smooth springs to follow the mouse cursor
+  const springX = useSpring(mouseX, { stiffness: 150, damping: 25 });
+  const springY = useSpring(mouseY, { stiffness: 150, damping: 25 });
+
+  // Convert motion values to a CSS radial-gradient string
+  const radialBg = useTransform(
+    [springX, springY],
+    ([x, y]) => `radial-gradient(450px circle at ${x}px ${y}px, rgba(0, 229, 255, 0.09) 0%, rgba(217, 70, 239, 0.03) 45%, transparent 80%)`
+  );
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    mouseX.set(e.clientX - rect.left);
+    mouseY.set(e.clientY - rect.top);
+  };
+
   return (
-    <Container>
-      <Svg viewBox="0 0 800 500">
+    <Container
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Soft cursor-aware hover glow behind SVG elements */}
+      <motion.div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: radialBg,
+          opacity: isHovered ? 1 : 0,
+          transition: 'opacity 0.3s ease',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      />
+
+      <Svg viewBox="0 0 800 450">
         <defs>
-          <linearGradient id="coreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="rgba(0, 229, 255, 0.08)" />
-            <stop offset="100%" stopColor="rgba(0, 0, 0, 0.2)" />
-          </linearGradient>
+          <marker id="arrow-cyan" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#00E5FF" />
+          </marker>
+          <marker id="arrow-magenta" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#d946ef" />
+          </marker>
+          <marker id="arrow-zinc" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#52525b" />
+          </marker>
         </defs>
 
-        {/* Core Raqim OS */}
-        <g transform="translate(250, 100)">
-          <CoreBox width="300" height="300" style={{ fill: 'url(#coreGradient)' }} />
-          <TitleText x="150" y="30" style={{ fill: '#00E5FF' }}>THE CORE (RAQIM OS)</TitleText>
+        {/* Python Connection Lines to Core Daemon */}
+        {/* TCP Data: Cyan glow and solid line */}
+        <path d="M 200 210 L 290 210" stroke="rgba(0, 229, 255, 0.25)" strokeWidth="5" fill="none" />
+        <path d="M 200 210 L 290 210" stroke="#00E5FF" strokeWidth="1.2" fill="none" markerEnd="url(#arrow-cyan)" />
+        <text x="245" y="193" fill="#00E5FF" fontSize="8px" fontWeight="700" textAnchor="middle" letterSpacing="0.05em">TCP (DATA)</text>
+        <text x="245" y="203" fill="#71717a" fontSize="7px" textAnchor="middle">Zero-Copy Sync</text>
+
+        {/* WS/Zenoh Control: Magenta glow and dashed line */}
+        <path d="M 200 250 L 290 250" stroke="rgba(217, 70, 239, 0.25)" strokeWidth="5" fill="none" strokeDasharray="3 3" />
+        <path d="M 200 250 L 290 250" stroke="#d946ef" strokeWidth="1.2" fill="none" strokeDasharray="3 3" markerEnd="url(#arrow-magenta)" />
+        <text x="245" y="270" fill="#d946ef" fontSize="8px" fontWeight="700" textAnchor="middle" letterSpacing="0.05em">WS / ZENOH</text>
+        <text x="245" y="280" fill="#71717a" fontSize="7px" textAnchor="middle">Control & Evictions</text>
+
+        {/* MCP Connection to Core Daemon */}
+        <path d="M 600 225 L 510 225" stroke="rgba(0, 229, 255, 0.25)" strokeWidth="5" fill="none" />
+        <path d="M 600 225 L 510 225" stroke="#00E5FF" strokeWidth="1.2" fill="none" markerEnd="url(#arrow-cyan)" />
+        <text x="555" y="208" fill="#00E5FF" fontSize="8px" fontWeight="700" textAnchor="middle" letterSpacing="0.05em">JSON-RPC</text>
+        <text x="555" y="218" fill="#71717a" fontSize="7px" textAnchor="middle">Secure Ingress</text>
+
+        {/* Node 1: Python SDK (Left) */}
+        <g transform="translate(40, 160)">
+          <NodeBox width="160" height="130" />
+          <rect x="0" y="0" width="160" height="4" fill="#27272a" />
+          <TitleText x="80" y="25" fill="#ffffff">PYTHON SDK</TitleText>
+          <LabelText x="80" y="42">Vector 2</LabelText>
+          <ValueText x="80" y="58">Out-of-Process</ValueText>
           
-          {/* Vector 1: WASM SDK (Inside Core) */}
-          <g transform="translate(50, 75)">
-            <InnerNodeBox width="200" height="185" />
-            <TitleText x="100" y="30" style={{ fill: '#10b981' }}>WASM Sandbox</TitleText>
-            <SubText x="100" y="52" style={{ fill: '#10b981', opacity: 0.8 }}>Vector 1: In-Process</SubText>
-            <SubText x="100" y="150" style={{ fill: '#71717a', fontSize: '9px' }}>DETERMINISTIC ISOLATION</SubText>
+          <line x1="15" y1="75" x2="145" y2="75" stroke="#27272a" strokeWidth="1" />
+          
+          <ValueText x="80" y="94" fill="#a1a1aa">Subprocess worker</ValueText>
+          <ValueText x="80" y="110" fill="#a1a1aa">Zenoh connection</ValueText>
+        </g>
+
+        {/* Node 2: Core Daemon (Center) */}
+        <g transform="translate(290, 75)">
+          <CoreDaemonBox width="220" height="300" />
+          {/* Subtle glow boundary for Core Daemon */}
+          <rect x="-1" y="-1" width="222" height="302" fill="none" stroke="rgba(0, 229, 255, 0.12)" strokeWidth="1" />
+          <rect x="0" y="0" width="220" height="4" fill="#00E5FF" />
+          <TitleText x="110" y="25" fill="#00E5FF">RAQIM DAEMON</TitleText>
+          <LabelText x="110" y="42" fill="#e4e4e7">Core Host Engine</LabelText>
+          
+          {/* Inner WASM Sandbox */}
+          <g transform="translate(30, 75)">
+            <SandboxBox width="160" height="180" />
+            <rect x="0" y="0" width="160" height="4" fill="#10b981" />
+            <TitleText x="80" y="25" fill="#10b981">WASM SANDBOX</TitleText>
+            <LabelText x="80" y="42">Vector 1: In-Process</LabelText>
             
-            {/* Zero latency dots */}
-            <g transform="translate(60, 95)">
-              <FastDot cx="0" cy="0" r="4" />
-              <FastDot2 cx="20" cy="20" r="3" />
-              <FastDot cx="40" cy="-10" r="5" style={{ animationDuration: '4s' }} />
-              <FastDot2 cx="80" cy="15" r="4" style={{ animationDuration: '2.5s' }} />
-            </g>
+            <line x1="15" y1="65" x2="145" y2="65" stroke="rgba(16, 185, 129, 0.15)" strokeWidth="1" />
+            
+            <ValueText x="80" y="88" fill="#a1a1aa">Isolated Wasmtime</ValueText>
+            <ValueText x="80" y="108" fill="#a1a1aa">Zero-Latency Casting</ValueText>
+            <ValueText x="80" y="128" fill="#a1a1aa">rkyv deserialization</ValueText>
+            <ValueText x="80" y="148" fill="#a1a1aa">Deterministic runtime</ValueText>
           </g>
         </g>
 
-        {/* Vector 2: Python SDK (Outside Core, Left) */}
-        <FloatingGroup transform="translate(30, 210)">
-          <NodeBox width="160" height="80" />
-          <TitleText x="80" y="30" style={{ fill: '#fafafa' }}>PYTHON SDK</TitleText>
-          <SubText x="80" y="52">Vector 2: Out-of-Process</SubText>
-        </FloatingGroup>
-
-        {/* Vector 3: MCP Bridge (Outside Core, Top Right) */}
-        <FloatingGroup transform="translate(610, 120)">
-          <NodeBox width="160" height="80" />
-          <TitleText x="80" y="30">CLAUDE / CURSOR</TitleText>
-          <SubText x="80" y="52">External UI Client</SubText>
-        </FloatingGroup>
-
-        {/* MCP Server Node (Right) */}
-        <FloatingGroup transform="translate(610, 300)">
-          <NodeBox width="160" height="80" />
-          <TitleText x="80" y="30">MCP SERVER</TitleText>
-          <SubText x="80" y="52" style={{ fill: '#00E5FF' }}>Vector 3: Bridge</SubText>
-        </FloatingGroup>
-
-        {/* Python Connection Paths -> Core OS */}
-        {/* TCP Data Plane: Thick Glowing Cyan */}
-        <path d="M 190 230 L 250 230" fill="none" stroke="#00E5FF" strokeWidth="4.5" style={{ filter: 'drop-shadow(0 0 6px rgba(0, 229, 255, 0.8))' }} />
-        <FlowPath d="M 190 230 L 250 230" stroke="#ffffff" strokeWidth="1.5" />
-        <text x="220" y="215" fill="#00E5FF" fontSize="8px" fontWeight="700" textAnchor="middle">Zero-Copy State Sync</text>
-
-        {/* Zenoh Control Plane: Dashed Glowing Pink */}
-        <path d="M 190 270 L 250 270" fill="none" stroke="#ec4899" strokeWidth="2.5" strokeDasharray="5 5" style={{ filter: 'drop-shadow(0 0 4px rgba(236, 72, 153, 0.6))' }} />
-        <FlowPath d="M 190 270 L 250 270" stroke="#ffffff" strokeWidth="1" />
-        <text x="220" y="290" fill="#ec4899" fontSize="8px" fontWeight="700" textAnchor="middle">OOB Context Eviction</text>
-
-        {/* Connections: Claude -> MCP Server */}
-        <path d="M 690 200 L 690 300" fill="none" stroke="#27272a" strokeWidth="2.5" />
-        <FlowPath d="M 690 200 L 690 300" stroke="#00E5FF" strokeWidth="1.5" />
-        <text x="735" y="250" fill="#a1a1aa" fontSize="9px" textAnchor="middle">MCP Protocol</text>
-
-        {/* Connections: MCP Server to Core OS */}
-        <path d="M 610 340 L 550 340" fill="none" stroke="#00E5FF" strokeWidth="3" style={{ filter: 'drop-shadow(0 0 4px rgba(0, 229, 255, 0.5))' }} />
-        <FlowPath d="M 610 340 L 550 340" stroke="#ffffff" strokeWidth="1" />
-        <text x="580" y="328" fill="#00E5FF" fontSize="9px" fontWeight="700" textAnchor="middle">Secure TCP</text>
-
+        {/* Node 3: MCP Bridge (Right) */}
+        <g transform="translate(600, 160)">
+          <NodeBox width="160" height="130" />
+          <rect x="0" y="0" width="160" height="4" fill="#27272a" />
+          <TitleText x="80" y="25" fill="#ffffff">MCP BRIDGE</TitleText>
+          <LabelText x="80" y="42">Vector 3</LabelText>
+          <ValueText x="80" y="58">Claude / Cursor</ValueText>
+          
+          <line x1="15" y1="75" x2="145" y2="75" stroke="#27272a" strokeWidth="1" />
+          
+          <ValueText x="80" y="94" fill="#a1a1aa">Claude-Desktop Link</ValueText>
+          <ValueText x="80" y="110" fill="#a1a1aa">Secure JSON-RPC</ValueText>
+        </g>
       </Svg>
     </Container>
   );

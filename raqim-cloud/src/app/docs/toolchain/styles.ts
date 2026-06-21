@@ -1,6 +1,7 @@
 'use client';
 
 import styled from 'styled-components';
+import Link from 'next/link';
 
 export const ArticleWrapper = styled.article`
   background-color: #09090b;
@@ -115,4 +116,49 @@ export const EnterpriseBox = styled.div`
   border-radius: 0.75rem;
   padding: 1.5rem;
   margin-top: 1.5rem;
+`;
+
+export const CardGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  
+  @media (min-width: 768px) {
+    grid-template-columns: 1fr 1fr;
+  }
+`;
+
+export const NextStepCard = styled(Link)`
+  display: block;
+  background-color: #09090b;
+  border: 1px solid #27272a; /* zinc-800 */
+  padding: 1.5rem;
+  text-decoration: none;
+  border-radius: 0px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  
+  &:hover {
+    border-color: #00E5FF;
+    box-shadow: 0 0 15px rgba(0, 229, 255, 0.05);
+  }
+`;
+
+export const CardTitle = styled.h4`
+  color: #ffffff;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-geist-sans), sans-serif;
+`;
+
+export const CardDesc = styled.p`
+  color: #71717a; /* zinc-500 */
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0;
+  font-family: var(--font-geist-sans), sans-serif;
 `;
