@@ -1,17 +1,50 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useTenantStore } from '@/store/useTenantStore';
 import { createCheckoutSession } from '@/actions/stripe';
 
 export default function PricingPage() {
+  const fetchTenantData = useTenantStore((state) => state.fetchTenantData);
   const activeOrgId = useTenantStore((state) => state.activeOrganizationId);
+  const organizations = useTenantStore((state) => state.organizations);
   const [loadingPriceId, setLoadingPriceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const startupPriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_STARTUP || 'price_startup_mock_id';
   const enterprisePriceId = process.env.NEXT_PUBLIC_STRIPE_PRICE_ENTERPRISE || 'price_enterprise_mock_id';
+
+  // Task 2: State Hydration Fix
+  useEffect(() => {
+    const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+    if (isDevBypass) {
+      useTenantStore.setState({
+        activeOrganizationId: 'e0000000-0000-0000-0000-000000000000',
+        organizations: [
+          {
+            id: 'e0000000-0000-0000-0000-000000000000',
+            alias: 'DEV_TENANT_LOCAL',
+            display_name: 'Acme Corp (Dev Bypass)',
+            sso_domain: 'acme.com',
+            stripe_customer_id: null,
+            plan_tier: 'STARTUP',
+          }
+        ],
+        profile: {
+          id: 'd0000000-0000-0000-0000-000000000000',
+          full_name: 'Muhammad (Dev Bypass)',
+          avatar_url: 'https://github.com/shadcn.png',
+          updated_at: new Date().toISOString(),
+        }
+      });
+    } else {
+      fetchTenantData();
+    }
+  }, [fetchTenantData]);
+
+  const activeOrg = organizations.find((org) => org.id === activeOrgId);
+  const activeAlias = activeOrg?.alias || 'None';
 
   const handleUpgrade = async (priceId: string) => {
     if (!activeOrgId) {
@@ -37,35 +70,32 @@ export default function PricingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-cyan-500/20 selection:text-cyan-200">
-      {/* Background Glows */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-900/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-fuchsia-900/10 rounded-full blur-[120px] pointer-events-none" />
-
+    <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-zinc-800 selection:text-white">
       <div className="max-w-6xl mx-auto px-6 py-12 flex flex-col min-h-screen relative z-10">
-        {/* Navigation */}
-        <header className="flex justify-between items-center mb-16 border-b border-zinc-900 pb-6">
+        
+        {/* Navigation / Header */}
+        <header className="flex justify-between items-center mb-20 border-b border-zinc-800 pb-6">
           <Link href="/dashboard" className="flex items-center space-x-2 text-zinc-400 hover:text-white transition-colors group">
             <span className="group-hover:-translate-x-1 transition-transform">&larr;</span>
-            <span className="font-mono text-sm">Dashboard</span>
+            <span className="font-mono text-sm tracking-wider uppercase">[ Dashboard ]</span>
           </Link>
           <div className="text-right">
-            <span className="text-xs font-mono text-zinc-500">Active Tenant ID: </span>
-            <span className="text-xs font-mono text-cyan-400">{activeOrgId || 'None (Select Org First)'}</span>
+            <span className="text-xs font-mono text-zinc-500 uppercase tracking-widest">Active Tenant: </span>
+            <span className="text-xs font-mono text-white font-semibold">{activeAlias}</span>
           </div>
         </header>
 
         {/* Hero Section */}
         <main className="flex-grow flex flex-col justify-center">
           <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-            <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white">
-              Sovereign Swarm Tiers for <span className="bg-gradient-to-r from-cyan-400 to-fuchsia-500 bg-clip-text text-transparent">Raqim OS</span>
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-white uppercase font-mono">
+              Sovereign Swarm Tiers
             </h1>
-            <p className="text-zinc-400 text-base md:text-lg max-w-2xl mx-auto">
-              Scale your distributed CRDT network and secure edge nodes with cryptographic guardrails and WAN-mesh optimization.
+            <p className="text-zinc-500 text-base md:text-lg max-w-2xl mx-auto font-sans leading-relaxed">
+              Transparent infrastructure pricing. Local computation is a fundamental right. Global synchronization is a premium utility.
             </p>
             {error && (
-              <div className="mt-6 p-4 bg-red-950/30 border border-red-900/50 rounded-lg text-red-400 text-sm font-mono max-w-lg mx-auto">
+              <div className="mt-8 p-4 border border-red-800 bg-red-950/20 text-red-500 text-xs font-mono text-left max-w-lg mx-auto uppercase tracking-wide">
                 [ERROR]: {error}
               </div>
             )}
@@ -73,108 +103,134 @@ export default function PricingPage() {
 
           {/* Pricing Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto w-full">
-            {/* Open Core Plan */}
-            <div className="border border-zinc-900 bg-zinc-950/60 backdrop-blur-md rounded-2xl p-8 flex flex-col justify-between relative overflow-hidden group">
+            
+            {/* Card 1: OPEN CORE */}
+            <div className="border border-zinc-800 bg-[#09090b] p-8 flex flex-col justify-between rounded-none">
               <div>
-                <h3 className="text-sm font-mono text-zinc-500 uppercase tracking-widest mb-2">Open Core</h3>
-                <div className="flex items-baseline mb-6">
-                  <span className="text-4xl font-bold text-white">$0</span>
-                  <span className="text-zinc-500 text-sm font-mono ml-1">/mo</span>
+                <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-[0.2em] mb-4">OPEN CORE</h3>
+                <div className="flex items-baseline mb-8">
+                  <span className="text-4xl font-extrabold text-white font-mono">$0</span>
+                  <span className="text-zinc-500 text-xs font-mono tracking-wider ml-1 uppercase">/ mo</span>
                 </div>
-                <ul className="space-y-4 mb-8 text-sm text-zinc-400 font-mono">
-                  <li className="flex items-center"><span className="text-zinc-600 mr-2">✦</span> Local Swarm Instances</li>
-                  <li className="flex items-center"><span className="text-zinc-600 mr-2">✦</span> Default Ed25519 Keys</li>
-                  <li className="flex items-center text-zinc-600"><span className="mr-2">✦</span> Global WAN Mesh Disabled</li>
+                <ul className="space-y-4 mb-8 text-xs text-zinc-400 font-mono tracking-normal leading-normal">
+                  <li className="flex items-start">
+                    <span className="text-zinc-600 mr-2 select-none">&gt;</span>
+                    <span>Unlimited Local Swarm Instances</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-zinc-600 mr-2 select-none">&gt;</span>
+                    <span>Local Aegis Cryptographic Firewall</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-zinc-600 mr-2 select-none">&gt;</span>
+                    <span>Deterministic Local Loro CRDT Merges</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-zinc-600 mr-2 select-none">&gt;</span>
+                    <span>Local Time Travel (Reality Forking)</span>
+                  </li>
                 </ul>
               </div>
-              <button 
-                disabled 
-                className="w-full py-3 rounded-xl border border-zinc-900 bg-zinc-950 text-zinc-600 font-mono text-sm cursor-not-allowed uppercase"
+              <Link 
+                href="/docs" 
+                className="w-full text-center py-3 border border-zinc-800 hover:border-white text-zinc-400 hover:text-white font-mono text-xs font-bold tracking-wider uppercase transition-colors rounded-none"
               >
-                Default Plan
-              </button>
+                Deploy Daemon
+              </Link>
             </div>
 
-            {/* Startup Plan */}
-            <div className="border border-zinc-800 bg-zinc-900/40 backdrop-blur-md rounded-2xl p-8 flex flex-col justify-between relative overflow-hidden group shadow-lg">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 rounded-full blur-2xl pointer-events-none" />
+            {/* Card 2: STARTUP */}
+            <div className="border border-zinc-800 bg-[#09090b] p-8 flex flex-col justify-between rounded-none">
               <div>
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-mono text-cyan-400 uppercase tracking-widest">Startup</h3>
-                  <span className="px-2 py-0.5 rounded bg-cyan-950 border border-cyan-800/40 text-cyan-400 text-[10px] uppercase font-mono tracking-wider">Upgrade</span>
+                <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-[0.2em] mb-4">STARTUP</h3>
+                <div className="flex flex-col mb-8">
+                  <div className="flex items-baseline">
+                    <span className="text-4xl font-extrabold text-white font-mono">$49</span>
+                    <span className="text-zinc-500 text-xs font-mono tracking-wider ml-1 uppercase">/ mo</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-500 tracking-wider mt-1 uppercase">
+                    (+ Metered A2A Bandwidth)
+                  </span>
                 </div>
-                <div className="flex items-baseline mb-6">
-                  <span className="text-4xl font-bold text-white">$299</span>
-                  <span className="text-zinc-500 text-sm font-mono ml-1">/mo</span>
-                </div>
-                <ul className="space-y-4 mb-8 text-sm text-zinc-300 font-mono">
-                  <li className="flex items-center"><span className="text-cyan-500 mr-2">✦</span> Global WAN Mesh Enabled</li>
-                  <li className="flex items-center"><span className="text-cyan-500 mr-2">✦</span> Distributed CRDT Auto-Sync</li>
-                  <li className="flex items-center"><span className="text-cyan-500 mr-2">✦</span> RSA-Signed Client JWTs</li>
+                <ul className="space-y-4 mb-8 text-xs text-zinc-400 font-mono tracking-normal leading-normal">
+                  <li className="flex items-start">
+                    <span className="text-zinc-600 mr-2 select-none">&gt;</span>
+                    <span>Global WAN Mesh Enabled</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-zinc-600 mr-2 select-none">&gt;</span>
+                    <span>Distributed CRDT Auto-Sync</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-zinc-600 mr-2 select-none">&gt;</span>
+                    <span>Headless Fleet Observability</span>
+                  </li>
                 </ul>
               </div>
               <button 
                 onClick={() => handleUpgrade(startupPriceId)}
                 disabled={loadingPriceId !== null}
-                className="w-full py-3 rounded-xl bg-zinc-100 hover:bg-white text-zinc-950 font-semibold font-mono text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 shadow-md hover:shadow-cyan-500/10"
+                className="w-full py-3 bg-white hover:bg-zinc-200 text-black font-mono font-bold text-xs tracking-wider uppercase transition-colors rounded-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {loadingPriceId === startupPriceId ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-zinc-950" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    <span>Provisioning...</span>
-                  </>
+                  <span>[ AWAITING_STRIPE_HANDSHAKE... ]</span>
                 ) : (
                   <span>Upgrade to Startup</span>
                 )}
               </button>
             </div>
 
-            {/* Enterprise Plan */}
-            <div className="border border-cyan-500/20 bg-zinc-950/80 backdrop-blur-md rounded-2xl p-8 flex flex-col justify-between relative overflow-hidden group shadow-[0_0_30px_rgba(6,182,212,0.05)]">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-fuchsia-500/5 rounded-full blur-2xl pointer-events-none" />
+            {/* Card 3: ENTERPRISE */}
+            <div className="border border-zinc-800 bg-[#09090b] p-8 flex flex-col justify-between rounded-none">
               <div>
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-mono text-fuchsia-400 uppercase tracking-widest">Enterprise</h3>
-                  <span className="px-2 py-0.5 rounded bg-fuchsia-950 border border-fuchsia-800/40 text-fuchsia-400 text-[10px] uppercase font-mono tracking-wider">Ultimate</span>
+                <h3 className="text-xs font-mono text-zinc-500 uppercase tracking-[0.2em] mb-4">ENTERPRISE</h3>
+                <div className="flex flex-col mb-8">
+                  <div className="flex items-baseline">
+                    <span className="text-4xl font-extrabold text-white font-mono">$499</span>
+                    <span className="text-zinc-500 text-xs font-mono tracking-wider ml-1 uppercase">/ mo</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-zinc-500 tracking-wider mt-1 uppercase">
+                    (+ Metered Compute)
+                  </span>
                 </div>
-                <div className="flex items-baseline mb-6">
-                  <span className="text-4xl font-bold text-white">$999</span>
-                  <span className="text-zinc-500 text-sm font-mono ml-1">/mo</span>
-                </div>
-                <ul className="space-y-4 mb-8 text-sm text-zinc-300 font-mono">
-                  <li className="flex items-center"><span className="text-fuchsia-500 mr-2">✦</span> All Startup Features</li>
-                  <li className="flex items-center"><span className="text-fuchsia-500 mr-2">✦</span> Aegis Firewall Shield</li>
-                  <li className="flex items-center"><span className="text-fuchsia-500 mr-2">✦</span> Temporal Router Routing</li>
-                  <li className="flex items-center"><span className="text-fuchsia-500 mr-2">✦</span> Unlimited Key Vending</li>
+                <ul className="space-y-4 mb-8 text-xs text-zinc-400 font-mono tracking-normal leading-normal">
+                  <li className="flex items-start">
+                    <span className="text-cyan-500/80 mr-2 select-none">&gt;</span>
+                    <span>Global Aegis Quarantine Sync</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-cyan-500/80 mr-2 select-none">&gt;</span>
+                    <span>Remote Temporal Router Control</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-cyan-500/80 mr-2 select-none">&gt;</span>
+                    <span>Sovereign Fleet CA Forge</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="text-cyan-500/80 mr-2 select-none">&gt;</span>
+                    <span>Custom Eviction Hooks</span>
+                  </li>
                 </ul>
               </div>
               <button 
                 onClick={() => handleUpgrade(enterprisePriceId)}
                 disabled={loadingPriceId !== null}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-fuchsia-600 hover:from-cyan-400 hover:to-fuchsia-500 text-white font-semibold font-mono text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 shadow-lg shadow-cyan-500/10 hover:shadow-cyan-400/20"
+                className="w-full py-3 border border-cyan-500 text-cyan-500 hover:bg-cyan-950/20 font-mono font-bold text-xs tracking-wider uppercase transition-colors rounded-none disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
               >
                 {loadingPriceId === enterprisePriceId ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    <span>Provisioning...</span>
-                  </>
+                  <span>[ AWAITING_STRIPE_HANDSHAKE... ]</span>
                 ) : (
                   <span>Upgrade to Enterprise</span>
                 )}
               </button>
             </div>
+
           </div>
         </main>
 
         {/* Footer */}
-        <footer className="mt-16 text-center text-xs font-mono text-zinc-600 border-t border-zinc-900 pt-6">
-          &copy; {new Date().getFullYear()} Raqim Cloud Inc. All cryptographic rights reserved.
+        <footer className="mt-20 text-center text-xs font-mono text-zinc-600 border-t border-zinc-800 pt-6 uppercase tracking-wider">
+          &copy; {new Date().getFullYear()} Raqim Systems Inc. All cryptographic rights reserved.
         </footer>
       </div>
     </div>
