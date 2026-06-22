@@ -31,20 +31,20 @@ export default function Header() {
 
       <div className="flex items-center space-x-4">
         {/* Bell and MessageSquare Icons */}
-        <button aria-label="Notifications" className="text-zinc-500 hover:text-zinc-200 transition-colors focus:outline-none">
-          <Bell className="w-4 h-4" />
+        <button aria-label="Notifications" className="focus:outline-none cursor-pointer text-zinc-500 hover:text-zinc-200 transition-colors">
+          <Bell className="w-4 h-4 cursor-pointer transition-colors hover:text-zinc-200" />
         </button>
-        <button aria-label="Feedback" className="text-zinc-500 hover:text-zinc-200 transition-colors focus:outline-none">
-          <MessageSquare className="w-4 h-4" />
+        <button aria-label="Feedback" className="focus:outline-none cursor-pointer text-zinc-500 hover:text-zinc-200 transition-colors">
+          <MessageSquare className="w-4 h-4 cursor-pointer transition-colors hover:text-zinc-200" />
         </button>
         
         <div className="h-4 w-px bg-zinc-800" />
 
         <div className="flex items-center space-x-2">
           <span className="text-xs font-mono text-zinc-400 hidden sm:block">{userName}</span>
-          <div className="w-7 h-7 overflow-hidden border border-zinc-800 rounded-none bg-zinc-900">
+          <div className="w-7 h-7 overflow-hidden border border-zinc-800 rounded-full bg-zinc-900">
             {userAvatar && (
-              <img src={userAvatar} alt={userName} className="w-full h-full object-cover" />
+              <img src={userAvatar} alt={userName} className="w-full h-full object-cover rounded-full" />
             )}
           </div>
         </div>

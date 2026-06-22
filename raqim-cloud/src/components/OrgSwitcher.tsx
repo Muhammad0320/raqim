@@ -23,7 +23,7 @@ const TriggerButton = styled.button<{ $isOpen: boolean }>`
   font-weight: 500;
   color: var(--color-zinc-300);
   background-color: ${props => props.$isOpen ? 'var(--color-zinc-900)' : 'transparent'};
-  border-radius: var(--radius-md);
+  border-radius: 0;
   border: 1px solid ${props => props.$isOpen ? 'var(--color-zinc-800)' : 'transparent'};
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -49,7 +49,7 @@ const OrgAvatar = styled.div`
   height: var(--spacing-5);
   font-size: 10px;
   font-weight: 700;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   background: linear-gradient(135deg, var(--color-zinc-700) 0%, var(--color-zinc-900) 100%);
   color: var(--color-zinc-100);
   border: 1px solid var(--color-zinc-800);
@@ -73,7 +73,7 @@ const DropdownMenu = styled.div<{ $isOpen: boolean }>`
   background-color: rgba(9, 9, 11, 0.95);
   backdrop-filter: blur(12px);
   border: 1px solid var(--color-zinc-800);
-  border-radius: var(--radius-lg);
+  border-radius: 0;
   box-shadow: var(--shadow-2xl);
   padding: var(--spacing-1-5);
   z-index: 50;
@@ -108,7 +108,7 @@ const DropdownItem = styled.button<{ $isActive: boolean }>`
   color: ${props => props.$isActive ? 'var(--color-zinc-100)' : 'var(--color-zinc-400)'};
   background-color: ${props => props.$isActive ? 'rgba(63, 63, 70, 0.25)' : 'transparent'};
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 0;
   text-align: left;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -178,11 +178,8 @@ export function OrgSwitcher() {
         aria-expanded={isOpen}
         aria-label="Select active workspace"
       >
-        <OrgAvatar>
-          {activeOrg ? activeOrg.display_name.charAt(0).toUpperCase() : <Building className="w-3 h-3" />}
-        </OrgAvatar>
-        <span className="max-w-[150px] truncate text-white">
-          {isLoading && !activeOrg ? "Loading workspace..." : (activeOrg?.display_name || "Select Workspace")}
+        <span className="max-w-[150px] truncate text-white font-mono text-xs uppercase tracking-wider">
+          {isLoading && !activeOrg ? "Loading..." : (activeOrg?.alias || "Select Workspace")}
         </span>
         <ChevronIconWrapper $isOpen={isOpen}>
           <ChevronDown className="w-4 h-4" />

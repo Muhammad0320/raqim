@@ -22,7 +22,6 @@ interface ChartProps {
   disableAnimation?: boolean;
 }
 
-// Format the date to something readable e.g. "Jun 18"
 function formatDateLabel(dateStr: string): string {
   if (!dateStr) return "";
   const date = new Date(dateStr);
@@ -31,9 +30,9 @@ function formatDateLabel(dateStr: string): string {
 
 /**
  * 1. Compute Chart: AreaChart showing CRDT merges.
- * Neon Cyan theme.
+ * Sharp Cyan theme.
  */
-export function ComputeChart({ data, disableAnimation = false }: ChartProps) {
+export function ComputeChart({ data, disableAnimation = true }: ChartProps) {
   const chartData = React.useMemo(() => {
     return data.map((item) => ({
       ...item,
@@ -43,7 +42,7 @@ export function ComputeChart({ data, disableAnimation = false }: ChartProps) {
   }, [data]);
 
   return (
-    <div className="w-full h-[300px] bg-zinc-950/40 border border-zinc-900/60 rounded-xl p-5 relative overflow-hidden flex flex-col group hover:border-zinc-800 transition-all duration-300">
+    <div className="w-full h-full min-h-[250px] bg-[#09090b] border border-zinc-800 rounded-none p-5 relative overflow-hidden flex flex-col group transition-all duration-300">
       
       {/* Dynamic Cyber Header */}
       <div className="flex justify-between items-center mb-6 z-10">
@@ -55,23 +54,17 @@ export function ComputeChart({ data, disableAnimation = false }: ChartProps) {
             DAILY EDGE REPLICATED GRAPH COMMITS
           </p>
         </div>
-        <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/20 px-2.5 py-0.5 rounded border border-cyan-900/40 uppercase tracking-widest">
+        <span className="text-[10px] font-mono text-[#06b6d4] bg-[#06b6d4]/10 px-2.5 py-0.5 rounded-none border border-[#06b6d4]/20 uppercase tracking-widest">
           Active Stream
         </span>
       </div>
 
-      <div className="flex-1 w-full relative">
+      <div className="flex-1 w-full relative h-[180px]">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-            <defs>
-              <linearGradient id="crdtGlow" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#00f0ff" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#00f0ff" stopOpacity={0} />
-              </linearGradient>
-            </defs>
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#18181b"
+              stroke="#27272a"
               vertical={false}
             />
             <XAxis
@@ -89,17 +82,16 @@ export function ComputeChart({ data, disableAnimation = false }: ChartProps) {
             />
             <Tooltip
               content={<ComputeTooltip />}
-              cursor={{ stroke: "#22d3ee", strokeWidth: 1, strokeDasharray: "4 4", opacity: 0.3 }}
+              cursor={{ stroke: "#06b6d4", strokeWidth: 1 } }
             />
             <Area
               type="monotone"
               dataKey="crdt_merges"
-              stroke="#00f0ff"
+              stroke="#06b6d4"
               strokeWidth={2}
-              fillOpacity={1}
-              fill="url(#crdtGlow)"
+              fill="#06b6d4"
+              fillOpacity={0.05}
               isAnimationActive={!disableAnimation}
-              animationDuration={1000}
             />
           </AreaChart>
         </ResponsiveContainer>
@@ -112,11 +104,11 @@ const ComputeTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-zinc-950/90 border border-cyan-500/30 px-3.5 py-2.5 rounded-lg shadow-xl backdrop-blur-md font-mono text-xs">
-        <p className="text-zinc-500 text-[10px] uppercase tracking-wider mb-1">{data.date}</p>
+      <div className="bg-[#09090b] border border-zinc-800 px-3.5 py-2.5 rounded-none font-mono text-xs shadow-xl">
+        <p className="text-zinc-550 text-[10px] uppercase tracking-wider mb-1">{data.date}</p>
         <div className="flex items-center space-x-2">
-          <span className="w-2 h-2 rounded-full bg-cyan-400" />
-          <span className="text-cyan-300 font-semibold">{data.displayValue} merges</span>
+          <span className="w-2 h-2 rounded-none bg-[#06b6d4]" />
+          <span className="text-white font-semibold">{data.displayValue} merges</span>
         </div>
       </div>
     );
@@ -126,9 +118,9 @@ const ComputeTooltip = ({ active, payload }: any) => {
 
 /**
  * 2. Bandwidth Chart: BarChart showing gigabytes routed.
- * Neon Fuchsia/Purple theme.
+ * Sharp Deep Magenta theme.
  */
-export function BandwidthChart({ data, disableAnimation = false }: ChartProps) {
+export function BandwidthChart({ data, disableAnimation = true }: ChartProps) {
   const chartData = React.useMemo(() => {
     return data.map((item) => ({
       ...item,
@@ -139,7 +131,7 @@ export function BandwidthChart({ data, disableAnimation = false }: ChartProps) {
   }, [data]);
 
   return (
-    <div className="w-full h-[300px] bg-zinc-950/40 border border-zinc-900/60 rounded-xl p-5 relative overflow-hidden flex flex-col group hover:border-zinc-800 transition-all duration-300">
+    <div className="w-full h-full min-h-[250px] bg-[#09090b] border border-zinc-800 rounded-none p-5 relative overflow-hidden flex flex-col group transition-all duration-300">
       
       {/* Dynamic Cyber Header */}
       <div className="flex justify-between items-center mb-6 z-10">
@@ -151,17 +143,17 @@ export function BandwidthChart({ data, disableAnimation = false }: ChartProps) {
             PEER-TO-PEER ENCRYPTED PACKETS ROUTED
           </p>
         </div>
-        <span className="text-[10px] font-mono text-fuchsia-400 bg-fuchsia-950/20 px-2.5 py-0.5 rounded border border-fuchsia-900/40 uppercase tracking-widest">
+        <span className="text-[10px] font-mono text-[#d946ef] bg-[#d946ef]/10 px-2.5 py-0.5 rounded-none border border-[#d946ef]/20 uppercase tracking-widest">
           Mesh Traffic
         </span>
       </div>
 
-      <div className="flex-1 w-full relative">
+      <div className="flex-1 w-full relative h-[180px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#18181b"
+              stroke="#27272a"
               vertical={false}
             />
             <XAxis
@@ -179,14 +171,13 @@ export function BandwidthChart({ data, disableAnimation = false }: ChartProps) {
             />
             <Tooltip
               content={<BandwidthTooltip />}
-              cursor={{ fill: "rgba(240, 70, 250, 0.04)" }}
+              cursor={{ fill: "rgba(217, 70, 239, 0.05)" }}
             />
             <Bar
               dataKey="gbValue"
               fill="#d946ef"
-              radius={[4, 4, 0, 0]}
+              radius={0}
               isAnimationActive={!disableAnimation}
-              animationDuration={1000}
             />
           </BarChart>
         </ResponsiveContainer>
@@ -199,11 +190,11 @@ const BandwidthTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-zinc-950/90 border border-fuchsia-500/30 px-3.5 py-2.5 rounded-lg shadow-xl backdrop-blur-md font-mono text-xs">
-        <p className="text-zinc-500 text-[10px] uppercase tracking-wider mb-1">{data.date}</p>
+      <div className="bg-[#09090b] border border-zinc-800 px-3.5 py-2.5 rounded-none font-mono text-xs shadow-xl">
+        <p className="text-zinc-550 text-[10px] uppercase tracking-wider mb-1">{data.date}</p>
         <div className="flex items-center space-x-2">
-          <span className="w-2 h-2 rounded-full bg-fuchsia-400" />
-          <span className="text-fuchsia-300 font-semibold">{data.displayValue} routed</span>
+          <span className="w-2 h-2 rounded-none bg-[#d946ef]" />
+          <span className="text-white font-semibold">{data.displayValue} routed</span>
         </div>
       </div>
     );
@@ -213,9 +204,9 @@ const BandwidthTooltip = ({ active, payload }: any) => {
 
 /**
  * 3. Temporal Chart: Step-chart showing reality forks.
- * Neon Amber/Orange theme.
+ * Stark Orange theme.
  */
-export function TemporalChart({ data, disableAnimation = false }: ChartProps) {
+export function TemporalChart({ data, disableAnimation = true }: ChartProps) {
   const chartData = React.useMemo(() => {
     return data.map((item) => ({
       ...item,
@@ -225,7 +216,7 @@ export function TemporalChart({ data, disableAnimation = false }: ChartProps) {
   }, [data]);
 
   return (
-    <div className="w-full h-[300px] bg-zinc-950/40 border border-zinc-900/60 rounded-xl p-5 relative overflow-hidden flex flex-col group hover:border-zinc-800 transition-all duration-300">
+    <div className="w-full h-full min-h-[250px] bg-[#09090b] border border-zinc-800 rounded-none p-5 relative overflow-hidden flex flex-col group transition-all duration-300">
       
       {/* Dynamic Cyber Header */}
       <div className="flex justify-between items-center mb-6 z-10">
@@ -237,17 +228,17 @@ export function TemporalChart({ data, disableAnimation = false }: ChartProps) {
             CONCURRENT TIME-SLICES & REALITY FORKS
           </p>
         </div>
-        <span className="text-[10px] font-mono text-amber-400 bg-amber-950/20 px-2.5 py-0.5 rounded border border-amber-900/40 uppercase tracking-widest">
+        <span className="text-[10px] font-mono text-[#f97316] bg-[#f97316]/10 px-2.5 py-0.5 rounded-none border border-[#f97316]/20 uppercase tracking-widest">
           Quantum Chrono
         </span>
       </div>
 
-      <div className="flex-1 w-full relative">
+      <div className="flex-1 w-full relative h-[180px]">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#18181b"
+              stroke="#27272a"
               vertical={false}
             />
             <XAxis
@@ -265,17 +256,16 @@ export function TemporalChart({ data, disableAnimation = false }: ChartProps) {
             />
             <Tooltip
               content={<TemporalTooltip />}
-              cursor={{ stroke: "#f59e0b", strokeWidth: 1, strokeDasharray: "4 4", opacity: 0.3 }}
+              cursor={{ stroke: "#f97316", strokeWidth: 1 }}
             />
             <Line
               type="stepAfter"
               dataKey="time_travels"
-              stroke="#f59e0b"
+              stroke="#f97316"
               strokeWidth={2}
-              dot={{ r: 2, stroke: "#f59e0b", strokeWidth: 1, fill: "#09090b" }}
-              activeDot={{ r: 4, stroke: "#fbbf24", strokeWidth: 2, fill: "#fbbf24" }}
+              dot={{ r: 2, stroke: "#f97316", strokeWidth: 1, fill: "#09090b", rx: 0 }}
+              activeDot={{ r: 4, stroke: "#f97316", strokeWidth: 2, fill: "#f97316" }}
               isAnimationActive={!disableAnimation}
-              animationDuration={1000}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -288,11 +278,11 @@ const TemporalTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-zinc-950/90 border border-amber-500/30 px-3.5 py-2.5 rounded-lg shadow-xl backdrop-blur-md font-mono text-xs">
-        <p className="text-zinc-500 text-[10px] uppercase tracking-wider mb-1">{data.date}</p>
+      <div className="bg-[#09090b] border border-zinc-800 px-3.5 py-2.5 rounded-none font-mono text-xs shadow-xl">
+        <p className="text-zinc-550 text-[10px] uppercase tracking-wider mb-1">{data.date}</p>
         <div className="flex items-center space-x-2">
-          <span className="w-2 h-2 rounded-full bg-amber-400" />
-          <span className="text-amber-300 font-semibold">{data.displayValue}</span>
+          <span className="w-2 h-2 rounded-none bg-[#f97316]" />
+          <span className="text-white font-semibold">{data.displayValue}</span>
         </div>
       </div>
     );
