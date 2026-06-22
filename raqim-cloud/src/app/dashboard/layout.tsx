@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LayoutDashboard, Key, Activity, Settings, LogOut, ChevronDown } from "lucide-react";
+import { LayoutDashboard, Key, Activity, Settings, LogOut } from "lucide-react";
+import Header from "@/components/dashboard/Header";
 // Mock of Supabase server auth for demonstration. In a real app we'd use createServerClient from @supabase/ssr
 // const supabase = createServerClient(...)
 // const { data: { session } } = await supabase.auth.getSession()
@@ -17,45 +18,10 @@ export default async function DashboardLayout({
     redirect("/auth/login");
   }
 
-  // Simulated data from `organizations` and `profiles` tables
-  const orgName = "Acme Corp";
-  const userAvatar = "https://github.com/shadcn.png";
-  const userName = "Muhammad";
-
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-300 font-sans flex flex-col selection:bg-zinc-800">
       {/* Top Bar */}
-      <header className="h-14 border-b border-zinc-800/80 bg-zinc-950 flex items-center justify-between px-6 z-10 shrink-0">
-        <div className="flex items-center space-x-6">
-          <Link href="/dashboard" className="flex items-center space-x-2">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="2" y="2" width="20" height="20" rx="4" className="fill-white" />
-              <path d="M8 12L12 8L16 12M12 16V8" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            <span className="font-bold text-white tracking-tight">raqim cloud</span>
-          </Link>
-          
-          <div className="h-4 w-px bg-zinc-800" />
-          
-          {/* Organization Switcher */}
-          <button className="flex items-center space-x-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors">
-            <div className="w-5 h-5 rounded bg-zinc-800 flex items-center justify-center text-xs text-white">
-              A
-            </div>
-            <span>{orgName}</span>
-            <ChevronDown className="w-4 h-4 text-zinc-500" />
-          </button>
-        </div>
-
-        <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-2">
-            <span className="text-sm font-medium text-zinc-400 hidden sm:block">{userName}</span>
-            <div className="w-8 h-8 rounded-full overflow-hidden border border-zinc-800">
-              <img src={userAvatar} alt="User Avatar" className="w-full h-full object-cover" />
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left Sidebar */}
