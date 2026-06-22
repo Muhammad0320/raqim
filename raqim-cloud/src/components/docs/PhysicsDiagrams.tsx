@@ -5,28 +5,27 @@ import styled, { keyframes } from 'styled-components';
 
 // Shared Colors
 const colors = {
-  background: '#000000', // Deep dark mode
+  background: '#000000',
+  panelBg: '#09090b',
   border: '#27272a',     // zinc-800
-  cyanGlow: '#00E5FF',   // Sharp Cyan
-  textMain: '#fafafa',
-  textMuted: '#a1a1aa',
+  cyan: '#00E5FF',
+  textMain: '#ffffff',
+  textMuted: '#71717a',   // zinc-500
+  zinc400: '#a1a1aa',
 };
 
-// Animations
-const pulseAnimation = keyframes`
-  0% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.4); border-color: ${colors.cyanGlow}; }
-  77% { box-shadow: 0 0 0 10px rgba(0, 229, 255, 0); border-color: rgba(0, 229, 255, 0.5); }
-  100% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0); border-color: ${colors.border}; }
-`;
-
-const textGlow = keyframes`
-  0%, 100% { text-shadow: 0 0 8px rgba(0, 229, 255, 0.5); }
-  50% { text-shadow: 0 0 18px rgba(0, 229, 255, 0.9), 0 0 28px rgba(0, 229, 255, 0.7); }
+// Keyframes for instant step-timing jump of the memory pointer highlight
+const jump = keyframes`
+  0%, 19.9% { transform: translate(40px, 40px); }
+  20%, 39.9% { transform: translate(220px, 40px); }
+  40%, 59.9% { transform: translate(400px, 40px); }
+  60%, 79.9% { transform: translate(580px, 40px); }
+  80%, 100% { transform: translate(760px, 40px); }
 `;
 
 // BenchmarkHUD Components
 const HudContainer = styled.div`
-  background: ${colors.background};
+  background: ${colors.panelBg};
   border: 1px solid ${colors.border};
   border-radius: 0px; /* brutalist sharp */
   padding: 3rem;
@@ -34,19 +33,7 @@ const HudContainer = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 10px 30px -10px rgba(0,0,0,0.9);
   font-family: var(--font-geist-mono), monospace;
-  
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, ${colors.cyanGlow}, transparent);
-    opacity: 0.6;
-  }
 `;
 
 const MainNumber = styled.div`
@@ -55,7 +42,7 @@ const MainNumber = styled.div`
   color: ${colors.textMain};
   letter-spacing: -0.05em;
   line-height: 1;
-  animation: ${textGlow} 3s ease-in-out infinite;
+  text-shadow: none; /* stripped text shadow */
   
   @media (max-width: 768px) {
     font-size: 4rem;
@@ -63,26 +50,26 @@ const MainNumber = styled.div`
 `;
 
 const MainLabel = styled.div`
-  font-size: 1.125rem;
-  color: ${colors.cyanGlow};
+  font-size: 0.875rem;
+  color: ${colors.textMuted};
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.25em; /* widest tracking */
   margin-top: 1rem;
-  margin-bottom: 3rem;
+  margin-bottom: 3.5rem;
   text-align: center;
 `;
 
 const SubMetricsContainer = styled.div`
   display: flex;
-  gap: 4rem;
+  gap: 3rem;
   width: 100%;
   justify-content: center;
   flex-wrap: wrap;
   
   @media (max-width: 768px) {
     flex-direction: column;
-    gap: 2rem;
+    gap: 2.5rem;
   }
 `;
 
@@ -90,19 +77,21 @@ const SubMetric = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 200px;
+  min-width: 210px;
+  flex: 1;
+  max-width: 280px;
 `;
 
 const SubValue = styled.div`
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 700;
   color: ${colors.textMain};
   text-align: center;
 `;
 
 const SubLabel = styled.div`
-  font-size: 0.875rem;
-  color: ${colors.textMuted};
+  font-size: 0.8rem;
+  color: ${colors.zinc400};
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-top: 0.5rem;
@@ -112,11 +101,14 @@ const SubLabel = styled.div`
 export const BenchmarkHUD = () => (
   <HudContainer>
     <MainNumber>790,946</MainNumber>
-    <MainLabel>Logs / Second (Zero-Copy Throughput)</MainLabel>
+    <MainLabel>TRANSACTIONS / SECOND (TPS)</MainLabel>
     <SubMetricsContainer>
       <SubMetric>
         <SubValue>&lt; 31µs</SubValue>
         <SubLabel>Latency</SubLabel>
+        <div className="text-[10px] text-zinc-500 text-center mt-3 max-w-[210px] leading-normal font-sans">
+          Calculated via strict hardware limits: 12µs Ed25519 signature audit + 19µs NVMe continuous sector write via io_uring.
+        </div>
       </SubMetric>
       <SubMetric>
         <SubValue>Amortized (1MB BufReader)</SubValue>
@@ -132,99 +124,100 @@ export const BenchmarkHUD = () => (
 
 // ZeroCopyDiagram Components
 const DiagramContainer = styled.div`
-  background: ${colors.background};
+  background: ${colors.panelBg};
   border: 1px solid ${colors.border};
   border-radius: 0px; /* brutalist sharp */
-  padding: 4rem 2rem;
+  padding: 2.5rem 1.5rem;
   margin: 3rem 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   position: relative;
   overflow: hidden;
   font-family: var(--font-geist-mono), monospace;
-  
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    gap: 2rem;
-    padding: 3rem 2rem;
-  }
 `;
 
-const Node = styled.div<{ $isPulsing?: boolean }>`
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid ${props => props.$isPulsing ? colors.cyanGlow : colors.border};
-  border-radius: 0px; /* brutalist sharp */
-  padding: 1.25rem 1rem;
-  color: ${props => props.$isPulsing ? colors.cyanGlow : colors.textMain};
-  font-size: 0.85rem;
-  font-weight: 700;
-  text-align: center;
-  position: relative;
-  z-index: 2;
-  backdrop-filter: blur(10px);
-  animation: ${props => props.$isPulsing ? pulseAnimation : 'none'} 2.5s infinite ease-in-out;
-  box-shadow: ${props => props.$isPulsing ? '0 0 20px rgba(0, 229, 255, 0.2)' : 'none'};
-  transition: all 0.3s ease;
-  min-width: 130px;
-  
-  &:hover {
-    border-color: ${colors.cyanGlow};
-    color: ${colors.cyanGlow};
-    transform: translateY(-2px);
-    box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
-  }
-`;
-
-const SvgLines = styled.svg`
-  position: absolute;
-  top: 0;
-  left: 0;
+const SvgFlowchart = styled.svg`
   width: 100%;
-  height: 100%;
-  z-index: 1;
-  pointer-events: none;
-  
-  @media (max-width: 1024px) {
-    display: none; // Fallback for mobile/column layout
-  }
+  max-width: 900px;
+  height: auto;
+  overflow: visible;
+  user-select: none;
 `;
 
-const VerticalLine = styled.div`
-  display: none;
-  width: 2px;
-  height: 30px;
-  background: ${colors.cyanGlow};
-  opacity: 0.5;
-  
-  @media (max-width: 1024px) {
-    display: block;
-  }
+const NodeRect = styled.rect`
+  width: 120px;
+  height: 120px;
+  fill: #000000;
+  stroke: ${colors.border};
+  stroke-width: 1;
+`;
+
+const NodeText = styled.text`
+  fill: ${colors.textMain};
+  font-size: 10px;
+  font-family: var(--font-geist-mono), monospace;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+`;
+
+const MemoryPointerHighlight = styled.rect`
+  fill: none;
+  stroke: ${colors.cyan};
+  stroke-width: 2.5;
+  width: 120px;
+  height: 120px;
+  animation: ${jump} 5s steps(1) infinite;
 `;
 
 export const ZeroCopyDiagram = () => {
   return (
     <DiagramContainer>
-      <SvgLines viewBox="0 0 1000 150" preserveAspectRatio="none">
-        <path 
-          d="M 80 75 L 920 75" 
-          stroke={colors.cyanGlow} 
-          strokeWidth="3.5" 
-          strokeDasharray="6 6"
-          fill="none" 
-          style={{ filter: 'drop-shadow(0 0 8px rgba(0,229,255,0.7))' }}
-        />
-      </SvgLines>
-      
-      <Node>1MB TCP BufReader</Node>
-      <VerticalLine />
-      <Node $isPulsing>rkyv::access_unchecked</Node>
-      <VerticalLine />
-      <Node>Aegis Ed25519 Audit</Node>
-      <VerticalLine />
-      <Node>Loro CRDT Merge</Node>
-      <VerticalLine />
-      <Node $isPulsing>io_uring NVMe WAL</Node>
+      <SvgFlowchart viewBox="0 0 920 200">
+        {/* Connection Lines (straight, solid zinc-700) */}
+        <line x1="160" y1="100" x2="220" y2="100" stroke="#3f3f46" strokeWidth="1.5" />
+        <line x1="340" y1="100" x2="400" y2="100" stroke="#3f3f46" strokeWidth="1.5" />
+        <line x1="520" y1="100" x2="580" y2="100" stroke="#3f3f46" strokeWidth="1.5" />
+        <line x1="700" y1="100" x2="760" y2="100" stroke="#3f3f46" strokeWidth="1.5" />
+
+        {/* Node 0: 1MB TCP BufReader */}
+        <g transform="translate(40, 40)">
+          <NodeRect />
+          <NodeText x="60" y="52">1MB TCP</NodeText>
+          <NodeText x="60" y="72">BufReader</NodeText>
+        </g>
+        
+        {/* Node 1: rkyv::access_unchecked */}
+        <g transform="translate(220, 40)">
+          <NodeRect />
+          <NodeText x="60" y="52">rkyv::</NodeText>
+          <NodeText x="60" y="72" fontSize="9px">access_unchecked</NodeText>
+        </g>
+
+        {/* Node 2: Aegis Ed25519 Audit */}
+        <g transform="translate(400, 40)">
+          <NodeRect />
+          <NodeText x="60" y="52">Aegis</NodeText>
+          <NodeText x="60" y="72">Ed25519 Audit</NodeText>
+        </g>
+
+        {/* Node 3: Loro CRDT Merge */}
+        <g transform="translate(580, 40)">
+          <NodeRect />
+          <NodeText x="60" y="52">Loro</NodeText>
+          <NodeText x="60" y="72">CRDT Merge</NodeText>
+        </g>
+
+        {/* Node 4: io_uring NVMe WAL */}
+        <g transform="translate(760, 40)">
+          <NodeRect />
+          <NodeText x="60" y="52">io_uring</NodeText>
+          <NodeText x="60" y="72">NVMe WAL</NodeText>
+        </g>
+
+        {/* Zero-Copy Memory Pointer: Jumping highlight representing zero-copy casts */}
+        <MemoryPointerHighlight x="0" y="0" />
+      </SvgFlowchart>
     </DiagramContainer>
   );
 };

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 
 interface TocItem {
   id: string;
@@ -10,11 +11,15 @@ interface TocItem {
 export function TableOfContents() {
   const [headings, setHeadings] = useState<TocItem[]>([]);
   const [activeId, setActiveId] = useState<string>('');
+  const pathname = usePathname();
 
   useEffect(() => {
     // Scan the DOM for h2 tags inside article or main content
     const article = document.querySelector('article') || document.querySelector('main');
-    if (!article) return;
+    if (!article) {
+      setHeadings([]);
+      return;
+    }
 
     const elements = Array.from(article.querySelectorAll('h2'));
     
@@ -64,7 +69,7 @@ export function TableOfContents() {
         }
       });
     };
-  }, []);
+  }, [pathname]);
 
   if (headings.length === 0) {
     return null;
