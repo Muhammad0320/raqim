@@ -123,10 +123,10 @@ export default function TelemetryDashboardPage() {
               <span>Refresh Metrics</span>
             </button>
             <Link
-              href="/pricing"
+              href="/dashboard"
               className="flex items-center space-x-1 px-4 py-2 text-xs font-semibold font-mono rounded-none border border-zinc-800 bg-white text-black hover:bg-zinc-200 transition-colors uppercase"
             >
-              <span>Pricing</span>
+              <span>View API Keys</span>
               <ArrowUpRight className="w-3 h-3" />
             </Link>
           </div>

@@ -169,7 +169,7 @@ export function ProjectedBill({ data, planTier }: ProjectedBillProps) {
                   ESTIMATED MONTHLY INVOICE
                 </span>
               </div>
-              <span className="text-2xl font-semibold tracking-tighter text-emerald-400 font-mono">
+              <span className="text-2xl font-semibold tracking-tighter text-emerald-400" style={{ fontFamily: 'var(--font-geist-mono)' }}>
                 ${totalBill.toFixed(2)}
               </span>
             </div>

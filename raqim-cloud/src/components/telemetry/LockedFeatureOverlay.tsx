@@ -29,7 +29,7 @@ export function LockedFeatureOverlay({
       </div>
 
       {/* Cyber Gating Overlay */}
-      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-20 p-6 text-center transition-all duration-300">
+      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md z-20 p-6 text-center transition-all duration-300">
         
         {/* Decorative corner lines (cyber-industrial aesthetic) */}
         <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-zinc-800" />
@@ -75,7 +75,7 @@ export function LockedFeatureOverlay({
               href="/pricing"
               className="w-full py-3 px-5 inline-flex items-center justify-center space-x-2 rounded-none border border-zinc-800 bg-white hover:bg-zinc-200 text-black font-semibold font-mono text-xs tracking-wider uppercase transition-all duration-300 cursor-pointer"
             >
-              <span>Upgrade to {requiredTier}</span>
+              <span>Upgrade to Unlock Global Mesh</span>
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
             </Link>
           </div>

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useTenantStore } from '@/store/useTenantStore';
 import { createClient } from '@/utils/supabase/client';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+// Recharts timeline visualization removed and isolated to the Telemetry Deck
 
 export default function DashboardPage() {
   const fetchTenantData = useTenantStore((state) => state.fetchTenantData);
@@ -148,13 +148,7 @@ export default function DashboardPage() {
     formulaSubtext = "*Base $0 - Local computation is free";
   }
 
-  // Format Recharts data
-  const chartData = telemetry.map((row: any, index: number) => ({
-    day: row.day ? new Date(row.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Day ${index + 1}`,
-    merges: Number(row.daily_crdt || 0),
-    bytes: Number(row.daily_a2a || 0),
-    formattedBytes: (Number(row.daily_a2a || 0) / (1024 * 1024 * 1024)).toFixed(2) + ' GB',
-  }));
+  // Recharts timeline visualization isolated to the Telemetry Deck
 
   const handleMint = async () => {
     if (!activeOrgId && process.env.NEXT_PUBLIC_DEV_MODE_BYPASS !== 'true') return;
@@ -311,58 +305,20 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Time Series Chart Section */}
-          <section className="grid grid-cols-1 gap-6">
-            <div className="border border-zinc-800 bg-[#09090b] p-6 relative overflow-hidden flex flex-col min-h-[400px] rounded-none">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-white font-medium tracking-tight font-mono text-sm uppercase">Fleet Telemetry Velocity</h3>
-                <span className="text-xs font-mono text-cyan-500 bg-cyan-950/30 px-2 py-1 border border-cyan-900/50 uppercase tracking-widest rounded-none">Global Edge Mesh</span>
-              </div>
-              
-              <div className="flex-1 w-full h-[320px] relative">
-                {mounted ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorMerges" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#00E5FF" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#00E5FF" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
-                      <XAxis 
-                        dataKey="day" 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{ fill: '#52525b', fontSize: 10, fontFamily: 'monospace' }}
-                      />
-                      <YAxis 
-                        axisLine={false}
-                        tickLine={false}
-                        tick={{ fill: '#52525b', fontSize: 10, fontFamily: 'monospace' }}
-                      />
-                      <Tooltip 
-                        content={<CustomChartTooltip />} 
-                        cursor={{ stroke: '#27272a', strokeWidth: 1 }}
-                      />
-                      <Area 
-                        type="monotone" 
-                        dataKey="merges" 
-                        stroke="#00E5FF" 
-                        strokeWidth={2}
-                        fillOpacity={1} 
-                        fill="url(#colorMerges)" 
-                        isAnimationActive={false}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-black">
-                    <span className="text-zinc-500 font-mono text-xs">[ INITIALIZING_CHARTS... ]</span>
-                  </div>
-                )}
-              </div>
+          {/* Telemetry Deck Redirect Banner */}
+          <section className="border border-zinc-800 bg-zinc-900 p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-6 rounded-none">
+            <div className="space-y-1">
+              <h3 className="text-white font-medium font-mono text-sm uppercase">Telemetry Deck</h3>
+              <p className="text-zinc-500 text-xs font-mono">
+                Detailed TimescaleDB observability, reality fork tracking, and bandwidth ledgers are isolated in the Telemetry Deck.
+              </p>
             </div>
+            <Link 
+              href="/dashboard/telemetry" 
+              className="px-4 py-2 text-xs font-semibold font-mono border border-zinc-800 bg-white text-black hover:bg-zinc-200 transition-colors uppercase rounded-none shrink-0 text-center"
+            >
+              Access Telemetry Deck
+            </Link>
           </section>
 
         </div>
@@ -387,19 +343,4 @@ function FeatureTag({ label, status }: { label: string, status: 'ON' | 'LOCKED' 
   }
 }
 
-const CustomChartTooltip = ({ active, payload, label }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-[#09090b] border border-zinc-800 p-3 rounded-none">
-        <p className="text-zinc-500 text-xs font-mono mb-1 uppercase tracking-wider">{label}</p>
-        <p className="text-white font-mono font-medium text-sm">
-          Merges: {payload[0].value.toLocaleString()}
-        </p>
-        <p className="text-zinc-400 font-mono text-[10px]">
-          Traffic: {payload[0].payload.formattedBytes}
-        </p>
-      </div>
-    );
-  }
-  return null;
-};
+// Custom tooltip component deleted
