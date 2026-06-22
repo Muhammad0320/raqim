@@ -72,7 +72,7 @@ export const useTenantStore = create<TenantState>((set, get) => ({
             display_name: 'Acme Corp (Dev Bypass)',
             sso_domain: 'acme.com',
             stripe_customer_id: null,
-            plan_tier: 'STARTUP',
+            plan_tier: 'ENTERPRISE',
           },
           {
             id: 'e0000000-0000-0000-0000-000000000001',
