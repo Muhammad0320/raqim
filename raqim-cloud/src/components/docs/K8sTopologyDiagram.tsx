@@ -1,34 +1,27 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import styled, { keyframes } from 'styled-components';
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 
-const pulse = keyframes`
-  0% { filter: drop-shadow(0 0 4px rgba(6, 182, 212, 0.4)); stroke: #06b6d4; }
-  50% { filter: drop-shadow(0 0 12px rgba(6, 182, 212, 0.8)); stroke: #06b6d4; }
-  100% { filter: drop-shadow(0 0 4px rgba(6, 182, 212, 0.4)); stroke: #06b6d4; }
-`;
-
-const flowDash = keyframes`
-  0% { stroke-dashoffset: 24; }
-  100% { stroke-dashoffset: 0; }
-`;
-
-const flowDashReverse = keyframes`
-  0% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: 24; }
+const flow = keyframes`
+  to {
+    stroke-dashoffset: -20;
+  }
 `;
 
 const Container = styled.div`
+  position: relative;
   width: 100%;
   display: flex;
   justify-content: center;
   margin: 3rem 0;
-  padding: 2rem;
-  background: #000000;
+  padding: 2.5rem;
+  background: #09090b;
   border: 1px solid #27272a; /* zinc-800 */
   border-radius: 0px; /* brutalist sharp */
   overflow: hidden;
+  cursor: crosshair;
 `;
 
 const Svg = styled.svg`
@@ -37,201 +30,227 @@ const Svg = styled.svg`
   height: auto;
   overflow: visible;
   font-family: var(--font-geist-mono), monospace;
+  position: relative;
+  z-index: 2;
+  user-select: none;
 `;
 
-const HardwareBox = styled.rect`
-  fill: #09090b;
-  stroke: #52525b;
-  stroke-width: 2;
-  rx: 0;
-`;
-
-const HeadlessServiceBoundary = styled.rect`
+const BoundaryBox = styled.rect`
   fill: transparent;
-  stroke: #ec4899;
-  stroke-width: 2;
-  rx: 0;
-  stroke-dasharray: 6 6;
-  opacity: 0.7;
-`;
-
-const PodBox = styled.rect`
-  fill: rgba(0, 0, 0, 0.6);
-  stroke: #06b6d4;
-  stroke-width: 2;
-  rx: 0;
-  animation: ${pulse} 3s infinite ease-in-out;
-`;
-
-const PvcCylinder = styled.path`
-  fill: #09090b;
-  stroke: #10b981;
-  stroke-width: 2;
-`;
-
-const TextBase = styled.text`
-  text-anchor: middle;
-  dominant-baseline: middle;
-`;
-
-const TitleText = styled(TextBase)`
-  fill: #f4f4f5;
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 0.05em;
-`;
-
-const SubText = styled(TextBase)`
-  font-size: 11px;
-  fill: #a1a1aa;
-`;
-
-const ConnectionLine = styled.path`
-  fill: none;
-  stroke: #27272a;
-  stroke-width: 2;
-`;
-
-const IngressLine = styled(ConnectionLine)`
-  stroke: #71717a;
-  stroke-width: 2.5;
+  stroke: #27272a; /* zinc-800 */
+  stroke-width: 1.5;
   stroke-dasharray: 4 4;
-  animation: ${flowDash} 1.5s linear infinite;
 `;
 
-const ZenohMeshLine = styled.path`
-  fill: none;
-  stroke: #ec4899;
-  stroke-width: 2;
-  stroke-dasharray: 6 6;
-  animation: ${flowDash} 1s linear infinite;
-  filter: drop-shadow(0 0 3px rgba(236, 72, 153, 0.5));
+const PodRect = styled.rect`
+  fill: #09090b;
+  stroke: #27272a;
+  stroke-width: 1;
 `;
 
-const WanEgressLine = styled.path`
-  fill: none;
-  stroke: #00E5FF;
-  stroke-width: 3.5;
-  stroke-dasharray: 8 6;
-  animation: ${flowDashReverse} 1.2s linear infinite;
-  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.7));
+const PvcRect = styled.rect`
+  fill: #09090b;
+  stroke: #27272a;
+  stroke-width: 1;
 `;
 
-const PvcLink = styled.path`
+const CyanTopBorder = styled.rect`
+  fill: #06b6d4;
+`;
+
+const EmeraldTopBorder = styled.rect`
+  fill: #10b981;
+`;
+
+const ConnectionPath = styled.path`
   fill: none;
   stroke: #10b981;
   stroke-width: 3;
 `;
 
+const MeshPath = styled.path`
+  fill: none;
+  stroke: #ec4899; /* magenta */
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+  animation: ${flow} 1s linear infinite;
+`;
+
+const MeshGlowPath = styled.path`
+  fill: none;
+  stroke: rgba(236, 72, 153, 0.25);
+  stroke-width: 5;
+  stroke-dasharray: 4 4;
+  animation: ${flow} 1s linear infinite;
+`;
+
+const TitleText = styled.text`
+  fill: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-anchor: middle;
+`;
+
+const LabelText = styled.text`
+  fill: #a1a1aa; /* zinc-400 */
+  font-size: 10px;
+  text-anchor: middle;
+`;
+
+const ValueText = styled.text`
+  fill: #71717a; /* zinc-500 */
+  font-size: 9px;
+  text-anchor: middle;
+`;
+
 export function K8sTopologyDiagram() {
+  const [isHovered, setIsHovered] = useState(false);
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+
+  // Smooth springs for cursor follow
+  const springX = useSpring(mouseX, { stiffness: 150, damping: 25 });
+  const springY = useSpring(mouseY, { stiffness: 150, damping: 25 });
+
+  // Convert motion values to cursor-aware radial gradient glow
+  const radialBg = useTransform(
+    [springX, springY],
+    ([x, y]) => `radial-gradient(600px circle at ${x}px ${y}px, rgba(6, 182, 212, 0.1) 0%, transparent 40%)`
+  );
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    mouseX.set(e.clientX - rect.left);
+    mouseY.set(e.clientY - rect.top);
+  };
+
   return (
-    <Container>
-      <Svg viewBox="0 0 800 600">
+    <Container
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Soft cursor-aware hover glow behind SVG elements */}
+      <motion.div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: radialBg,
+          opacity: isHovered ? 1 : 0,
+          transition: 'opacity 0.3s ease',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      />
+
+      <Svg viewBox="0 0 800 450">
         <defs>
-          <linearGradient id="podGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="rgba(6, 182, 212, 0.12)" />
-            <stop offset="100%" stopColor="rgba(0, 0, 0, 0.2)" />
-          </linearGradient>
+          <marker id="arrow-magenta" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#ec4899" />
+          </marker>
         </defs>
 
-        {/* Level 2: Headless Service Boundary Box */}
+        {/* Headless Service Boundary Box */}
         <g>
-          <HeadlessServiceBoundary x="60" y="150" width="680" height="260" />
-          <text x="75" y="170" fill="#ec4899" fontSize="10px" fontWeight="700" textAnchor="start" fontFamily="var(--font-geist-mono), monospace">
-            BOUNDS: ClusterIP: None (Kube-Proxy Bypass)
+          <BoundaryBox x="40" y="50" width="720" height="340" />
+          <text x="55" y="72" fill="#71717a" fontSize="9px" fontWeight="700" textAnchor="start" letterSpacing="0.05em">
+            BOUNDS: Headless Service (ClusterIP: None)
           </text>
         </g>
 
-        {/* Level 1: Hardware Load Balancer / Client Ingress */}
-        <g transform="translate(180, 25)">
-          <HardwareBox width="220" height="60" />
-          <TitleText x="110" y="30" style={{ fill: '#fafafa' }}>Client Load Balancer</TitleText>
+        {/* LAN Gossip Mesh Connections (bypassing LB) */}
+        {/* Pod 0 <-> Pod 1 */}
+        <MeshGlowPath d="M 160 150 L 400 150" />
+        <MeshPath d="M 160 150 L 400 150" />
+        
+        {/* Pod 1 <-> Pod 2 */}
+        <MeshGlowPath d="M 400 150 L 640 150" />
+        <MeshPath d="M 400 150 L 640 150" />
+        
+        {/* Pod 0 <-> Pod 2 (Curved underneath) */}
+        <MeshGlowPath d="M 160 180 Q 400 240 640 180" />
+        <MeshPath d="M 160 180 Q 400 240 640 180" />
+        
+        <rect x="330" y="210" width="140" height="15" fill="#09090b" stroke="#27272a" strokeWidth="0.5" />
+        <text x="400" y="220" fill="#ec4899" fontSize="7.5px" fontWeight="700" textAnchor="middle" letterSpacing="0.05em">Zenoh P2P Gossip Mesh</text>
+
+        {/* Pod-to-PVC Connections (Thick Emerald lines) */}
+        <ConnectionPath d="M 160 190 L 160 290" />
+        <ConnectionPath d="M 400 190 L 400 290" />
+        <ConnectionPath d="M 640 190 L 640 290" />
+
+        {/* Pod 0 (raqim-0) */}
+        <g transform="translate(90, 110)">
+          <PodRect width="140" height="80" />
+          <CyanTopBorder width="140" height="4" />
+          <TitleText x="70" y="25">raqim-0</TitleText>
+          <LabelText x="70" y="45">StatefulSet Pod</LabelText>
+          <ValueText x="70" y="62">Port: 7447</ValueText>
         </g>
 
-        {/* WAN Gateway Router (Top Right) */}
-        <g transform="translate(480, 25)">
-          <HardwareBox width="220" height="60" stroke="#00E5FF" />
-          <TitleText x="110" y="22" style={{ fill: '#00E5FF' }}>router.raqim.cloud:7447</TitleText>
-          <SubText x="110" y="42" style={{ fill: '#00E5FF', opacity: 0.8, fontSize: '10px' }}>Enterprise WAN Gateway</SubText>
+        {/* Pod 1 (raqim-1) */}
+        <g transform="translate(330, 110)">
+          <PodRect width="140" height="80" />
+          <CyanTopBorder width="140" height="4" />
+          <TitleText x="70" y="25">raqim-1</TitleText>
+          <LabelText x="70" y="45">StatefulSet Pod</LabelText>
+          <ValueText x="70" y="62">Port: 7447</ValueText>
         </g>
 
-        {/* Ingress Client Traffic Paths - Passing STRAIGHT through boundary box without intercept */}
-        <IngressLine d="M 290 85 L 290 200 L 160 200 L 160 240" />
-        <IngressLine d="M 290 85 L 290 240" />
-        <IngressLine d="M 290 85 L 290 200 L 420 200 L 420 240" />
-        <rect x="235" y="100" width="110" height="15" fill="#000000" />
-        <text x="290" y="110" fill="#71717a" fontSize="9px" textAnchor="middle">Ingress (LB Bypass)</text>
-
-        {/* Local Zenoh Mesh: Zero-Copy LAN Gossip (Connecting Pods directly to each other) */}
-        <g>
-          {/* raqim-0 <-> raqim-1 */}
-          <ZenohMeshLine d="M 230 280 L 310 280" />
-          {/* raqim-1 <-> raqim-2 */}
-          <ZenohMeshLine d="M 450 280 L 530 280" />
-          {/* raqim-0 <-> raqim-2 */}
-          <ZenohMeshLine d="M 160 320 Q 370 370 580 320" />
-          <rect x="310" y="340" width="120" height="15" fill="#000000" />
-          <text x="370" y="350" fill="#ec4899" fontSize="9px" fontWeight="700" textAnchor="middle">Zero-Copy LAN Gossip</text>
+        {/* Pod 2 (raqim-2) */}
+        <g transform="translate(570, 110)">
+          <PodRect width="140" height="80" />
+          <CyanTopBorder width="140" height="4" />
+          <TitleText x="70" y="25">raqim-2</TitleText>
+          <LabelText x="70" y="45">StatefulSet Pod</LabelText>
+          <ValueText x="70" y="62">Port: 7447</ValueText>
         </g>
 
-        {/* Global Egress (WAN): Thick Cyan Line pointing to WAN Gateway */}
-        <g>
-          <WanEgressLine d="M 580 240 L 580 110 L 590 110 L 590 85" />
-          <text x="635" y="150" fill="#00E5FF" fontSize="9px" fontWeight="700" textAnchor="middle">Enterprise WAN Sync</text>
-          <text x="635" y="165" fill="#00E5FF" fontSize="8px" textAnchor="middle">(JWT Authorized)</text>
+        {/* PVC 0 */}
+        <g transform="translate(90, 290)">
+          <PvcRect width="140" height="70" />
+          <EmeraldTopBorder width="140" height="4" />
+          <TitleText x="70" y="25" fill="#10b981">Local NVMe PVC</TitleText>
+          <ValueText x="70" y="45" fill="#a1a1aa">raqim-db-wal-0</ValueText>
+          <ValueText x="70" y="58" fill="#71717a">HostPath Bind</ValueText>
         </g>
 
-        {/* Level 3: StatefulSet Pods */}
-        <g transform="translate(90, 240)">
-          <PodBox width="140" height="80" style={{ fill: 'url(#podGrad)', animationDelay: '0s' }} />
-          <TitleText x="70" y="30" style={{ fill: '#06b6d4' }}>raqim-0</TitleText>
-          <SubText x="70" y="55" style={{ fill: '#a1a1aa' }}>StatefulSet Pod</SubText>
+        {/* PVC 1 */}
+        <g transform="translate(330, 290)">
+          <PvcRect width="140" height="70" />
+          <EmeraldTopBorder width="140" height="4" />
+          <TitleText x="70" y="25" fill="#10b981">Local NVMe PVC</TitleText>
+          <ValueText x="70" y="45" fill="#a1a1aa">raqim-db-wal-1</ValueText>
+          <ValueText x="70" y="58" fill="#71717a">HostPath Bind</ValueText>
         </g>
 
-        <g transform="translate(300, 240)">
-          <PodBox width="140" height="80" style={{ fill: 'url(#podGrad)', animationDelay: '1s' }} />
-          <TitleText x="70" y="30" style={{ fill: '#06b6d4' }}>raqim-1</TitleText>
-          <SubText x="70" y="55" style={{ fill: '#a1a1aa' }}>StatefulSet Pod</SubText>
+        {/* PVC 2 */}
+        <g transform="translate(570, 290)">
+          <PvcRect width="140" height="70" />
+          <EmeraldTopBorder width="140" height="4" />
+          <TitleText x="70" y="25" fill="#10b981">Local NVMe PVC</TitleText>
+          <ValueText x="70" y="45" fill="#a1a1aa">raqim-db-wal-2</ValueText>
+          <ValueText x="70" y="58" fill="#71717a">HostPath Bind</ValueText>
         </g>
-
-        <g transform="translate(510, 240)">
-          <PodBox width="140" height="80" style={{ fill: 'url(#podGrad)', animationDelay: '2s' }} />
-          <TitleText x="70" y="30" style={{ fill: '#06b6d4' }}>raqim-2</TitleText>
-          <SubText x="70" y="55" style={{ fill: '#a1a1aa' }}>StatefulSet Pod</SubText>
-        </g>
-
-        {/* PVC Hardware Connections */}
-        <PvcLink d="M 160 320 L 160 450" />
-        <PvcLink d="M 370 320 L 370 450" />
-        <PvcLink d="M 580 320 L 580 450" />
-
-        {/* Level 4: PVC Cylinders */}
-        {[80, 290, 500].map((x, i) => (
-          <g key={i} transform={`translate(${x}, 450)`}>
-            <PvcCylinder d="M 0 15 C 0 5, 160 5, 160 15 L 160 70 C 160 80, 0 80, 0 70 Z" />
-            <PvcCylinder d="M 0 15 C 0 25, 160 25, 160 15" style={{ fill: 'none' }} />
-            <TitleText x="80" y="40" style={{ fill: '#10b981', fontSize: '11px' }}>Local NVMe PVC</TitleText>
-            <SubText x="80" y="58" style={{ fontSize: '9px', fill: '#71717a' }}>(raqim-db-wal)</SubText>
-          </g>
-        ))}
 
         {/* Legend */}
-        <g transform="translate(60, 540)">
-          <rect width="680" height="40" fill="#000000" stroke="#27272a" />
+        <g transform="translate(40, 400)">
+          <rect width="720" height="30" fill="#09090b" stroke="#27272a" strokeWidth="1" />
           
-          <g transform="translate(20, 20)">
-            <ZenohMeshLine d="M 0 0 L 30 0" />
-            <SubText x="100" y="0" style={{ fontSize: '9px' }}>LAN gossip mesh</SubText>
+          <g transform="translate(20, 15)">
+            <line x1="0" y1="0" x2="30" y2="0" stroke="#ec4899" strokeWidth="1.5" strokeDasharray="3 3" />
+            <text x="40" y="3" fill="#a1a1aa" fontSize="8px" textAnchor="start">LAN Gossip Mesh (Zenoh)</text>
           </g>
-          
-          <g transform="translate(220, 20)">
-            <WanEgressLine d="M 0 0 L 30 0" strokeWidth="2.5" />
-            <SubText x="100" y="0" style={{ fontSize: '9px', fill: '#00E5FF' }}>WAN egress channel</SubText>
+
+          <g transform="translate(300, 15)">
+            <line x1="0" y1="0" x2="30" y2="0" stroke="#06b6d4" strokeWidth="2.5" />
+            <text x="40" y="3" fill="#a1a1aa" fontSize="8px" textAnchor="start">StatefulSet Pods (Active)</text>
           </g>
-          
-          <g transform="translate(440, 20)">
-            <PvcLink d="M 0 0 L 30 0" strokeWidth="2.5" />
-            <SubText x="100" y="0" style={{ fontSize: '9px', fill: '#10b981' }}>Local NVMe write-path</SubText>
+
+          <g transform="translate(550, 15)">
+            <line x1="0" y1="0" x2="30" y2="0" stroke="#10b981" strokeWidth="2.5" />
+            <text x="40" y="3" fill="#a1a1aa" fontSize="8px" textAnchor="start">Local NVMe Write-Path</text>
           </g>
         </g>
       </Svg>

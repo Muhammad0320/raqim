@@ -64,8 +64,7 @@ export default async function DocsLayout({
           <div>
             <div className="px-3 py-1 text-[11px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Toolchain</div>
             <div className="space-y-0.5">
-              <NavLink href="/docs/toolchain">Toolchain & CLI</NavLink>
-              <NavLink href="/docs/toolchain/rust-sdk">Rust WASM SDK (In-Proc)</NavLink>
+              <NavLink href="/docs/toolchain">Toolchain & SDKs</NavLink>
             </div>
           </div>
 

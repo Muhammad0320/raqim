@@ -131,13 +131,13 @@ Environmental Scope [external]
               </CardDesc>
             </NextStepCard>
 
-            <NextStepCard href="/docs/toolchain/python-sdk">
+            <NextStepCard href="/docs/toolchain/external-sdk">
               <CardTitle>
-                <span>Vector 2: The Python SDK (Out-of-Process)</span>
+                <span>Vector 2 & 3: Python SDK & MCP Bridge</span>
                 <span className="text-[#00E5FF]">→</span>
               </CardTitle>
               <CardDesc>
-                Interact out-of-process via secure TCP loops and Zenoh control channels for fast iteration with existing AI models.
+                Interact out-of-process via secure TCP loops, Zenoh control channels, and synapse-mcp translation hosts.
               </CardDesc>
             </NextStepCard>
           </CardGrid>
