@@ -200,6 +200,7 @@ export default function Footer() {
         <LinkColumn>
           <ColumnTitle>Enterprise</ColumnTitle>
           <LinkList>
+            <FooterLink href="/pricing">Pricing & Tiers</FooterLink>
             <FooterLink href="/docs">Security Whitepaper</FooterLink>
             <FooterLink href="/docs/deployment/kubernetes">Self-Hosting K8s</FooterLink>
             <FooterLink href="/docs">Contact Sales</FooterLink>

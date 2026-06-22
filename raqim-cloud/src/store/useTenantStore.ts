@@ -68,7 +68,7 @@ export const useTenantStore = create<TenantState>((set, get) => ({
         const mockOrganizations: Organization[] = [
           {
             id: 'e0000000-0000-0000-0000-000000000000',
-            alias: 'acme-corp',
+            alias: 'DEV_TENANT_LOCAL',
             display_name: 'Acme Corp (Dev Bypass)',
             sso_domain: 'acme.com',
             stripe_customer_id: null,
