@@ -116,30 +116,33 @@ async fn main() {
     let decoding_key_clone = decoding_key.clone();
     let mut license_rx = event_tx.subscribe();
     let flag_worker = security_flags.clone();
+
+    let allow_wan = Arc::new(AtomicBool::new(false));
+
+    let allow_wan_clone = allow_wan.clone();
     tokio::spawn(async move {
         println!("[SYSTEM] Ingess security claim listener spawned successfully. ");
         while let Ok(event) = license_rx.recv().await {
             if let SystemEvent::LicenseUpdated { new_jwt } = event {
                 flag_worker.evaluate_jwt(&new_jwt, &decoding_key_clone);
             }
+
+            let allow_global_a2a = flag_worker.allow_global_a2a.clone().load(Ordering::Relaxed);
+            let allow_global_aegis = flag_worker
+                .allow_global_aegis
+                .clone()
+                .load(Ordering::Relaxed);
+            let allow_global_crdt = flag_worker
+                .allow_global_crdt
+                .clone()
+                .load(Ordering::Relaxed);
+
+            // Determine if Zenoh needs to connect to the cloud router at all.
+            let allow_wan_bool = allow_global_a2a || allow_global_aegis || allow_global_crdt;
+
+            allow_wan_clone.store(allow_wan_bool, Ordering::SeqCst);
         }
     });
-
-    let allow_global_a2a = security_flags
-        .allow_global_a2a
-        .clone()
-        .load(Ordering::Relaxed);
-    let allow_global_aegis = security_flags
-        .allow_global_aegis
-        .clone()
-        .load(Ordering::Relaxed);
-    let allow_global_crdt = security_flags
-        .allow_global_crdt
-        .clone()
-        .load(Ordering::Relaxed);
-
-    // Determine if Zenoh needs to connect to the cloud router at all.
-    let allow_wan = allow_global_a2a || allow_global_aegis || allow_global_crdt;
 
     // Securely loads the swarm key from disk. Generate it if it doesn't exist/
     let key_dir = Path::new("./ca-keys");
