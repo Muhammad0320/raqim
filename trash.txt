@@ -547,3 +547,29 @@ pub fn listen_for_local_thoughts(
         }
     });
 }
+
+
+
+======================
+        if !allow_wan {
+            // THE PHYSICAL BARRICADE
+            // 1. Disable connecting to external zenoh router.
+            config.insert_json5("connect/endpoints", r#"[]"#).unwrap();
+
+            // Listen on all local IP addresses (e.g., 192.168.1.5)
+            config
+                .insert_json5("listen/endpoints", r#"["tcp/0.0.0.0:7447"]"#)
+                .unwrap();
+
+            // Multicast: Shouts "Are there any other Raqim nodes here?" across the wifi
+            config
+                .insert_json5("scouting/multicast/enabled", "true")
+                .unwrap();
+
+            println!("[NETWORK] Zenoh locked to Localhost/LAN. Egress blocked!");
+        } else {
+            // Connect to Raqim cloud global routers.
+            config
+                .insert_json5("connect/endpoints", r#"["tcp/router.raqim.cloud:7447"]"#)
+                .unwrap();
+        }

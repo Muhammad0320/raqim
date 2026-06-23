@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::axon::AxonGateKeeper;
@@ -20,8 +21,10 @@ pub struct GlobalNetworkBridge {
     pub os_node_id: String,
     egress_tx: mpsc::Sender<Vec<u8>>,
 
-    allow_global_a2a: bool,
-    allow_global_aegis: bool,
+    // Thread-safe atomic feature switches
+    allow_wan: Arc<AtomicBool>,
+    allow_global_a2a: Arc<AtomicBool>,
+    allow_global_aegis: Arc<AtomicBool>,
 }
 
 impl GlobalNetworkBridge {
@@ -30,38 +33,34 @@ impl GlobalNetworkBridge {
         tenant_id: &str,
         swarm_name: &str,
         aegis: Arc<AegisGateKeeper>,
-        allow_wan: bool,
         os_node_id: String,
-
-        allow_global_a2a: bool,
-        allow_global_aegis: bool,
+        allow_wan: Arc<AtomicBool>,
+        allow_global_a2a: Arc<AtomicBool>,
+        allow_global_aegis: Arc<AtomicBool>,
     ) -> Self {
-        println!("Bismillah. Initialializing Zenoh Global Network Bridge...");
+        println!("Bismillah. Initialializing Zenoh Global Network Bridge with Dynamic Atomic...");
 
-        // Config::default() automatically discovers other nodes on LAN/WAN
         let mut config = zenoh::Config::default();
 
-        if !allow_wan {
-            // THE PHYSICAL BARRICADE
-            // 1. Disable connecting to external zenoh router.
-            config.insert_json5("connect/endpoints", r#"[]"#).unwrap();
+        // Boot-time configuration handles structural scaffolding: We listen globally by default;
+        config
+            .insert_json5("listen/endpoints", r#"["tcp/0.0.0.0:7447"]"#)
+            .unwrap();
+        config
+            .insert_json5("scouting/multicast/enabled", "true")
+            .unwrap();
 
-            // Listen on all local IP addresses (e.g., 192.168.1.5)
-            config
-                .insert_json5("listen/endpoints", r#"["tcp/0.0.0.0:7447"]"#)
-                .unwrap();
-
-            // Multicast: Shouts "Are there any other Raqim nodes here?" across the wifi
-            config
-                .insert_json5("scouting/multicast/enabled", "true")
-                .unwrap();
-
-            println!("[NETWORK] Zenoh locked to Localhost/LAN. Egress blocked!");
-        } else {
-            // Connect to Raqim cloud global routers.
+        // If the initial evaluation allows WAN, we register the cloud router endpoint immediately
+        if allow_wan.load(Ordering::SeqCst) {
             config
                 .insert_json5("connect/endpoints", r#"["tcp/router.raqim.cloud:7447"]"#)
                 .unwrap();
+
+            println!(" [NETWORK INITIALIZATION] Cloud WAN routing pipeline is established ");
+        } else {
+            println!(
+                "[NETWORK INITIALIZATION] Local Open Core mode active .Cloud endpoints unconfigured."
+            );
         }
 
         let session = zenoh::open(config).await.expect("Failed to start zenoh");
@@ -70,16 +69,28 @@ impl GlobalNetworkBridge {
         // Bounded Egress funnel
         let (egress_tx, mut egress_rx) = mpsc::channel::<Vec<u8>>(100_000);
 
-        // Spawn the dedicated single-thread publisher task
         let session_clone = session.clone();
         let topic_clone = format!("{}/thoughts/{}", workspace_prefix.clone(), os_node_id);
+
+        // Dynamic wan state tracker inside the background egress task
+        let allow_wan_clone = allow_wan.clone();
 
         tokio::spawn(async move {
             println!(
                 "[NETWORK CORE] Zenoh Egress Funnel active on topic: {} ",
                 &topic_clone
             );
+
             while let Some(bytes) = egress_rx.recv().await {
+                // HARD CIRCUITING: If a patient's subscription fails mid-operation the egress loop immediately kills the outbound traffic.
+
+                if !allow_wan_clone.load(Ordering::Relaxed) {
+                    eprintln!(
+                        "[SECURITY WARNING] Outbound WAN trasnmission blocked: License invalid or expired."
+                    );
+                    continue;
+                }
+
                 if let Err(e) = session_clone.put(&topic_clone, bytes).await {
                     eprintln!("[NETWORK WARN] Zenoh Egress Dropped a packet: {}", e);
                 }
@@ -92,6 +103,7 @@ impl GlobalNetworkBridge {
             aegis,
             os_node_id,
             egress_tx,
+            allow_wan,
             allow_global_a2a,
             allow_global_aegis,
         }
@@ -222,7 +234,7 @@ impl GlobalNetworkBridge {
         if !self.allow_global_aegis {
             return;
         }
-        
+
         let key_expr = format!("{}/system/queatine", self.workspace_prefix);
         let bytes = postcard::to_allocvec(&record).unwrap();
         let _ = self.session.put(key_expr, bytes).await;
