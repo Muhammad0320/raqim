@@ -1,8 +1,7 @@
 use ed25519_dalek::SigningKey;
-use jsonwebtoken::{Validation, decode};
 use rand_core::OsRng;
 use raqim_core::aegis::AegisGateKeeper;
-use raqim_core::api::{ApiState, EnterpriseClaim, UiEvent, build_admin_router};
+use raqim_core::api::{ApiState, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 
 use axum::http::Method;
@@ -201,7 +200,7 @@ async fn main() {
             &config.topic,
             aegis.clone(),
             os_node_id,
-            Arc::new(AtomicBool::new(allow_wan)),
+            allow_wan.clone(),
             security_flags.allow_global_a2a.clone(),
             security_flags.allow_global_aegis.clone(),
         )
