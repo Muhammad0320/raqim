@@ -56,3 +56,39 @@ export async function regenerateLicense(orgId: string) {
 
   revalidatePath('/dashboard');
 }
+
+export async function revokeAndDestroyAllKeys(orgId: string) {
+  if (!orgId) throw new Error("Organization ID is required");
+
+  const supabase = await createClient();
+
+  // 1. Revoke all licenses for the organization
+  const { error: licError } = await supabase
+    .from('licenses')
+    .update({ revoked: true })
+    .eq('org_id', orgId);
+
+  if (licError) {
+    throw new Error('Failed to revoke active organization licenses');
+  }
+
+  // 2. Drop subscription tier to OPEN_CORE
+  const { error: subError } = await (supabase
+    .from('subscriptions' as any)
+    .update({ plan_tier: 'OPEN_CORE' })
+    .eq('org_id', orgId) as any);
+
+  if (subError) {
+    // Fallback to potential typo tables
+    const { error: fallbackSubError } = await (supabase
+      .from('subsciptions' as any)
+      .update({ plan_tier: 'OPEN_CORE' })
+      .eq('org_id', orgId) as any);
+      
+    if (fallbackSubError) {
+      throw new Error('Failed to downgrade subscription plan');
+    }
+  }
+
+  revalidatePath('/dashboard');
+}

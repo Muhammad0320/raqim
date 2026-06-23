@@ -12,7 +12,7 @@ export default function Sidebar() {
 
   const links = [
     { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-    { href: '/dashboard/keys', label: 'License Keys', icon: Key },
+    { href: '/dashboard/licenses', label: 'License Keys', icon: Key },
     { href: '/dashboard/telemetry', label: 'Fleet Telemetry', icon: Activity },
     { href: '/dashboard/settings', label: 'Settings', icon: Settings },
   ];
