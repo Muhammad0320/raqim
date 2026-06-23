@@ -163,10 +163,11 @@ impl GlobalNetworkBridge {
             ));
         }
 
-        // If they don't have global A2A we force zenoh to route the GET requests only to subscribers currently residing on thier local machine.
-        let query_target = if self.allow_global_a2a {
+        // CRITICAL: Dynamic atomic load disctated whther query propagates across the globak mesh or stays on the LAN
+        let query_target = if self.allow_global_a2a.load(Ordering::Relaxed) {
             zenoh::query::QueryTarget::All
         } else {
+            // Force routing restriction to immediate local topologies
             zenoh::query::QueryTarget::BestMatching
         };
 
@@ -231,7 +232,7 @@ impl GlobalNetworkBridge {
 
     /// Executed  by AegisGateKeeper when quarantine is triggered locally.
     pub async fn broadcast_quarantine_sync(&self, record: QuarantineRecord) {
-        if !self.allow_global_aegis {
+        if !self.allow_global_aegis.load(Ordering::Relaxed) {
             return;
         }
 

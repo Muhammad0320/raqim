@@ -226,7 +226,21 @@ pub struct RuntimeSecurityFlags {
 impl RuntimeSecurityFlags {
     // The fallbackk for open_core / unlicensed nodes.
 
-    fn evaluate_jwt(&self, jwt: &str, decoding_key: &DecodingKey) {
+    pub fn new(initial_jwt: &str, decoding_key: &DecodingKey) -> Self {
+        let flags = RuntimeSecurityFlags {
+            allow_global_a2a: Arc::new(AtomicBool::new(false)),
+            allow_global_aegis: Arc::new(AtomicBool::new(false)),
+            allow_global_crdt: Arc::new(AtomicBool::new(false)),
+            allow_time_travel: Arc::new(AtomicBool::new(false)),
+            tenant_id: Arc::new(RwLock::new("local_open_core".to_string())),
+        };
+
+        flags.evaluate_jwt(initial_jwt, decoding_key);
+
+        flags
+    }
+
+    pub fn evaluate_jwt(&self, jwt: &str, decoding_key: &DecodingKey) {
         let validation = Validation::new(jsonwebtoken::Algorithm::RS256);
 
         if let Ok(token_data) = decode::<EnterpriseClaim>(jwt, decoding_key, &validation) {

@@ -19,14 +19,16 @@ use raqim_core::registry::SwarmRegistry;
 use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
 use raqim_core::telemetry::TelemetryEngine;
-use raqim_core::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
+use raqim_core::{
+    AgentState, IngressEnvelope, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
+};
 use tower_http::cors::{Any, CorsLayer};
 
 use md5::{Digest, Md5};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tokio::net::TcpListener;
@@ -48,7 +50,7 @@ async fn main() {
     // ================================
     let cancel_token = CancellationToken::new();
     let ct_clone = cancel_token.clone();
-    
+
     tokio::spawn(async move {
         let mut sigterm = signal(SignalKind::terminate()).expect("Failed to bind SIGTERM");
         let mut sigint = signal(SignalKind::interrupt()).expect("Failed to bind SIGINT");
@@ -108,32 +110,33 @@ async fn main() {
             .expect("FATAL: Invalid RSA PEM format"),
     );
 
-    let validation = Validation::new(jsonwebtoken::Algorithm::RS256);
+    let security_flags = RuntimeSecurityFlags::new(&config.license_key, &decoding_key);
 
-    let mut allow_global_crdt = false;
-    let mut allow_global_aegis = false;
-    let mut allow_global_a2a = false;
-    let mut allow_time_travel = false;
-    let mut verified_tenat_id = String::from("local_open_core");
+    // Spawning a dynamic hot swap listener
+    let decoding_key_clone = decoding_key.clone();
+    let mut license_rx = event_tx.subscribe();
+    let flag_worker = security_flags.clone();
+    tokio::spawn(async move {
+        println!("[SYSTEM] Ingess security claim listener spawned successfully. ");
+        while let Ok(event) = license_rx.recv().await {
+            if let SystemEvent::LicenseUpdated { new_jwt } = event {
+                flag_worker.evaluate_jwt(&new_jwt, &decoding_key_clone);
+            }
+        }
+    });
 
-    if let Ok(token_data) =
-        decode::<EnterpriseClaim>(&config.license_key, &decoding_key, &validation)
-    {
-        verified_tenat_id = token_data.claims.sub.clone();
-
-        let features = &token_data.claims.features;
-        allow_global_crdt = features.contains(&"global_crdt".to_string());
-        allow_global_a2a = features.contains(&"global_a2a".to_string());
-        allow_global_aegis = features.contains(&"global_aegis".to_string());
-        allow_time_travel = features.contains(&"time_travel".to_string());
-
-        println!(
-            "[SYSTEM] Cryptographic License Decoded for Tenant: {} ",
-            verified_tenat_id
-        );
-    } else {
-        println!("[WARNING] Open Core License detected. Enterprise features disabled.");
-    }
+    let allow_global_a2a = security_flags
+        .allow_global_a2a
+        .clone()
+        .load(Ordering::Relaxed);
+    let allow_global_aegis = security_flags
+        .allow_global_aegis
+        .clone()
+        .load(Ordering::Relaxed);
+    let allow_global_crdt = security_flags
+        .allow_global_crdt
+        .clone()
+        .load(Ordering::Relaxed);
 
     // Determine if Zenoh needs to connect to the cloud router at all.
     let allow_wan = allow_global_a2a || allow_global_aegis || allow_global_crdt;
@@ -191,13 +194,13 @@ async fn main() {
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
         GlobalNetworkBridge::new(
-            &verified_tenat_id,
+            &security_flags.tenant_id.clone().read().unwrap(),
             &config.topic,
             aegis.clone(),
-            allow_wan,
             os_node_id,
-            allow_global_a2a.clone(),
-            allow_global_aegis.clone(),
+            Arc::new(AtomicBool::new(allow_wan)),
+            security_flags.allow_global_a2a.clone(),
+            security_flags.allow_global_aegis.clone(),
         )
         .await,
     );
@@ -285,7 +288,7 @@ async fn main() {
         tx_counter.clone(),
         event_tx.clone(),
         master_signing_key.clone(),
-        allow_time_travel.clone(),
+        security_flags.allow_time_travel.clone(),
     ));
 
     // Initialize global tracker ONCE outside the loop

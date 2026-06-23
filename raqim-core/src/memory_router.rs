@@ -9,6 +9,7 @@ use rand_core::OsRng;
 use rkyv::{Archive, Archived};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
@@ -18,6 +19,7 @@ use std::{fs::File, sync::Arc};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
+use tokio_util::io::simplex::new;
 
 use crate::AgentStatus;
 use crate::aegis::AegisGateKeeper;
@@ -53,7 +55,7 @@ pub struct MemoryRouter {
     global_tx_counter: Arc<AtomicU64>,
     event_tx: Sender<SystemEvent>,
     master_signing_key: SigningKey,
-    allow_time_travel: bool,
+    allow_time_travel: Arc<AtomicBool>,
 }
 
 impl MemoryRouter {
@@ -71,7 +73,7 @@ impl MemoryRouter {
         global_tx_counter: Arc<AtomicU64>,
         event_tx: Sender<SystemEvent>,
         master_signing_key: SigningKey,
-        allow_time_travel: bool,
+        allow_time_travel: Arc<AtomicBool>,
     ) -> Self {
         Self {
             config,
@@ -457,7 +459,8 @@ impl MemoryRouter {
         is_isolated_debug: bool,
         phantom_ui_tx: tokio::sync::broadcast::Sender<UiEvent>,
     ) -> Result<(), anyhow::Error> {
-        if is_isolated_debug && !self.allow_time_travel {
+        // Zero-overhead dynamic atomic inspection safely checks the states across hypervisor calls
+        if is_isolated_debug && !self.allow_time_travel.load(Ordering::Relaxed) {
             return Err(anyhow::anyhow!(
                 "LICENCE VIOLATION: Agent {} attempted to initiate a Temporal Reality Fork. Enterprise 'time_travel' claim required.",
                 agent_hex
@@ -557,10 +560,10 @@ impl MemoryRouter {
                 "phantom_tenant",
                 format!("phamtom_{}", sandbox_agent_hex).as_str(),
                 self.aegis.clone(),
-                false,
                 format!("phantom_{}", sandbox_agent_hex).to_string(),
-                true,
-                true,
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(AtomicBool::new(false)),
+                Arc::new(AtomicBool::new(false)),
             )
             .await,
         );
