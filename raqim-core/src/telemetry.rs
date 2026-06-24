@@ -170,7 +170,7 @@ impl TelemetryEngine {
                                     let _ = tokio::fs::write("raqim.toml", doc.to_string()).await;
                                 }
 
-                                // FIRE SYSTEM EVENT (wake up zenoh/argis to apply new claims)
+                                // FIRE SYSTEM EVENT (wake up zenoh/aegis to apply new claims)
                                 let _ = event_tx.send(SystemEvent::LicenseUpdated {
                                     new_jwt: new_jwt.to_string(),
                                 });
@@ -216,4 +216,3 @@ impl TelemetryEngine {
         });
     }
 }
-
