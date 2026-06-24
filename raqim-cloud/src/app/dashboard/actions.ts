@@ -92,3 +92,29 @@ export async function revokeAndDestroyAllKeys(orgId: string) {
 
   revalidatePath('/dashboard');
 }
+
+export async function updateOrganizationFootprint(orgId: string, name: string, alias: string, billingEmail: string) {
+  if (!orgId) throw new Error("Organization ID is required");
+
+  const supabase = await createClient();
+  const sso_domain = billingEmail.includes('@') ? billingEmail.split('@')[1] : billingEmail;
+
+  const { error } = await supabase
+    .from('organizations')
+    .update({
+      display_name: name.trim(),
+      alias: alias.trim().toUpperCase().replace(/\s+/g, "_"),
+      sso_domain: sso_domain.trim()
+    })
+    .eq('id', orgId);
+
+  if (error) {
+    throw new Error(error.message || 'Failed to update organization footprint');
+  }
+
+  revalidatePath('/dashboard');
+}
+
+export async function executeEmergencyRevocation(orgId: string) {
+  return revokeAndDestroyAllKeys(orgId);
+}

@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useTenantStore } from "@/store/useTenantStore";
 import { createClient } from "@/utils/supabase/client";
-import { revokeAndDestroyAllKeys } from "@/app/dashboard/actions";
+import { executeEmergencyRevocation, updateOrganizationFootprint } from "@/app/dashboard/actions";
 
 export default function SettingsPage() {
   const { profile, activeOrganizationId, organizations, fetchTenantData } = useTenantStore();
@@ -27,7 +27,7 @@ export default function SettingsPage() {
   const [orgAliasInput, setOrgAliasInput] = useState<string>("");
   const [orgNameInput, setOrgNameInput] = useState<string>("");
   const [billingEmail, setBillingEmail] = useState<string>("");
-  const [isConfirmOpen, setIsConfirmOpen] = useState<boolean>(false);
+  const [isRevocationModalOpen, setIsRevocationModalOpen] = useState<boolean>(false);
   const [confirmText, setConfirmText] = useState<string>("");
   
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
@@ -98,21 +98,12 @@ export default function SettingsPage() {
         useTenantStore.setState((prev) => ({
           organizations: prev.organizations.map(o => 
             o.id === activeOrganizationId 
-              ? { ...o, alias: orgAliasInput, display_name: orgNameInput }
+              ? { ...o, alias: orgAliasInput, display_name: orgNameInput, sso_domain: billingEmail.includes('@') ? billingEmail.split('@')[1] : billingEmail }
               : o
           )
         }));
       } else if (activeOrganizationId) {
-        const supabase = createClient();
-        const { error } = await supabase
-          .from("organizations")
-          .update({
-            alias: orgAliasInput.trim(),
-            display_name: orgNameInput.trim(),
-          })
-          .eq("id", activeOrganizationId);
-
-        if (error) throw error;
+        await updateOrganizationFootprint(activeOrganizationId, orgNameInput, orgAliasInput, billingEmail);
         await fetchTenantData();
       }
       setSaveSuccess(true);
@@ -129,7 +120,7 @@ export default function SettingsPage() {
   const handleEmergencyRevoke = async () => {
     if (confirmText !== activeOrgAlias) return;
     setRevokeLoading(true);
-    setIsConfirmOpen(false);
+    setIsRevocationModalOpen(false);
 
     try {
       const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
@@ -144,7 +135,7 @@ export default function SettingsPage() {
         }));
         alert("EMERGENCY PROTOCOL ACTIVATED: Plan downgraded to OPEN_CORE and all licenses revoked.");
       } else if (activeOrganizationId) {
-        await revokeAndDestroyAllKeys(activeOrganizationId);
+        await executeEmergencyRevocation(activeOrganizationId);
         await fetchTenantData();
         alert("EMERGENCY PROTOCOL ACTIVATED: WAN replication deactivated and active licenses revoked.");
       }
@@ -258,12 +249,11 @@ export default function SettingsPage() {
                   Tenant Space Identity (UUID)
                 </label>
                 <div className="relative flex items-center">
-                  <Fingerprint className="absolute left-3 w-4 h-4 text-zinc-600" />
                   <input
                     type="text"
-                    disabled
+                    readOnly
                     value={activeOrganizationId || "NO_ACTIVE_IDENTITY"}
-                    className="border border-zinc-900 bg-zinc-950/80 text-zinc-500 font-mono rounded-none pl-10 pr-4 py-2 w-full outline-none select-all"
+                    className="readOnly font-mono text-xs bg-zinc-950 text-zinc-400 border border-zinc-900 rounded-none px-4 py-2 w-full outline-none select-all"
                   />
                 </div>
                 <p className="text-[10px] text-zinc-600 font-mono">
@@ -277,7 +267,7 @@ export default function SettingsPage() {
                   Billing Contact Email
                 </label>
                 <div className="relative flex items-center">
-                  <Mail className="absolute left-3 w-4 h-4 text-zinc-500" />
+                  <Mail className="absolute left-3 w-4 h-4 text-zinc-550" />
                   <input
                     type="email"
                     required
@@ -303,7 +293,7 @@ export default function SettingsPage() {
                 className="flex items-center space-x-2 px-4 py-2 text-xs font-mono border border-zinc-800 bg-white text-black hover:bg-zinc-200 transition-colors uppercase rounded-none cursor-pointer disabled:opacity-50"
               >
                 <Save className="w-3.5 h-3.5" />
-                <span>{saveLoading ? "Saving..." : "Save Changes"}</span>
+                <span>{saveLoading ? "[ COMITTING_CHANGES... ]" : "Save Changes"}</span>
               </button>
             </div>
           </form>
@@ -325,12 +315,12 @@ export default function SettingsPage() {
 
           <div className="border-t border-zinc-900 pt-4 flex justify-end">
             <button
-              onClick={() => setIsConfirmOpen(true)}
+              onClick={() => setIsRevocationModalOpen(true)}
               disabled={revokeLoading}
               className="flex items-center space-x-2 px-4 py-2 text-xs font-mono border border-red-900 bg-red-950/20 hover:bg-red-900/40 text-red-500 hover:text-white transition-colors uppercase rounded-none cursor-pointer disabled:opacity-50"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>{revokeLoading ? "Deactivating..." : "Revoke & Destroy All Keys"}</span>
+              <span>{revokeLoading ? "Deactivating..." : "[ REVOKE & DESTROY ALL KEYS ]"}</span>
             </button>
           </div>
         </section>
@@ -338,9 +328,9 @@ export default function SettingsPage() {
       </div>
 
       {/* Revocation Confirmation Modal */}
-      {isConfirmOpen && (
+      {isRevocationModalOpen && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm z-50 p-4">
-          <div className="max-w-md w-full border border-red-500 bg-black p-6 space-y-6 relative overflow-hidden">
+          <div className="max-w-md w-full border-4 border-red-500 bg-black p-6 space-y-6 relative overflow-hidden rounded-none">
             
             {/* Corner lines */}
             <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-red-500" />
@@ -352,15 +342,15 @@ export default function SettingsPage() {
                 <h3 className="font-mono font-bold tracking-tight text-white uppercase text-base">
                   Critical Destruction Protocol
                 </h3>
-                <p className="text-zinc-400 text-xs font-mono leading-relaxed">
-                  You are activating the emergency circuit breaker. This action immediately deactivates all master credentials for organization <strong>{activeOrgAlias}</strong>.
+                <p className="text-red-500 text-xs font-mono leading-relaxed font-bold">
+                  [ CRITICAL WARNING: This process is irreversible. All active clusters running this license key across global instances will lose WAN replication and fallback to localized Open Core structures within 24 hours. ]
                 </p>
               </div>
             </div>
 
-            <div className="p-3.5 bg-zinc-950 border border-zinc-900 font-mono text-[10px] text-zinc-500 leading-relaxed">
+            <div className="p-3.5 bg-zinc-950 border border-zinc-900 font-mono text-[10px] text-zinc-550">
               To execute this operation, you must type the active organization alias to confirm:
-              <div className="mt-2 text-white font-bold select-all bg-black p-1 border border-zinc-900 text-center">
+              <div className="mt-2 text-white font-bold select-all bg-black p-1 border border-zinc-900 text-center text-xs">
                 {activeOrgAlias}
               </div>
             </div>
@@ -379,7 +369,7 @@ export default function SettingsPage() {
             <div className="flex space-x-3">
               <button
                 onClick={() => {
-                  setIsConfirmOpen(false);
+                  setIsRevocationModalOpen(false);
                   setConfirmText("");
                 }}
                 className="flex-1 py-2 text-xs font-mono border border-zinc-800 hover:border-zinc-700 bg-zinc-950 text-zinc-400 hover:text-white transition-colors rounded-none uppercase cursor-pointer"

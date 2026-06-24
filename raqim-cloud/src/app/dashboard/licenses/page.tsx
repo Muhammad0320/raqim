@@ -27,7 +27,7 @@ interface LicenseRecord {
   created_at: string;
   expires_at: string;
   revoked_at?: string | null;
-  status: "ACTIVE" | "ROLLED" | "REVOKED" | "EXPIRED";
+  status: "ACTIVE" | "RROLLED" | "REVOKED" | "EXPIRED";
 }
 
 export default function LicensesPage() {
@@ -37,11 +37,12 @@ export default function LicensesPage() {
 
   const [licenses, setLicenses] = useState<LicenseRecord[]>([]);
   const [activeKey, setActiveKey] = useState<string>("");
-  const [showKey, setShowKey] = useState<boolean>(false);
+  const [isMasked, setIsMasked] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [rolling, setRolling] = useState<boolean>(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState<boolean>(false);
+  const [mintError, setMintError] = useState<string | null>(null);
   
   // Hydrate organization data on mount
   useEffect(() => {
@@ -87,7 +88,7 @@ export default function LicensesPage() {
         created_at: new Date(Date.now() - 28 * 3600000).toISOString(), // 28h ago
         expires_at: new Date(Date.now() - 4 * 3600000).toISOString(), 
         revoked_at: new Date(Date.now() - 4 * 3600000).toISOString(), // rolled 4h ago
-        status: "ROLLED",
+        status: "RROLLED",
       },
       {
         id: "lic-rolled-003",
@@ -96,7 +97,7 @@ export default function LicensesPage() {
         created_at: new Date(Date.now() - 52 * 3600000).toISOString(), // 52h ago
         expires_at: new Date(Date.now() - 28 * 3600000).toISOString(),
         revoked_at: new Date(Date.now() - 28 * 3600000).toISOString(), // rolled 28h ago
-        status: "ROLLED",
+        status: "RROLLED",
       },
       {
         id: "lic-revoked-004",
@@ -142,16 +143,13 @@ export default function LicensesPage() {
         const mapped: LicenseRecord[] = data.map((row: any, idx: number) => {
           const isExpired = row.created_at ? (Date.now() - new Date(row.created_at).getTime() > 7 * 24 * 3600000) : false;
           
-          let computedStatus: "ACTIVE" | "ROLLED" | "REVOKED" | "EXPIRED" = "ACTIVE";
+          let computedStatus: "ACTIVE" | "RROLLED" | "REVOKED" | "EXPIRED" = "ACTIVE";
           if (row.revoked) {
-            // If it is revoked and there is a newer license, we treat it as routine ROLLED.
-            // If it was deactivated without being replaced immediately, it shows REVOKED.
-            // In our layout context, we can assume the top revoked is "REVOKED" and older ones are "ROLLED".
-            computedStatus = idx === 0 ? "REVOKED" : "ROLLED";
+            computedStatus = idx === 0 ? "REVOKED" : "RROLLED";
           } else if (isExpired) {
             computedStatus = "EXPIRED";
           } else if (idx > 0) {
-            computedStatus = "ROLLED"; // Older unrevoked licenses are treated as rolled over
+            computedStatus = "RROLLED";
           }
 
           return {
@@ -189,6 +187,14 @@ export default function LicensesPage() {
   };
 
   const handleRollKey = async () => {
+    setMintError(null);
+    const usageCounter = planTier === "OPEN_CORE" ? 32 : licenses.length;
+    if (planTier === "OPEN_CORE" && usageCounter > 30) {
+      setMintError("[ ACCESS DENIED: Monthly minting allocation exhausted for Open Core tier ]");
+      setIsConfirmOpen(false);
+      return;
+    }
+
     if (!activeOrganizationId && process.env.NEXT_PUBLIC_DEV_MODE_BYPASS !== 'true') return;
     setRolling(true);
     setIsConfirmOpen(false);
@@ -214,7 +220,7 @@ export default function LicensesPage() {
                 ...l,
                 revoked: true,
                 revoked_at: new Date().toISOString(),
-                status: "ROLLED" as const,
+                status: "RROLLED" as const,
               };
             }
             return l;
@@ -265,6 +271,13 @@ export default function LicensesPage() {
           <span className="text-zinc-400">Licenses</span>
         </div>
 
+        {/* Flat Banner Alert */}
+        {mintError && (
+          <div className="border border-red-800 bg-red-950/45 text-red-400 font-mono text-xs p-4 rounded-none uppercase animate-pulse select-none">
+            {mintError}
+          </div>
+        )}
+
         {/* Section Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between border-b border-zinc-800 pb-6 gap-6">
           <div className="space-y-2">
@@ -275,7 +288,7 @@ export default function LicensesPage() {
             <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-white uppercase font-mono leading-none">
               License Vault
             </h1>
-            <p className="text-zinc-500 text-xs font-mono max-w-xl">
+            <p className="text-zinc-550 text-xs font-mono max-w-xl">
               Definitive audit trail for sovereign cryptographic licenses. View, roll, and review authorization status logs.
             </p>
           </div>
@@ -301,11 +314,11 @@ export default function LicensesPage() {
             
             <div className="flex space-x-3 shrink-0">
               <button
-                onClick={() => setShowKey(!showKey)}
+                onClick={() => setIsMasked(!isMasked)}
                 disabled={!activeKey}
                 className="px-3.5 py-1.5 text-xs font-mono border border-zinc-800 bg-black hover:bg-zinc-900 text-zinc-300 hover:text-white transition-colors rounded-none uppercase cursor-pointer disabled:opacity-50"
               >
-                {showKey ? "Hide Key" : "Reveal Key"}
+                {isMasked ? "[ Reveal Key ]" : "[ Hide Key ]"}
               </button>
               <button
                 onClick={handleCopy}
@@ -316,7 +329,7 @@ export default function LicensesPage() {
               </button>
               <button
                 onClick={() => setIsConfirmOpen(true)}
-                disabled={rolling || planTier === "OPEN_CORE"}
+                disabled={rolling}
                 className="px-3.5 py-1.5 text-xs font-mono border border-[#ea580c]/50 bg-[#ea580c]/10 hover:bg-[#ea580c]/20 text-[#ea580c] hover:text-white transition-colors rounded-none uppercase cursor-pointer disabled:opacity-50"
               >
                 {rolling ? "Rolling..." : "Roll Key"}
@@ -325,7 +338,7 @@ export default function LicensesPage() {
           </div>
 
           <div className="relative w-full overflow-hidden">
-            <div className={`font-mono text-xs break-all p-4 border border-zinc-800 bg-black text-[#00E5FF] transition-all duration-500 min-h-[70px] ${!showKey ? 'blur-[8px] select-none opacity-40' : 'blur-0 opacity-100'}`}>
+            <div className={`font-mono text-xs break-all p-4 border border-zinc-800 bg-black text-[#00E5FF] transition-all duration-500 min-h-[70px] ${isMasked ? 'blur-[8px] select-none opacity-40' : 'blur-0 opacity-100'}`}>
               {activeKey || (planTier === "OPEN_CORE" ? "Upgrade subscription to mint standard enterprise keys." : "No master license key active.")}
             </div>
           </div>
@@ -362,15 +375,18 @@ export default function LicensesPage() {
                 ) : (
                   licenses.map((lic) => {
                     const isExpired = lic.status === "EXPIRED";
+                    const isRevoked = lic.status === "REVOKED";
                     return (
                       <tr 
                         key={lic.id} 
                         className={`border-b border-zinc-900 bg-black/40 hover:bg-black/60 transition-colors ${
                           isExpired ? "opacity-60" : ""
+                        } ${
+                          isRevoked ? "bg-red-950/15" : ""
                         }`}
                       >
                         <td className="p-4 font-mono font-medium text-zinc-300 break-all select-all">
-                          <span className={isExpired ? "line-through text-zinc-500" : ""}>
+                          <span className={isExpired ? "line-through text-zinc-550" : ""}>
                             {getFingerprint(lic.jwt_hash)}
                           </span>
                         </td>
@@ -384,13 +400,13 @@ export default function LicensesPage() {
                               <span>ACTIVE</span>
                             </span>
                           )}
-                          {lic.status === "ROLLED" && (
-                            <span className="inline-flex items-center bg-black border border-zinc-600 text-zinc-500 px-2.5 py-0.5 text-[10px] tracking-wider uppercase">
-                              ROLLED
+                          {lic.status === "RROLLED" && (
+                            <span className="inline-flex items-center bg-black border border-zinc-700 text-zinc-500 px-2.5 py-0.5 text-[10px] tracking-wider uppercase">
+                              RROLLED
                             </span>
                           )}
                           {lic.status === "REVOKED" && (
-                            <span className="inline-flex items-center bg-[#EF4444] text-white px-2.5 py-0.5 text-[10px] tracking-wider uppercase font-semibold">
+                            <span className="inline-flex items-center bg-red-950 text-red-400 border border-red-800 px-2.5 py-0.5 text-[10px] tracking-wider uppercase font-semibold">
                               REVOKED
                             </span>
                           )}

@@ -32,13 +32,13 @@ export default function Sidebar() {
             <Link
               key={link.href}
               href={link.href}
-              className={`flex items-center px-3 py-2 text-sm font-medium transition-all duration-200 rounded-none border ${
+              className={`flex items-center py-2 pr-3 text-sm font-medium transition-all duration-200 ease-in-out rounded-none ${
                 isActive
-                  ? 'bg-zinc-800/80 text-white shadow-sm border border-zinc-700/50'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/50 border-transparent'
+                  ? 'text-white font-mono bg-zinc-900 border-l-2 border-cyan-400 pl-4'
+                  : 'text-zinc-500 border-l-2 border-transparent pl-3 hover:text-zinc-200 hover:bg-zinc-900/40 hover:pl-4 hover:border-zinc-700'
               }`}
             >
-              <Icon className={`w-4 h-4 mr-3 ${isActive ? 'text-white' : 'text-zinc-500 group-hover:text-zinc-300'}`} />
+              <Icon className={`w-4 h-4 mr-3 ${isActive ? 'text-white' : 'text-zinc-500'}`} />
               {link.label}
             </Link>
           );
@@ -48,7 +48,7 @@ export default function Sidebar() {
       <div className="p-4 border-t border-zinc-800">
         <button
           onClick={handleSignOut}
-          className="flex w-full items-center px-3 py-2 text-sm font-medium transition-all duration-200 rounded-none text-zinc-400 hover:text-white hover:bg-zinc-900/50 border border-transparent cursor-pointer"
+          className="flex w-full items-center px-3 py-2 text-sm font-medium transition-all duration-200 ease-in-out rounded-none text-zinc-500 hover:text-white hover:bg-zinc-900/40 border border-transparent cursor-pointer"
         >
           <LogOut className="w-4 h-4 mr-3 text-zinc-500" />
           Sign out
