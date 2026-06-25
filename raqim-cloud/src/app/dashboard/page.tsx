@@ -26,7 +26,7 @@ export default function DashboardPage() {
 
   // Hydrate useTenantStore
   useEffect(() => {
-    const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+    const isDevBypass = typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true');
     if (isDevBypass) {
       useTenantStore.setState({
         activeOrganizationId: 'e0000000-0000-0000-0000-000000000000',
@@ -54,7 +54,7 @@ export default function DashboardPage() {
 
   // Load telemetry, plan, and active license dynamically
   useEffect(() => {
-    const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+    const isDevBypass = typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true');
     if (isDevBypass) {
       setPlanTier('ENTERPRISE');
       setActiveLicense({
@@ -126,7 +126,7 @@ export default function DashboardPage() {
   }, [activeOrgId]);
 
   const activeOrg = organizations.find((o) => o.id === activeOrgId);
-  const activeOrgAlias = activeOrg?.alias || (process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true' ? 'DEV_TENANT_LOCAL' : 'NO_TENANT_FOUND');
+  const activeOrgAlias = activeOrg?.alias || (typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true') ? 'DEV_TENANT_LOCAL' : 'NO_TENANT_FOUND');
   const activePlanTier = planTier;
 
   // Calculate aggregates
@@ -151,10 +151,10 @@ export default function DashboardPage() {
   // Recharts timeline visualization isolated to the Telemetry Deck
 
   const handleMint = async () => {
-    if (!activeOrgId && process.env.NEXT_PUBLIC_DEV_MODE_BYPASS !== 'true') return;
+    if (!activeOrgId && !(typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true'))) return;
     setMinting(true);
     try {
-      const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+      const isDevBypass = activeOrg?.alias === 'DEV_TENANT_LOCAL';
       const orgId = activeOrgId || 'e0000000-0000-0000-0000-000000000000';
       const features = 
         activePlanTier === 'ENTERPRISE' ? ['local_swarm', 'global_a2a', 'global_crdt', 'time_travel', 'aegis'] :

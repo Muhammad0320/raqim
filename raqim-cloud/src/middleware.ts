@@ -2,9 +2,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 
 export async function middleware(request: NextRequest) {
-  const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+  const isDevelopmentBypassActive = () => {
+    return process.env.NODE_ENV === 'development' && process.env.DEV_MODE_BYPASS === 'true';
+  };
 
-  if (isDevBypass) {
+  if (isDevelopmentBypassActive()) {
     const requestHeaders = new Headers(request.headers);
     
     // Default mock user ID (matching mock profile in Zustand store)
@@ -17,11 +19,13 @@ export async function middleware(request: NextRequest) {
     requestHeaders.set('x-dev-user-id', mockUserId);
     requestHeaders.set('x-dev-org-id', mockOrgId);
 
-    return NextResponse.next({
+    const response = NextResponse.next({
       request: {
         headers: requestHeaders,
       },
     });
+    response.cookies.set('dev-mode-bypass-active', 'true', { path: '/' });
+    return response;
   }
 
   // Standard @supabase/ssr updateSession logic

@@ -17,7 +17,7 @@ export default function PricingPage() {
 
   // Task 2: State Hydration Fix
   useEffect(() => {
-    const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+    const isDevBypass = typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true');
     if (isDevBypass) {
       useTenantStore.setState({
         activeOrganizationId: 'e0000000-0000-0000-0000-000000000000',

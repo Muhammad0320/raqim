@@ -46,7 +46,7 @@ export default function LicensesPage() {
   
   // Hydrate organization data on mount
   useEffect(() => {
-    const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+    const isDevBypass = typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true');
     if (isDevBypass) {
       useTenantStore.setState({
         activeOrganizationId: 'e0000000-0000-0000-0000-000000000000',
@@ -69,7 +69,7 @@ export default function LicensesPage() {
   // Load licenses
   const loadLicenses = async () => {
     setLoading(true);
-    const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+    const isDevBypass = activeOrg?.alias === 'DEV_TENANT_LOCAL';
     
     // Setup Mock Records for visual verification and fallback
     const mockLicenses: LicenseRecord[] = [
@@ -195,12 +195,12 @@ export default function LicensesPage() {
       return;
     }
 
-    if (!activeOrganizationId && process.env.NEXT_PUBLIC_DEV_MODE_BYPASS !== 'true') return;
+    if (!activeOrganizationId && !(typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true'))) return;
     setRolling(true);
     setIsConfirmOpen(false);
 
     try {
-      const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+      const isDevBypass = activeOrg?.alias === 'DEV_TENANT_LOCAL';
       if (isDevBypass) {
         // Prepend a fresh active rolling key to the state list
         const newKey = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyBzdWIiOiAiREVWX1RFTkFOVF9MT0NCTCIsICJpYXQiOiAxNzgxODg4MDAwIH0.freshRolledKeySignatureVerifyMatchesSecretAndRSASigningCertKeyLog" + Math.random().toString(36).slice(2, 6);

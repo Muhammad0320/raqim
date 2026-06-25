@@ -3,13 +3,17 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 
 export const getCachedUserTenantContext = cache(async () => {
-  if (process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true') {
+  const isDevelopmentBypassActive = () => {
+    return process.env.NODE_ENV === 'development' && process.env.DEV_MODE_BYPASS === 'true';
+  };
+
+  if (isDevelopmentBypassActive()) {
     return { 
       alias: "DEV_TENANT_LOCAL", 
       planTier: "ENTERPRISE", 
-      licenseKey: "DEV_RSA_BYPASS_KEY",
+      licenseKey: "DEV_BYPASS_KEY",
       isAuthenticated: true 
-    }
+    };
   }
 
   try {

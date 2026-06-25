@@ -50,7 +50,7 @@ export const useTenantStore = create<TenantState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       // Check if local dev auth bypass is active
-      const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+      const isDevBypass = typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true');
 
       if (isDevBypass) {
         const mockUserId = 'd0000000-0000-0000-0000-000000000000';

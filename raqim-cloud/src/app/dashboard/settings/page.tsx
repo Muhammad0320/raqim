@@ -21,7 +21,7 @@ import { executeEmergencyRevocation, updateOrganizationFootprint } from "@/app/d
 export default function SettingsPage() {
   const { profile, activeOrganizationId, organizations, fetchTenantData } = useTenantStore();
   const activeOrg = organizations.find((org) => org.id === activeOrganizationId);
-  const activeOrgAlias = activeOrg?.alias || (process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true' ? 'DEV_TENANT_LOCAL' : 'NO_TENANT');
+  const activeOrgAlias = activeOrg?.alias || (typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true') ? 'DEV_TENANT_LOCAL' : 'NO_TENANT');
   const planTier = activeOrg?.plan_tier || "OPEN_CORE";
 
   const [orgAliasInput, setOrgAliasInput] = useState<string>("");
@@ -40,7 +40,7 @@ export default function SettingsPage() {
 
   // Initialize inputs on mount/load
   useEffect(() => {
-    const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+    const isDevBypass = typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true');
     if (isDevBypass) {
       useTenantStore.setState({
         activeOrganizationId: 'e0000000-0000-0000-0000-000000000000',
@@ -92,7 +92,7 @@ export default function SettingsPage() {
     setSaveSuccess(false);
 
     try {
-      const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+      const isDevBypass = activeOrg?.alias === 'DEV_TENANT_LOCAL';
       if (isDevBypass) {
         // Simulate local state save
         useTenantStore.setState((prev) => ({
@@ -123,7 +123,7 @@ export default function SettingsPage() {
     setIsRevocationModalOpen(false);
 
     try {
-      const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+      const isDevBypass = activeOrg?.alias === 'DEV_TENANT_LOCAL';
       if (isDevBypass) {
         // Simulate downgrading tier and revoking key
         useTenantStore.setState((prev) => ({
