@@ -13,7 +13,7 @@ export default function TelemetryDashboardPage() {
   const { organizations, activeOrganizationId, isLoading: isStoreLoading } = useTenantStore();
   const activeOrg = organizations.find((o) => o.id === activeOrganizationId);
   
-  const isDevBypass = process.env.NEXT_PUBLIC_DEV_MODE_BYPASS === 'true';
+  const isDevBypass = typeof document !== 'undefined' && document.cookie.includes('dev-mode-bypass-active=true');
   const planTier = isDevBypass ? "ENTERPRISE" : (activeOrg?.plan_tier || "OPEN_CORE");
   const activeOrgAlias = isDevBypass ? "DEV_TENANT_LOCAL" : (activeOrg?.alias || "NO_TENANT");
 

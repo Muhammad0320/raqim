@@ -30,10 +30,10 @@ export async function GET(req: NextRequest) {
 
   // Fetch real telemetry daily rollups from the database view
   const { data: metrics, error: dbError } = await supabase
-    .from('telemetry_daily_rollups')
+    .from('telemetry_daily_rollups' as any)
     .select('*')
     .eq('org_id', requestedOrgId)
-    .order('day', { ascending: true });
+    .order('day', { ascending: true }) as any;
 
   if (dbError) {
     return NextResponse.json({ error: 'Database execution failure' }, { status: 500 });
