@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     .order('day', { ascending: true }) as any;
 
   if (dbError) {
-    return NextResponse.json({ error: 'Database execution failure' }, { status: 500 });
+    return NextResponse.json({ error: "Telemetry Engine Query Failure" }, { status: 500 });
   }
 
   return NextResponse.json({ metrics }, { status: 200 });
