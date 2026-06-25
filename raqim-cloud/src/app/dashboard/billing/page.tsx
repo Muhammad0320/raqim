@@ -1,5 +1,5 @@
 import React from 'react';
-import { createClient } from '@/utils/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { LicenseManager } from './LicenseManager';
 import { createStripeCheckoutSession } from './actions';
 

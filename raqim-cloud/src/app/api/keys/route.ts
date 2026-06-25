@@ -1,63 +1,70 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
+import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
-
-    // 1. Authenticate the user session
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = await req.json();
-    const { org_id, requested_features } = body;
+    const orgId = body.orgId || body.org_id;
+    const { requested_features } = body;
 
-    if (!org_id) {
+    if (!orgId) {
       return NextResponse.json({ error: "org_id is required" }, { status: 400 });
     }
 
-    // 2. Fetch organization membership to verify ownership/permission
-    const { data: orgMember, error: orgMemberError } = await supabase
-      .from("organization_members")
-      .select("organizations(id, alias)")
-      .eq("user_id", user.id)
-      .eq("org_id", org_id)
-      .single();
-
-    if (orgMemberError || !orgMember || !orgMember.organizations) {
-      return NextResponse.json({ error: "Organization Access Denied" }, { status: 403 });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthenticated context' }, { status: 401 });
     }
 
-    const org = Array.isArray(orgMember.organizations) ? orgMember.organizations[0] : orgMember.organizations;
+    // Fetch the membership record and explicitly verify the security role
+    const { data: membership, error: rbacError } = await supabase
+      .from('organization_members')
+      .select('role, organizations(id, alias)')
+      .eq('org_id', orgId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (rbacError || !membership) {
+      return NextResponse.json({ error: 'Access Denied: Tenant Isolation Mismatch' }, { status: 403 });
+    }
+
+    // Strict RBAC Enforcement: Block regular VIEWERS from generating licenses
+    if (membership.role !== 'ADMIN' && membership.role !== 'OWNER') {
+      return NextResponse.json({ error: 'Forbidden: Elevate permissions to mint license keys' }, { status: 403 });
+    }
+
+    const org: any = Array.isArray(membership.organizations) ? membership.organizations[0] : membership.organizations;
+    if (!org) {
+      return NextResponse.json({ error: "Organization Access Denied" }, { status: 403 });
+    }
     const tenant_id = org.alias;
 
-    // 3. Fetch subscription plan_tier supporting spelling variations
+    // Fetch subscription plan_tier supporting spelling variations
     let subData = null;
     
-    const subRes = await supabase
+    const subRes = await (supabase
       .from("subscriptions" as any)
       .select("plan_tier")
-      .eq("org_id", org_id)
-      .single();
+      .eq("org_id", orgId)
+      .single() as any);
 
     if (!subRes.error && subRes.data) {
       subData = subRes.data;
     } else {
-      const fallbackRes = await supabase
+      const fallbackRes = await (supabase
         .from("subsciptions" as any)
         .select("plan_tier")
-        .eq("org_id", org_id)
-        .single();
+        .eq("org_id", orgId)
+        .single() as any);
       subData = fallbackRes.data;
     }
 
     const plan_tier = subData?.plan_tier || "OPEN_CORE";
 
-    // 4. Enforce plan restrictions on the backend source of truth
+    // Enforce plan restrictions on the backend source of truth
     const final_features = new Set<string>(requested_features || []);
     if (plan_tier === "STARTUP" || plan_tier === "OPEN_CORE") {
       final_features.delete("aegis");
@@ -69,7 +76,7 @@ export async function POST(req: Request) {
       final_features.add("global_a2a");
     }
 
-    // 5. Retrieve private key from environmental configuration
+    // Retrieve private key from environmental configuration
     let privateKey = process.env.RSA_PRIVATE_KEY || process.env.RAQIM_RSA_PRIVATE_KEY;
     if (!privateKey) {
       console.error("Missing cryptographic RSA key config");
@@ -78,14 +85,14 @@ export async function POST(req: Request) {
 
     privateKey = privateKey.replace(/\\n/g, "\n");
 
-    // 6. Sign JWT with RS256 algorithm
+    // Sign JWT with RS256 algorithm
     const token = jwt.sign(
       { sub: tenant_id, features: Array.from(final_features) },
       privateKey,
       { algorithm: "RS256", expiresIn: "7d" }
     );
 
-    // 7. Hash the JWT with SHA-256 for secure database tracking and revocation auditing
+    // Hash the JWT with SHA-256 for secure database tracking and revocation auditing
     const jwtHash = crypto.createHash("sha256").update(token).digest("hex");
 
     // Save the record
@@ -93,7 +100,7 @@ export async function POST(req: Request) {
       .from("licenses")
       .upsert(
         {
-          org_id: org_id,
+          org_id: orgId,
           jwt_hash: jwtHash,
           revoked: false,
           issued_by: user.id,
