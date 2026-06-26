@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import styled from 'styled-components';
 import Link from 'next/link';
+import { useTenantStore } from '@/store/useTenantStore';
 
 const NavContainer = styled.header`
   position: fixed;
@@ -14,10 +15,10 @@ const NavContainer = styled.header`
   align-items: center;
   justify-content: space-between;
   padding: 0 32px;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(39, 39, 42, 0.5); /* zinc-800 equivalent */
+  border-bottom: 1px solid #27272a;
   z-index: 100;
 `;
 
@@ -61,7 +62,6 @@ const NavLink = styled(Link)`
 
   &:hover {
     color: #ffffff;
-    text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
   }
 `;
 
@@ -76,7 +76,7 @@ const GitHubButton = styled.a`
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: #a1a1aa;
   font-size: 0.875rem;
@@ -109,34 +109,56 @@ const CtaButton = styled(Link)`
   color: #ffffff;
   background: #000000;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
+  border-radius: 0;
   text-decoration: none;
-  box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.05), 0 0 15px rgba(255, 255, 255, 0.1);
   transition: all 0.2s ease;
 
   &:hover {
     border-color: rgba(255, 255, 255, 0.5);
-    box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.1), 0 0 20px rgba(255, 255, 255, 0.2);
+  }
+`;
+
+const UserBadgeLink = styled(Link)`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: #09090b;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0;
+  text-decoration: none;
+  transition: all 0.2s ease;
+
+  &:hover {
+    color: #00E5FF;
+    border-color: #00E5FF;
   }
 `;
 
 export default function Navbar() {
+  const { profile, activeOrganizationId, organizations, fetchTenantData } = useTenantStore();
+  const activeOrg = organizations.find((org) => org.id === activeOrganizationId);
+  const planTier = activeOrg?.plan_tier || "OPEN_CORE";
+  const isAuthenticated = !!profile;
+
+  useEffect(() => {
+    fetchTenantData();
+  }, [fetchTenantData]);
+
   return (
     <NavContainer>
       <LeftSection>
         <LogoIcon viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <filter id="logo-glow" x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="4" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
-          </defs>
           {/* Heavy vertical spine monolith */}
           <path d="M28 15v70" stroke="currentColor" strokeWidth="8" strokeLinecap="square" />
           {/* Sharp, geometric upper loop */}
           <path d="M28 19h36l12 16l-12 16H28" stroke="currentColor" strokeWidth="8" strokeLinecap="square" strokeLinejoin="miter" />
           {/* Intersecting sharp, glowing cyan diagonal zero-copy bypass path */}
-          <path d="M46 49l28 36" stroke="#00E5FF" strokeWidth="8" strokeLinecap="square" filter="url(#logo-glow)" />
+          <path d="M46 49l28 36" stroke="#00E5FF" strokeWidth="8" strokeLinecap="square" />
         </LogoIcon>
         <LogoText>RAQIM CLOUD</LogoText>
       </LeftSection>
@@ -145,6 +167,7 @@ export default function Navbar() {
         <NavLink href="/docs">Docs</NavLink>
         <NavLink href="#architecture">Architecture</NavLink>
         <NavLink href="#toolchain">Toolchain</NavLink>
+        <NavLink href="/pricing">Pricing</NavLink>
         <NavLink href="/pricing">Enterprise</NavLink>
       </CenterSection>
 
@@ -155,9 +178,15 @@ export default function Navbar() {
           </svg>
           14.2k
         </GitHubButton>
-        <CtaButton href="/auth/login">
-          [ Deploy Daemon ]
-        </CtaButton>
+        {isAuthenticated ? (
+          <UserBadgeLink href="/dashboard">
+            [ {profile?.full_name || 'User'} // {planTier} ]
+          </UserBadgeLink>
+        ) : (
+          <CtaButton href="/auth/login">
+            [ Deploy Daemon ]
+          </CtaButton>
+        )}
       </RightSection>
     </NavContainer>
   );

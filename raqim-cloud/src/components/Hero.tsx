@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import styled, { keyframes } from 'styled-components';
+import styled from 'styled-components';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 
 const HeroContainer = styled.section`
@@ -14,19 +14,6 @@ const HeroContainer = styled.section`
   padding: 120px 24px 64px;
   background-color: #000000;
   overflow: hidden;
-`;
-
-const RadialGradient = styled.div`
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 800px;
-  height: 800px;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.05) 0%, rgba(0, 0, 0, 0) 70%);
-  filter: blur(60px);
-  z-index: 0;
-  pointer-events: none;
 `;
 
 const ContentWrapper = styled.div`
@@ -48,7 +35,6 @@ const Headline = styled(motion.h1)`
   line-height: 1.1;
   text-align: center;
   margin: 0 0 24px 0;
-  text-shadow: 4px 4px 0px #00E5FF;
 `;
 
 const SubHeadline = styled(motion.p)`
@@ -76,9 +62,8 @@ const GridContainer = styled(motion.div)`
 const TerminalWindow = styled.div`
   background: #09090b;
   border: 1px solid #27272a;
-  border-radius: 8px;
+  border-radius: 0;
   overflow: hidden;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
 `;
@@ -115,11 +100,6 @@ const TerminalLine = styled.div`
   display: flex;
 `;
 
-const TerminalPrompt = styled.span`
-  color: #06b6d4;
-  margin-right: 12px;
-`;
-
 const Cursor = styled.span`
   display: inline-block;
   width: 8px;
@@ -138,6 +118,7 @@ const Cursor = styled.span`
 const BenchmarkHud = styled.div`
   background: #000000;
   border: 1px solid #27272a;
+  border-radius: 0;
   padding: 32px;
   display: flex;
   flex-direction: column;
@@ -145,33 +126,22 @@ const BenchmarkHud = styled.div`
   position: relative;
 `;
 
-const pulseGlow = keyframes`
-  0% {
-    text-shadow: 0 0 10px rgba(0, 229, 255, 0.4), 0 0 20px rgba(0, 229, 255, 0.2);
-  }
-  50% {
-    text-shadow: 0 0 20px rgba(0, 229, 255, 0.8), 0 0 35px rgba(0, 229, 255, 0.5), 0 0 50px rgba(0, 229, 255, 0.3);
-  }
-  100% {
-    text-shadow: 0 0 10px rgba(0, 229, 255, 0.4), 0 0 20px rgba(0, 229, 255, 0.2);
-  }
-`;
-
 const BenchmarkValue = styled(motion.div)`
   font-family: var(--font-geist-mono), monospace;
   font-size: clamp(3rem, 6vw, 4.5rem);
   font-weight: 700;
-  color: #00E5FF;
+  color: #ffffff;
   line-height: 1;
   margin-bottom: 8px;
-  animation: ${pulseGlow} 2s infinite ease-in-out;
 `;
 
 const BenchmarkLabel = styled.div`
   font-family: var(--font-geist-mono), monospace;
-  font-size: 1rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  color: #ffffff;
+  color: #a1a1aa; /* zinc-400 */
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
   margin-bottom: auto;
 `;
 
@@ -184,9 +154,10 @@ const HonestyDisclaimer = styled.div`
 `;
 
 const CODE_LINES = [
-  "$ helm install raqim raqim/raqim-os \\",
-  "    --set licenseKey=YOUR_KEY \\",
-  "    --set storage=500Gi"
+  "$ helm install swarm-alpha raqim/raqim-os \\",
+  "    --set licenseKey=YOUR_SECURE_JWT \\",
+  "    --set storage.class=local-nvme \\",
+  "    --set storage.size=500Gi"
 ];
 
 export default function Hero() {
@@ -244,15 +215,13 @@ export default function Hero() {
 
   return (
     <HeroContainer>
-      <RadialGradient />
-      
       <ContentWrapper>
         <Headline
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
         >
-          The Zero-Copy Agentic OS.
+          The Open-Source Agentic Database Operating System.
         </Headline>
         
         <SubHeadline
@@ -260,7 +229,7 @@ export default function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
         >
-          Bypass the garbage collector. Deterministic memory isolation and global CRDT state for bare-metal multi-agent swarms.
+          Bypass the garbage collector. Cast raw TCP streams directly into deterministic memory layouts, and synchronize autonomous multi-agent swarms via a global peer-to-peer CRDT mesh.
         </SubHeadline>
 
         <GridContainer
@@ -298,10 +267,10 @@ export default function Hero() {
 
           <BenchmarkHud>
             <BenchmarkValue>{rounded}</BenchmarkValue>
-            <BenchmarkLabel>Tx/sec (Zero-Copy Throughput)</BenchmarkLabel>
+            <BenchmarkLabel>TRANSACTIONS / SECOND (TPS)</BenchmarkLabel>
             
             <HonestyDisclaimer>
-              *Benchmarked on PCIe 4.0 NVMe, 32-Core AMD EPYC. Throughput scales linearly with bare-metal I/O limits.
+              *Target Metrics: Emits 790,000+ TPS inside bare-metal NVMe clusters. Emits 104,000+ TPS during local development runtimes inside WSL2 Ubuntu environments.
             </HonestyDisclaimer>
           </BenchmarkHud>
         </GridContainer>
