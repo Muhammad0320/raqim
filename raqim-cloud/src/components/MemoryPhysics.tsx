@@ -5,7 +5,7 @@ import styled from 'styled-components';
 import { motion } from 'framer-motion';
 
 const SectionContainer = styled.section`
-  background-color: #09090b;
+  background-color: #000000;
   padding: 120px 24px;
   display: flex;
   justify-content: center;
@@ -35,10 +35,10 @@ const SectionTag = styled.div`
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #06b6d4;
-  letter-spacing: 0.05em;
+  color: #ffffff; /* Solid white */
+  letter-spacing: 0.15em; /* Wide-tracked */
+  text-transform: uppercase;
   margin-bottom: 24px;
-  text-shadow: none;
 `;
 
 const Headline = styled.h2`
@@ -74,9 +74,11 @@ const FeatureItem = styled.div`
 
 const FeatureTitle = styled.div`
   font-family: var(--font-geist-mono), monospace;
-  font-size: 1rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: #ffffff;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 `;
 
 const FeatureDesc = styled.div`
@@ -91,21 +93,123 @@ const RightColumn = styled.div`
   gap: 32px;
 `;
 
-const SvgContainer = styled.div`
-  background: #000000;
-  border: 1px solid #27272a;
-  border-radius: 0;
-  padding: 24px;
-  box-shadow: none;
-  overflow: hidden;
+const DiagramContainer = styled.div`
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
 `;
 
-const SvgVisual = styled.svg`
+const DiagramCard = styled.div`
+  background: #09090b;
+  border: 1px solid #27272a; /* Zinc 800 */
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+`;
+
+const CardHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #27272a;
+  padding-bottom: 12px;
+`;
+
+const CardTitle = styled.h3`
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0;
+`;
+
+const CardSubtitle = styled.span`
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.75rem;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+`;
+
+const NodeRow = styled.div`
+  display: grid;
+  grid-template-columns: 1.2fr 0.6fr 1.2fr;
+  gap: 16px;
+  align-items: center;
+  position: relative;
+`;
+
+const NodeBox = styled.div<{ $accent?: 'cyan' | 'red' | 'zinc' }>`
+  background: #000000;
+  border: 1px solid ${props => 
+    props.$accent === 'cyan' ? '#00e5ff' : 
+    props.$accent === 'red' ? '#7f1d1d' : 
+    '#27272a'
+  };
+  padding: 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`;
+
+const NodeLabel = styled.span`
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const NodeMeta = styled.span<{ $accent?: 'cyan' | 'red' }>`
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.65rem;
+  color: ${props => 
+    props.$accent === 'cyan' ? '#00e5ff' : 
+    props.$accent === 'red' ? '#ef4444' : 
+    '#71717a'
+  };
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const ConnectionArrow = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.75rem;
+  color: #3f3f46;
+`;
+
+const ActiveVectorContainer = styled.div`
+  position: relative;
+  height: 1px;
+  background: #27272a;
   width: 100%;
-  height: auto;
+  margin-top: 8px;
+  overflow: hidden;
+`;
+
+const ActiveVectorLine = styled(motion.div)`
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: #00e5ff;
+  width: 80px;
 `;
 
 const CodeTerminal = styled.div`
@@ -173,6 +277,10 @@ const Operator = styled.span`
   color: #56b6c2;
 `;
 
+const StringLiteral = styled.span`
+  color: #98c379;
+`;
+
 export default function MemoryPhysics() {
   return (
     <SectionContainer>
@@ -206,180 +314,72 @@ export default function MemoryPhysics() {
         </LeftColumn>
 
         <RightColumn>
-          <SvgContainer>
-            <SvgVisual viewBox="0 0 600 380" preserveAspectRatio="xMidYMid meet">
-              <defs>
-                <linearGradient id="legacyLine" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#3f3f46" />
-                  <stop offset="100%" stopColor="#7f1d1d" />
-                </linearGradient>
-                <linearGradient id="raqimLine" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#0891b2" />
-                  <stop offset="100%" stopColor="#00E5FF" />
-                </linearGradient>
-                <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="4" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-                <filter id="glowRed" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="3" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-              </defs>
+          <DiagramContainer>
+            {/* Legacy Stack Card */}
+            <DiagramCard>
+              <CardHeader>
+                <CardTitle>LEGACY AI STACK</CardTitle>
+                <CardSubtitle>DESERIALIZATION BOTTLENECK</CardSubtitle>
+              </CardHeader>
+              <NodeRow>
+                <NodeBox $accent="zinc">
+                  <NodeLabel>INCOMING PAYLOAD</NodeLabel>
+                  <NodeMeta>128KB JSON STRING</NodeMeta>
+                </NodeBox>
+                <ConnectionArrow>&gt;&gt;&gt;</ConnectionArrow>
+                <NodeBox $accent="red">
+                  <NodeLabel>JSON.PARSE()</NodeLabel>
+                  <NodeMeta>GC PAUSE OVERHEAD</NodeMeta>
+                </NodeBox>
+              </NodeRow>
+            </DiagramCard>
 
-              {/* Legacy Stack Background */}
-              <rect x="10" y="10" width="580" height="150" rx="4" fill="#18181b" stroke="#27272a" />
-              <text x="30" y="35" fill="#52525b" fontSize="12" fontFamily="monospace" fontWeight="bold">LEGACY AI STACK</text>
-
-              {/* Legacy Line */}
-              <line x1="80" y1="90" x2="520" y2="90" stroke="url(#legacyLine)" strokeWidth="2" strokeDasharray="4 4" />
-
-              {/* Legacy Elements */}
-              <motion.g
-                initial={{ x: -20, opacity: 0 }}
-                whileInView={{ x: 0, opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5 }}
-              >
-                <rect x="40" y="70" width="100" height="40" rx="4" fill="#27272a" stroke="#3f3f46" />
-                <text x="50" y="94" fill="#a1a1aa" fontSize="12" fontFamily="monospace">Incoming Payload</text>
-              </motion.g>
-
-              {/* Bottleneck / GC */}
-              <rect x="230" y="60" width="140" height="60" rx="4" fill="#450a0a" stroke="#7f1d1d" filter="url(#glowRed)" />
-              <text x="245" y="85" fill="#fca5a5" fontSize="12" fontFamily="monospace">JSON.parse()</text>
-              <text x="245" y="105" fill="#ef4444" fontSize="10" fontFamily="monospace">+ Garbage Collector</text>
-
-              {/* Legacy Fragments / CPU Waste Animation */}
-              {[...Array(6)].map((_, i) => (
-                <motion.circle
-                  key={`frag-${i}`}
-                  cx="370"
-                  cy={80 + (i % 2 === 0 ? i * 2 : -i * 2)}
-                  r="2"
-                  fill="#ef4444"
-                  filter="url(#glowRed)"
-                  initial={{ cx: 300, cy: 90, opacity: 0 }}
-                  whileInView={{
-                    cx: 400 + Math.random() * 40,
-                    cy: 50 + Math.random() * 80,
-                    opacity: [0, 1, 0]
+            {/* Raqim OS Card */}
+            <DiagramCard>
+              <CardHeader>
+                <CardTitle>RAQIM OS (ZERO-COPY)</CardTitle>
+                <CardSubtitle style={{ color: '#00e5ff' }}>LATENCY: &lt; 1µs</CardSubtitle>
+              </CardHeader>
+              <NodeRow>
+                <NodeBox $accent="zinc">
+                  <NodeLabel>TCP INGRESS</NodeLabel>
+                  <NodeMeta>RAW BYTE BUFFER</NodeMeta>
+                </NodeBox>
+                <ConnectionArrow style={{ color: '#00e5ff' }}>&gt;&gt;&gt;</ConnectionArrow>
+                <NodeBox $accent="cyan">
+                  <NodeLabel>#[REPR(C)]</NodeLabel>
+                  <NodeMeta style={{ color: '#ffffff' }}>rkyv::access</NodeMeta>
+                </NodeBox>
+              </NodeRow>
+              <ActiveVectorContainer>
+                <ActiveVectorLine
+                  animate={{ x: ['-100%', '500%'] }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 2.0,
+                    ease: 'linear'
                   }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.2 }}
                 />
-              ))}
-
-              <motion.g
-                initial={{ x: 20, opacity: 0 }}
-                whileInView={{ x: 0, opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: 0.8 }}
-              >
-                <rect x="460" y="70" width="80" height="40" rx="4" fill="#27272a" stroke="#3f3f46" />
-                <text x="485" y="94" fill="#a1a1aa" fontSize="12" fontFamily="monospace">RAM</text>
-              </motion.g>
-
-
-              {/* Raqim OS Background */}
-              <rect x="10" y="180" width="580" height="180" rx="4" fill="#09090b" stroke="#18181b" />
-              <text x="30" y="205" fill="#00E5FF" fontSize="12" fontFamily="monospace" fontWeight="bold">RAQIM OS (ZERO-COPY)</text>
-
-              {/* Raqim Line */}
-              <line x1="80" y1="260" x2="520" y2="260" stroke="url(#raqimLine)" strokeWidth="2" />
-              
-              <motion.line
-                x1="350" y1="260" x2="350" y2="320"
-                stroke="#00E5FF" strokeWidth="2" strokeDasharray="4 4"
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5, delay: 1.5 }}
-              />
-
-              {/* Raqim Incoming */}
-              <motion.g
-                initial={{ x: -20, opacity: 0 }}
-                whileInView={{ x: 0, opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5 }}
-              >
-                <rect x="40" y="240" width="140" height="40" rx="4" fill="#000000" stroke="#00E5FF" />
-                <text x="50" y="264" fill="#00E5FF" fontSize="12" fontFamily="monospace">TCP Ingress (Bytes)</text>
-              </motion.g>
-
-              {/* Fast Path Payload Animation */}
-              <motion.rect
-                width="140" height="40" rx="4" fill="rgba(0, 229, 255, 0.15)" stroke="#00E5FF"
-                filter="url(#glowCyan)"
-                initial={{ x: 40, y: 240 }}
-                whileInView={{ x: 230 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: 0.5, ease: "easeOut" }}
-              />
-
-              {/* Rust Struct Snap Overlay */}
-              <motion.g
-                initial={{ opacity: 0, scale: 1.1 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.2, delay: 0.9 }}
-              >
-                <rect x="230" y="235" width="140" height="50" rx="4" fill="rgba(0, 229, 255, 0.1)" stroke="#00E5FF" strokeWidth="2" filter="url(#glowCyan)" />
-                <text x="260" y="255" fill="#ffffff" fontSize="14" fontFamily="monospace" fontWeight="bold">#[repr(C)]</text>
-                <text x="245" y="275" fill="#00E5FF" fontSize="10" fontFamily="monospace">rkyv::access_unchecked</text>
-              </motion.g>
-
-              {/* Telemetry Process IPC */}
-              <motion.g
-                initial={{ opacity: 0, y: 10 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: 1.2 }}
-              >
-                <rect x="280" y="320" width="140" height="30" rx="4" fill="#18181b" stroke="#00E5FF" />
-                <text x="295" y="340" fill="#a1a1aa" fontSize="11" fontFamily="monospace">Telemetry Process</text>
-              </motion.g>
-
-              <motion.text
-                x="360" y="295" fill="#a1a1aa" fontSize="10" fontFamily="monospace"
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, delay: 1.6 }}
-              >
-                iceoryx2 shared memory
-              </motion.text>
-              
-              <motion.text
-                x="440" y="340" fill="#00E5FF" fontSize="12" fontFamily="monospace" fontWeight="bold" filter="url(#glowCyan)"
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: [0, 1, 0.5, 1] }}
-                viewport={{ once: true }}
-                transition={{ duration: 1.5, delay: 1.8 }}
-              >
-                Latency: &lt; 1µs
-              </motion.text>
-
-            </SvgVisual>
-          </SvgContainer>
+              </ActiveVectorContainer>
+            </DiagramCard>
+          </DiagramContainer>
 
           <CodeTerminal>
             <CodeTerminalHeader>
               <MacDot $color="#ff5f56" />
               <MacDot $color="#ffbd2e" />
               <MacDot $color="#27c93f" />
-              <span style={{ marginLeft: '8px', color: '#71717a', fontFamily: 'var(--font-geist-mono)', fontSize: '11px' }}>memory_cast.rs</span>
+              <span style={{ marginLeft: '8px', color: '#71717a', fontFamily: 'var(--font-geist-mono)', fontSize: '11px' }}>src/main.rs</span>
             </CodeTerminalHeader>
             <CodeTerminalBody>
               <Pre>
-                <Comment>// Zero-Copy Cast: The packet IS the memory.</Comment>
+                <Comment>// Zero-Copy Cast: The incoming packet IS the memory layout.</Comment>
                 <br />
-                <Keyword>let</Keyword> <Variable>archived_state</Variable> = <Keyword>unsafe</Keyword> <Operator>{'{'}</Operator>
+                <Comment>// Validated alignment check ensures zero hypervisor panic loops.</Comment>
                 <br />
-                {'    '}<TypeName>rkyv</TypeName><Operator>::</Operator><FunctionName>access_unchecked</FunctionName><Operator>::&lt;&lt;</Operator><TypeName>AgentState</TypeName> <Keyword>as</Keyword> <TypeName>Archive</TypeName><Operator>&gt;::</Operator><TypeName>Archived</TypeName><Operator>&gt;(&amp;</Operator><Variable>payload_bytes</Variable><Operator>)</Operator>
+                <Keyword>let</Keyword> <Variable>archived_state</Variable> = <TypeName>rkyv</TypeName><Operator>::</Operator><FunctionName>access</FunctionName><Operator>::&lt;</Operator><TypeName>AgentState</TypeName><Operator>,</Operator> <TypeName>rkyv</TypeName><Operator>::</Operator><TypeName>rancor</TypeName><Operator>::</Operator><TypeName>Error</TypeName><Operator>&gt;(&amp;</Operator><Variable>payload_bytes</Variable><Operator>)</Operator>
                 <br />
-                <Operator>{'}'};</Operator>
+                {'    '}<Operator>.</Operator><FunctionName>expect</FunctionName><Operator>(</Operator><StringLiteral>"FATAL: Cryptographic Memory Alignment Violation"</StringLiteral><Operator>);</Operator>
               </Pre>
             </CodeTerminalBody>
           </CodeTerminal>
