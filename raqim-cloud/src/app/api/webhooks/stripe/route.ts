@@ -2,6 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import Stripe from "stripe";
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock', {
   apiVersion: "2025-02-24.acacia" as any,
@@ -111,24 +113,71 @@ export async function POST(req: Request) {
       if (subscriptionId && customerId) {
         await handleSubscriptionUpsert(subscriptionId, customerId, orgId);
       }
-    } else if (event.type === "invoice.payment_failed" || event.type === "customer.subscription.deleted") {
-      const obj = event.data.object as any;
-      const customerId = obj.customer;
+    } else if (event.type === "invoice.payment_failed") {
+      const invoice = event.data.object as Stripe.Invoice;
+      const customerId = invoice.customer as string;
 
       const { data: orgs } = await supabaseAdmin
         .from("organizations")
-        .select("id")
+        .select("id, alias")
         .eq("stripe_customer_id", customerId);
 
       if (orgs && orgs.length > 0) {
-        const org_id = orgs[0].id;
-        // Instantly revoke license in the db.
-        await supabaseAdmin.from("licenses").update({ revoked: true }).eq("org_id", org_id);
+        const orgId = orgs[0].id;
+        const tenantAlias = orgs[0].alias;
+
+        // Do not downgrade the tenant to Open Core instantly.
+        // Update database status to "past_due".
         await (supabaseAdmin
           .from("subscriptions" as any)
-          .update({ plan_tier: "OPEN_CORE" })
-          .eq("org_id", org_id) as any);
+          .update({ status: "past_due" })
+          .eq("org_id", orgId) as any);
+
+        // Generate emergency fallback license with a strict exp timestamp set to exactly now + 72 hours.
+        let privateKey = process.env.RSA_PRIVATE_KEY || process.env.RAQIM_RSA_PRIVATE_KEY;
+        if (privateKey) {
+          privateKey = privateKey.replace(/\\n/g, "\n");
+          const nowUnix = Math.floor(Date.now() / 1000);
+          const expUnix = nowUnix + (72 * 3600); // 72 hours in seconds
+
+          const fallbackToken = jwt.sign(
+            {
+              sub: tenantAlias,
+              features: ["local_swarm", "global_a2a", "global_crdt"],
+              exp: expUnix,
+              iat: nowUnix
+            },
+            privateKey,
+            { algorithm: "RS256" }
+          );
+
+          const jwtHash = crypto.createHash("sha256").update(fallbackToken).digest("hex");
+
+          // Upsert fallback token hash into database
+          await supabaseAdmin
+            .from("licenses")
+            .upsert({
+              org_id: orgId,
+              jwt_hash: jwtHash,
+              revoked: false,
+              created_at: new Date().toISOString()
+            }, { onConflict: "org_id" });
+        }
       }
+    } else if (event.type === "customer.subscription.deleted") {
+      const subscription = event.data.object as Stripe.Subscription;
+      const customerId = subscription.customer as string;
+      const currentPeriodEnd = subscription.current_period_end; // unix timestamp
+
+      // Extract currentPeriodEnd, do not immediately drop their enterprise status.
+      // Update database record to log cancellation but preserve feature access until currentPeriodEnd.
+      await (supabaseAdmin
+        .from("subscriptions" as any)
+        .update({
+          status: "canceled",
+          current_period_end: new Date(currentPeriodEnd * 1000).toISOString()
+        })
+        .eq("stripe_subscription_id", subscription.id) as any);
     }
 
     return NextResponse.json({ received: true });
