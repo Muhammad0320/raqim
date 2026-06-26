@@ -29,9 +29,7 @@ const Headline = styled.h2`
   line-height: 1.1;
   letter-spacing: -0.04em;
   margin: 0 0 32px 0;
-  background: linear-gradient(to bottom, #ffffff 30%, #71717a 100%); /* Stark White to Zinc-500 gradient */
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff; /* Solid white */
 `;
 
 const SubHeadline = styled.p`

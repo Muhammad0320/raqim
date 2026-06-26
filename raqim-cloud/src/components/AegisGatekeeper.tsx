@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import styled, { keyframes } from 'styled-components';
+import styled from 'styled-components';
 import { motion } from 'framer-motion';
 
 const SectionContainer = styled.section`
@@ -49,10 +49,10 @@ const SectionTag = styled.div`
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #00E5FF; /* sharp cyan */
-  letter-spacing: 0.05em;
+  color: #ffffff; /* Solid white */
+  letter-spacing: 0.15em; /* Wide-tracked */
+  text-transform: uppercase;
   margin-bottom: 24px;
-  text-shadow: none;
 `;
 
 const Headline = styled.h2`
@@ -106,6 +106,8 @@ const UiShell = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  height: 100%;
+  flex: 1;
 `;
 
 const VisualArea = styled.div`
@@ -115,6 +117,7 @@ const VisualArea = styled.div`
   align-items: center;
   justify-content: center;
   border-bottom: 1px solid #27272a;
+  flex: 1.2;
 `;
 
 const SvgVisual = styled.svg`
@@ -128,6 +131,7 @@ const CodeTerminal = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex: 0.8;
 `;
 
 const CodeTerminalHeader = styled.div`
@@ -163,7 +167,7 @@ const EditorContainer = styled.div`
   background: #09090b;
   padding: 24px;
   overflow-x: auto;
-  min-height: 180px;
+  flex: 1;
 `;
 
 const LineNumbersGutter = styled.div`
@@ -235,8 +239,7 @@ const SyntaxSymbol = styled.span`
 `;
 
 export default function AegisGatekeeper() {
-  const LOOP_DURATION = 8;
-  const Y_PATH = 160;
+  const Y_PATH = 120;
 
   return (
     <SectionContainer id="security">
@@ -255,12 +258,12 @@ export default function AegisGatekeeper() {
 
           <FeatureList>
             <FeatureItem>
-              <FeatureTitle>Ed25519 Handshakes</FeatureTitle>
-              <FeatureDesc>Socket-level signatures enforcing physical cryptography constraints.</FeatureDesc>
+              <FeatureTitle>Local Cryptographic Identity Firewall</FeatureTitle>
+              <FeatureDesc>Always enabled. Enforces hardware-level signature checks for absolute zero-copy container isolation.</FeatureDesc>
             </FeatureItem>
             <FeatureItem>
-              <FeatureTitle>Hot-Reloaded RAM ACLs</FeatureTitle>
-              <FeatureDesc>Microsecond lookup of security namespaces with zero memory lock degradation.</FeatureDesc>
+              <FeatureTitle>Global Out-of-Band Quarantine Sync</FeatureTitle>
+              <FeatureDesc>Enterprise Tier. Real-time threat telemetry propagation across the global Zenoh quarantine mesh.</FeatureDesc>
             </FeatureItem>
           </FeatureList>
         </LeftColumn>
@@ -268,200 +271,72 @@ export default function AegisGatekeeper() {
         <RightColumn>
           <UiShell>
             <VisualArea>
-              <SvgVisual viewBox="0 0 600 320" preserveAspectRatio="xMidYMid meet">
-                <defs>
-                  <filter id="glowCrimson" x="-20%" y="-20%" width="140%" height="140%">
-                    <feGaussianBlur stdDeviation="5" result="blur" />
-                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                  </filter>
-                  <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
-                    <feGaussianBlur stdDeviation="5" result="blur" />
-                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                  </filter>
-                </defs>
+              <SvgVisual viewBox="0 0 600 260" preserveAspectRatio="xMidYMid meet">
+                {/* 1px Solid Ingress Path Line */}
+                <line x1="40" y1={Y_PATH} x2="380" y2={Y_PATH} stroke="#27272a" strokeWidth="1" />
+                <line x1="380" y1={Y_PATH} x2="440" y2={Y_PATH} stroke="#27272a" strokeWidth="1" />
+                
+                {/* Quarantine Eviction Path Line */}
+                <path d={`M 230 ${Y_PATH} L 230 200 L 300 200`} fill="none" stroke="#27272a" strokeWidth="1" />
 
-                {/* Swarm Memory Node (Target destination for authorized packets) */}
+                {/* Audit Node Block */}
                 <g>
-                  <circle cx="500" cy={Y_PATH} r="40" fill="#09090b" stroke="#27272a" strokeWidth="2" strokeDasharray="4 4" />
-                  {/* Swarm Memory ripple rings upon authorized packet landing */}
-                  <motion.circle
-                    cx="500" cy={Y_PATH} r="40" fill="none" stroke="#00E5FF" strokeWidth="2.5"
-                    animate={{
-                      r: [40, 40, 60, 80],
-                      opacity: [0, 0, 0.7, 0]
-                    }}
-                    transition={{
-                      duration: LOOP_DURATION,
-                      times: [0, 0.85, 0.87, 0.95, 1],
-                      repeat: Infinity,
-                      ease: "easeOut"
-                    }}
-                  />
-                  <text x="500" y={Y_PATH + 4} fill="#a1a1aa" fontSize="11" fontFamily="monospace" fontWeight="bold" textAnchor="middle">SWARM</text>
-                  <text x="500" y={Y_PATH + 16} fill="#a1a1aa" fontSize="11" fontFamily="monospace" fontWeight="bold" textAnchor="middle">MEMORY</text>
+                  <rect x="140" y={Y_PATH - 35} width="180" height="70" fill="#09090b" stroke="#27272a" strokeWidth="1" />
+                  <text x="230" y={Y_PATH - 15} fill="#ffffff" fontSize="9" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold" textAnchor="middle">AUDIT NODE</text>
+                  <text x="230" y={Y_PATH} fill="#a1a1aa" fontSize="7.5" fontFamily="var(--font-geist-mono), monospace" textAnchor="middle">ED25519 VERIFICATION &amp;</text>
+                  <text x="230" y={Y_PATH + 12} fill="#a1a1aa" fontSize="7.5" fontFamily="var(--font-geist-mono), monospace" textAnchor="middle">LINEAGE TOKEN MATCH</text>
                 </g>
 
-                {/* Vertical Aegis Firewall boundary line */}
+                {/* Eviction Block */}
                 <g>
-                  <line x1="300" y1="20" x2="300" y2="300" stroke="#27272a" strokeWidth="2.5" />
-                  {/* Glowing core indicator of boundary */}
-                  <motion.line
-                    x1="300" y1="20" x2="300" y2="300"
-                    strokeWidth="3.5"
-                    animate={{
-                      stroke: ["#27272a", "#27272a", "#E11D48", "#27272a", "#27272a", "#00E5FF", "#27272a"],
-                    }}
-                    transition={{
-                      duration: LOOP_DURATION,
-                      times: [0, 0.22, 0.24, 0.35, 0.7, 0.72, 0.85],
-                      repeat: Infinity
-                    }}
-                  />
-                  <text x="290" y="30" fill="#52525b" fontSize="9" fontFamily="monospace" transform="rotate(-90 290 30)" letter-spacing="0.1em">AEGIS FIREWALL</text>
+                  <rect x="300" y="175" width="260" height="50" fill="#09090b" stroke="#7f1d1d" strokeWidth="1" />
+                  <text x="430" y="205" fill="#ef4444" fontSize="8" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold" textAnchor="middle">[ ZENOH_QUARANTINE_MESH_EVICTION ]</text>
                 </g>
 
-                {/* Diagnostic stats telemetry box */}
+                {/* Hypervisor Core Block */}
                 <g>
-                  <rect x="20" y="20" width="170" height="36" rx="4" fill="#09090b" stroke="#27272a" />
-                  <text x="32" y="42" fill="#71717a" fontSize="10" fontFamily="monospace">QUARANTINE_SOCKETS: </text>
-                  {/* Quarantine counter goes from 0 to 1 when rogue packet hits */}
-                  <motion.text
-                    x="160" y="42" fill="#E11D48" fontSize="11" fontFamily="monospace" fontWeight="bold"
-                    animate={{
-                      opacity: [1, 1, 0, 0, 1, 1],
-                    }}
-                    transition={{
-                      duration: LOOP_DURATION,
-                      times: [0, 0.23, 0.24, 0.55, 0.56, 1],
-                      repeat: Infinity
-                    }}
-                  >
-                    0
-                  </motion.text>
-                  <motion.text
-                    x="160" y="42" fill="#E11D48" fontSize="11" fontFamily="monospace" fontWeight="bold"
-                    animate={{
-                      opacity: [0, 0, 1, 1, 0, 0],
-                    }}
-                    transition={{
-                      duration: LOOP_DURATION,
-                      times: [0, 0.23, 0.24, 0.55, 0.56, 1],
-                      repeat: Infinity
-                    }}
-                  >
-                    1
-                  </motion.text>
+                  <rect x="440" y={Y_PATH - 35} width="130" height="70" fill="#09090b" stroke="#00e5ff" strokeWidth="1" />
+                  <text x="505" y={Y_PATH - 5} fill="#ffffff" fontSize="9" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold" textAnchor="middle">HYPERVISOR</text>
+                  <text x="505" y={Y_PATH + 10} fill="#00e5ff" fontSize="8" fontFamily="var(--font-geist-mono), monospace" textAnchor="middle">EXECUTION CORE</text>
                 </g>
 
-                {/* --- ANIMATION 1: Rogue Crimson Packet --- */}
+                {/* Labels */}
+                <text x="40" y={Y_PATH - 15} fill="#71717a" fontSize="8" fontFamily="var(--font-geist-mono), monospace">INGRESS</text>
+
+                {/* --- ANIMATIONS --- */}
+                {/* Verified Envelope (Cyan) */}
                 <motion.g
                   animate={{
-                    x: [-45, 260, 260, 260],
-                    opacity: [0, 1, 1, 0]
+                    x: [40, 140, 140, 440],
+                    y: [Y_PATH - 6, Y_PATH - 6, Y_PATH - 6, Y_PATH - 6],
+                    opacity: [0, 1, 1, 1, 0]
                   }}
                   transition={{
-                    duration: LOOP_DURATION,
-                    times: [0, 0.22, 0.23, 0.25],
-                    repeat: Infinity,
-                    ease: "easeOut"
-                  }}
-                >
-                  <rect x="0" y={Y_PATH - 15} width="45" height="30" rx="4" fill="rgba(225, 29, 72, 0.1)" stroke="#E11D48" strokeWidth="2" filter="url(#glowCrimson)" />
-                  <path d="M 12 160 L 32 160 M 22 152 L 32 160 L 22 168" fill="transparent" stroke="#E11D48" strokeWidth="2" />
-                  
-                  {/* labels on rogue envelope */}
-                  <rect x="-35" y={Y_PATH - 46} width="115" height="18" rx="2" fill="#09090b" stroke="#27272a" />
-                  <text x="-28" y={Y_PATH - 34} fill="#E11D48" fontSize="8" fontFamily="monospace">Agent: rogue_7a</text>
-                  
-                  <rect x="-35" y={Y_PATH - 68} width="115" height="18" rx="2" fill="#09090b" stroke="#27272a" />
-                  <text x="-28" y={Y_PATH - 56} fill="#ffffff" fontSize="8" fontFamily="monospace">Intent: /core/admin</text>
-                </motion.g>
-
-                {/* Crimson rogue shatters fragments */}
-                {[...Array(8)].map((_, i) => {
-                  const angle = (i * Math.PI) / 4;
-                  const distance = 40 + Math.random() * 50;
-                  const endX = 265 + Math.cos(angle) * distance;
-                  const endY = Y_PATH + Math.sin(angle) * distance;
-                  return (
-                    <motion.circle
-                      key={`rogue-frag-${i}`}
-                      r="3"
-                      fill="#E11D48"
-                      filter="url(#glowCrimson)"
-                      initial={{ cx: 275, cy: Y_PATH }}
-                      animate={{
-                        cx: [275, 275, endX, endX],
-                        cy: [Y_PATH, Y_PATH, endY, endY],
-                        opacity: [0, 0, 1, 0]
-                      }}
-                      transition={{
-                        duration: LOOP_DURATION,
-                        times: [0, 0.22, 0.24, 0.35],
-                        repeat: Infinity,
-                        ease: "easeOut"
-                      }}
-                    />
-                  );
-                })}
-
-                {/* Rogue Interdiction Rejected Alert Badge */}
-                <motion.g
-                  animate={{
-                    opacity: [0, 0, 1, 0, 0],
-                    scale: [0.9, 0.9, 1.05, 0.9, 0.9]
-                  }}
-                  transition={{
-                    duration: LOOP_DURATION,
-                    times: [0, 0.22, 0.24, 0.5, 1],
-                    repeat: Infinity
-                  }}
-                >
-                  <rect x="290" y="80" width="180" height="34" rx="4" fill="#ffffff" stroke="#E11D48" strokeWidth="2" filter="url(#glowCrimson)" />
-                  <text x="380" y="101" fill="#000000" fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">[CRYPTO_SPOOF: REJECTED]</text>
-                </motion.g>
-
-                {/* --- ANIMATION 2: Authorized Cyan Packet --- */}
-                <motion.g
-                  animate={{
-                    x: [-45, -45, 260, 480, 480],
-                    opacity: [0, 0, 1, 1, 0],
-                    scale: [1, 1, 1, 1, 0.5]
-                  }}
-                  transition={{
-                    duration: LOOP_DURATION,
-                    times: [0, 0.48, 0.7, 0.85, 0.88],
+                    duration: 6,
+                    times: [0, 0.25, 0.45, 0.8, 1],
                     repeat: Infinity,
                     ease: "easeInOut"
                   }}
                 >
-                  <rect x="0" y={Y_PATH - 15} width="45" height="30" rx="4" fill="rgba(0, 229, 255, 0.1)" stroke="#00E5FF" strokeWidth="2" filter="url(#glowCyan)" />
-                  <path d="M 12 160 L 32 160 M 22 152 L 32 160 L 22 168" fill="transparent" stroke="#00E5FF" strokeWidth="2" />
-                  
-                  {/* labels on authorized envelope */}
-                  <rect x="-35" y={Y_PATH - 46} width="115" height="18" rx="2" fill="#09090b" stroke="#27272a" />
-                  <text x="-28" y={Y_PATH - 34} fill="#00E5FF" fontSize="8" fontFamily="monospace">Agent: worker_b2</text>
-                  
-                  <rect x="-35" y={Y_PATH - 68} width="115" height="18" rx="2" fill="#09090b" stroke="#27272a" />
-                  <text x="-28" y={Y_PATH - 56} fill="#ffffff" fontSize="8" fontFamily="monospace">Intent: /finance/ledger</text>
+                  <rect width="12" height="12" fill="#00e5ff" />
                 </motion.g>
 
-                {/* Authorized Verified Alert Badge */}
+                {/* Rogue Envelope (Red) */}
                 <motion.g
                   animate={{
-                    opacity: [0, 0, 1, 0, 0],
-                    scale: [0.9, 0.9, 1.05, 0.9, 0.9]
+                    x: [40, 140, 140, 140, 300],
+                    y: [Y_PATH - 6, Y_PATH - 6, Y_PATH - 6, 200 - 6, 200 - 6],
+                    opacity: [0, 0, 1, 1, 1, 0]
                   }}
                   transition={{
-                    duration: LOOP_DURATION,
-                    times: [0, 0.7, 0.72, 0.85, 1],
-                    repeat: Infinity
+                    duration: 6,
+                    times: [0, 0.35, 0.5, 0.65, 0.85, 1],
+                    repeat: Infinity,
+                    ease: "easeInOut"
                   }}
                 >
-                  <rect x="290" y="220" width="160" height="34" rx="4" fill="#09090b" stroke="#00E5FF" strokeWidth="2" filter="url(#glowCyan)" />
-                  <text x="370" y="241" fill="#00E5FF" fontSize="10" fontFamily="monospace" fontWeight="bold" textAnchor="middle">[SIG_VERIFIED]</text>
+                  <rect width="12" height="12" fill="#ef4444" />
                 </motion.g>
-
               </SvgVisual>
             </VisualArea>
 
@@ -504,7 +379,7 @@ export default function AegisGatekeeper() {
                 </CodeBody>
               </EditorContainer>
               <VimStatusLine>
-                <div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
                   <VimMode>NORMAL</VimMode>
                   <span>aegis.toml</span>
                 </div>

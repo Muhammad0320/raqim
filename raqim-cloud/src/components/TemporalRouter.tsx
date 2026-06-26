@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import styled, { keyframes } from 'styled-components';
+import styled from 'styled-components';
 import { motion } from 'framer-motion';
 
 const SectionContainer = styled.section`
@@ -16,7 +16,7 @@ const ContentWrapper = styled.div`
   max-width: 1200px;
   width: 100%;
   display: grid;
-  grid-template-columns: 0.95fr 1.05fr;
+  grid-template-columns: 1fr 1fr; /* Symmetric grid system */
   background-color: #000000;
   border: 1px solid #27272a; /* strict 1px border-zinc-800 */
   overflow: hidden;
@@ -49,10 +49,10 @@ const SectionTag = styled.div`
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #00E5FF; /* sharp cyan */
-  letter-spacing: 0.05em;
+  color: #ffffff; /* Solid white */
+  letter-spacing: 0.15em; /* Wide-tracked */
+  text-transform: uppercase;
   margin-bottom: 24px;
-  text-shadow: none;
 `;
 
 const Headline = styled.h2`
@@ -107,15 +107,16 @@ const UiShell = styled.div`
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  flex: 1;
 `;
 
 const GraphArea = styled.div`
   padding: 32px;
   position: relative;
-  height: 240px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex: 1.2;
 `;
 
 const SvgVisual = styled.svg`
@@ -132,6 +133,7 @@ const TerminalPanel = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex: 0.8;
 `;
 
 const TerminalHeader = styled.div`
@@ -146,10 +148,10 @@ const TerminalHeader = styled.div`
 
 const TerminalBody = styled.div`
   padding: 16px;
-  min-height: 120px;
   display: flex;
   flex-direction: column;
   background-color: #000000;
+  flex: 1;
 `;
 
 const TerminalLine = styled.div`
@@ -178,6 +180,7 @@ const CodeTerminal = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex: 1;
 `;
 
 const CodeTerminalHeader = styled.div`
@@ -213,6 +216,7 @@ const EditorContainer = styled.div`
   background: #09090b;
   padding: 24px;
   overflow-x: auto;
+  flex: 1;
 `;
 
 const LineNumbersGutter = styled.div`
@@ -286,44 +290,6 @@ const Operator = styled.span`
   color: #56b6c2;
 `;
 
-const pulseOrange = keyframes`
-  0% {
-    stroke-width: 1.5;
-    stroke-opacity: 0.6;
-  }
-  50% {
-    stroke-width: 3.5;
-    stroke-opacity: 1;
-  }
-  100% {
-    stroke-width: 1.5;
-    stroke-opacity: 0.6;
-  }
-`;
-
-const SandboxContainer = styled.rect`
-  stroke: #ea580c;
-  fill: rgba(234, 88, 12, 0.08);
-  animation: ${pulseOrange} 2s infinite ease-in-out;
-`;
-
-const pulseForkLine = keyframes`
-  from {
-    stroke-dashoffset: 40;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-`;
-
-const ForkLine = styled.path`
-  stroke: #ea580c;
-  stroke-width: 2.5;
-  stroke-dasharray: 6 4;
-  fill: none;
-  animation: ${pulseForkLine} 1.5s linear infinite;
-`;
-
 const SYSTEM_LOGS = [
   "[TIME MACHINE] Generating Ephemeral Sandbox Credentials for Phantom: 8f3a9b...",
   "[TIME MACHINE] Injected 4 deep environment variables",
@@ -369,9 +335,8 @@ export default function TemporalRouter() {
     };
   }, []);
 
-  const nodes = [60, 130, 200, 270, 340, 410];
-  const forkNodeX = 200; // TxID: 1780842242
-  const timelineY = 80;
+  const timelineY = 60;
+  const forkNodeX = 180;
 
   return (
     <SectionContainer id="toolchain">
@@ -403,61 +368,37 @@ export default function TemporalRouter() {
         <RightColumn>
           <UiShell>
             <GraphArea>
-              <SvgVisual viewBox="0 0 500 220" preserveAspectRatio="xMidYMid meet">
-                <defs>
-                  <filter id="glowOrange" x="-20%" y="-20%" width="140%" height="140%">
-                    <feGaussianBlur stdDeviation="4" result="blur" />
-                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                  </filter>
-                  <filter id="glowWhite" x="-20%" y="-20%" width="140%" height="140%">
-                    <feGaussianBlur stdDeviation="3" result="blur" />
-                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                  </filter>
-                </defs>
+              <SvgVisual viewBox="0 0 500 200" preserveAspectRatio="xMidYMid meet">
+                {/* Baseline wire (Live Swarm CRDT) */}
+                <line x1="30" y1={timelineY} x2="470" y2={timelineY} stroke="#27272a" strokeWidth="2" />
+                <text x="30" y={timelineY - 12} fill="#a1a1aa" fontSize="8" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">LIVE SWARM CRDT BASELINE</text>
 
-                {/* Main Branch Line */}
-                <line x1="30" y1={timelineY} x2="470" y2={timelineY} stroke="#27272a" strokeWidth="2.5" />
+                {/* Fork Simulation Node */}
+                <circle cx={forkNodeX} cy={timelineY} r="5" fill="#ea580c" stroke="#ea580c" strokeWidth="1" />
+                <text x={forkNodeX - 25} y={timelineY + 18} fill="#ea580c" fontSize="8" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">TX: 1780842242</text>
 
-                {/* Orthogonal Fork Branch downwards in stark Orange */}
-                <ForkLine d={`M ${forkNodeX} ${timelineY} L ${forkNodeX} 145 L 275 145`} />
+                {/* Sandboxed Parallel Thread shooting out */}
+                <motion.path
+                  d={`M ${forkNodeX} ${timelineY} Q ${forkNodeX + 40} 130 ${forkNodeX + 80} 130 L 470 130`}
+                  fill="none"
+                  stroke="#ea580c"
+                  strokeWidth="1.5"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                />
+                
+                {/* Sandboxed parallel thread annotation */}
+                <text x="270" y="118" fill="#ea580c" fontSize="7" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">PHANTOM WASM SANDBOX (ISOLATED)</text>
 
-                {/* Pulsating Phantom WASM Sandbox Container */}
-                <g>
-                  <SandboxContainer x="275" y="115" width="180" height="60" rx="4" />
-                  <text x="290" y="133" fill="#ea580c" fontSize="10" fontFamily="monospace" fontWeight="bold">PHANTOM WASM SANDBOX</text>
-                  <text x="290" y="151" fill="#ffffff" fontSize="9" fontFamily="monospace">TX REF: 1780842242</text>
-                  <text x="290" y="165" fill="#71717a" fontSize="9" fontFamily="monospace">STATUS: ISOLATED RUNTIME</text>
-                </g>
-
-                {/* Main Branch Nodes */}
-                {nodes.map((x, i) => {
-                  const isForkNode = x === forkNodeX;
-                  const isHeadNode = i === nodes.length - 1;
-                  return (
-                    <g key={i}>
-                      <circle
-                        cx={x} cy={timelineY} r={isForkNode ? "7" : "5"}
-                        fill={isForkNode ? "#ea580c" : "#09090b"}
-                        stroke={isForkNode ? "#ea580c" : (isHeadNode ? "#00E5FF" : "#27272a")}
-                        strokeWidth="2"
-                      />
-                      {isForkNode && (
-                        <circle
-                          cx={x} cy={timelineY} r="12"
-                          fill="none" stroke="#ea580c" strokeWidth="1.5" strokeOpacity="0.4"
-                          filter="url(#glowOrange)"
-                        />
-                      )}
-                      <text x={x - 18} y={timelineY - 12} fill={isForkNode ? "#ea580c" : "#52525b"} fontSize="8" fontFamily="monospace">
-                        {isForkNode ? "tx_2242" : `tx_224${i}`}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                <text x={forkNodeX - 45} y={timelineY + 20} fill="#ea580c" fontSize="9" fontFamily="monospace" fontWeight="bold">
-                  [Fork Point]
-                </text>
+                {/* Nodes along baseline wire */}
+                {[60, 120, 240, 300, 360, 420].map((cx, idx) => (
+                  <circle key={`base-node-${idx}`} cx={cx} cy={timelineY} r="3" fill="#09090b" stroke="#27272a" strokeWidth="1" />
+                ))}
               </SvgVisual>
             </GraphArea>
 
@@ -495,10 +436,7 @@ export default function TemporalRouter() {
               </TerminalBody>
             </TerminalPanel>
           </UiShell>
-        </RightColumn>
 
-        {/* WASI Code Snip Neovim Terminal */}
-        <div style={{ gridColumn: 'span 2', width: '100%', borderTop: '1px solid #27272a' }}>
           <CodeTerminal>
             <CodeTerminalHeader>
               <MacDotsRow>
@@ -506,7 +444,7 @@ export default function TemporalRouter() {
                 <MacDot $color="#ffbd2e" />
                 <MacDot $color="#27c93f" />
               </MacDotsRow>
-              <FileTab>wasi_env.rs</FileTab>
+              <FileTab>router.rs</FileTab>
             </CodeTerminalHeader>
             <EditorContainer>
               <LineNumbersGutter>
@@ -529,27 +467,31 @@ export default function TemporalRouter() {
                 9
                 <br />
                 10
+                <br />
+                11
+                <br />
+                12
               </LineNumbersGutter>
               <CodeBody>
                 <Pre>
-                  <Comment>// Inject Deep Reality overrides (Environment Variables)</Comment>
+                  <Comment>// Derive unique 16-byte cryptographic salt directly from the target TxID</Comment>
                   <br />
-                  <Keyword>pub fn</Keyword> <FunctionName>build_wasi_context</FunctionName>(<Variable>fork</Variable>: <TypeName>Option</TypeName>&lt;<TypeName>ForkConfig</TypeName>&gt;) -&gt; <TypeName>WasiP1Ctx</TypeName> <Operator>{'{'}</Operator>
+                  <Keyword>let</Keyword> <Variable>tx_id_bytes</Variable> = <Variable>target_tx_id</Variable>.<FunctionName>unwrap_or</FunctionName>(<Operator>0</Operator>).<FunctionName>to_be_bytes</FunctionName>();
                   <br />
-                  {'    '}<Keyword>let mut</Keyword> <Variable>builder</Variable> = <TypeName>WasiCtxBuilder</TypeName><Operator>::</Operator><FunctionName>new</FunctionName><Operator>()</Operator>;
+                  <Keyword>let mut</Keyword> <Variable>salt</Variable> = <Operator>[</Operator><Operator>0u8</Operator>; <Operator>16</Operator><Operator>]</Operator>;
+                  <br />
+                  <Variable>salt</Variable><Operator>[</Operator><Operator>0</Operator><Operator>..</Operator><Operator>8</Operator><Operator>]</Operator>.<FunctionName>copy_from_slice</FunctionName>(<Operator>&amp;</Operator><Variable>tx_id_bytes</Variable>);
+                  <br />
+                  <Variable>salt</Variable><Operator>[</Operator><Operator>8</Operator><Operator>..</Operator><Operator>16</Operator><Operator>]</Operator>.<FunctionName>copy_from_slice</FunctionName>(<Operator>&amp;</Operator><Variable>tx_id_bytes</Variable>);
                   <br />
                   <br />
-                  {'    '}<Keyword>if let</Keyword> <TypeName>Some</TypeName><Operator>(</Operator><Variable>config</Variable><Operator>)</Operator> = <Variable>fork</Variable> <Operator>{'{'}</Operator>
+                  <Comment>// Apply bitwise XOR mutation to safely isolate Phantom ID</Comment>
                   <br />
-                  {'        '}<Keyword>for</Keyword> <Operator>(</Operator><Variable>key</Variable>, <Variable>value</Variable><Operator>)</Operator> <Keyword>in</Keyword> <Variable>config</Variable>.<Variable>env_overrides</Variable> <Operator>{'{'}</Operator>
+                  <Keyword>for</Keyword> <Variable>i</Variable> <Keyword>in</Keyword> <Operator>0</Operator><Operator>..</Operator><Operator>16</Operator> <Operator>{'{'}</Operator>
                   <br />
-                  {'            '}<Variable>builder</Variable>.<FunctionName>env</FunctionName><Operator>(&amp;</Operator><Variable>key</Variable>, <Operator>&amp;</Operator><Variable>value</Variable><Operator>)</Operator>; <Comment>// Agent reality mutation</Comment>
+                  {'    '}<Variable>phantom_bytes</Variable><Operator>[</Operator><Variable>i</Variable><Operator>]</Operator> <Operator>^=</Operator> <Variable>salt</Variable><Operator>[</Operator><Variable>i</Variable><Operator>]</Operator>;
                   <br />
-                  {'        }'}
-                  <br />
-                  {'    }'}
-                  <br />
-                  {'    '}<Variable>builder</Variable>.<FunctionName>build_p1</FunctionName><Operator>()</Operator>
+                  {'    '}<Variable>phantom_bytes</Variable><Operator>[</Operator><Variable>i</Variable><Operator>]</Operator> <Operator>^=</Operator> <Operator>0xFF</Operator>;
                   <br />
                   <Operator>{'}'}</Operator>
                 </Pre>
@@ -558,14 +500,14 @@ export default function TemporalRouter() {
             <VimStatusLine>
               <div>
                 <VimMode>NORMAL</VimMode>
-                <span>src/sandbox/wasi_env.rs</span>
+                <span>src/router.rs</span>
               </div>
               <div>
-                <span>utf-8 [rust] 10:1</span>
+                <span>utf-8 [rust] 12:1</span>
               </div>
             </VimStatusLine>
           </CodeTerminal>
-        </div>
+        </RightColumn>
       </ContentWrapper>
     </SectionContainer>
   );

@@ -152,18 +152,12 @@ export default function Footer() {
         <BrandColumn>
           <LogoSection>
             <LogoIcon viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <filter id="logo-glow-footer" x="-30%" y="-30%" width="160%" height="160%">
-                  <feGaussianBlur stdDeviation="4" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-              </defs>
               {/* Heavy vertical spine monolith */}
               <path d="M28 15v70" stroke="currentColor" strokeWidth="8" strokeLinecap="square" />
               {/* Sharp, geometric upper loop */}
               <path d="M28 19h36l12 16l-12 16H28" stroke="currentColor" strokeWidth="8" strokeLinecap="square" strokeLinejoin="miter" />
-              {/* Intersecting sharp, glowing cyan diagonal zero-copy bypass path */}
-              <path d="M46 49l28 36" stroke="#00E5FF" strokeWidth="8" strokeLinecap="square" filter="url(#logo-glow-footer)" />
+              {/* Intersecting sharp, geometric diagonal zero-copy bypass path */}
+              <path d="M46 49l28 36" stroke="#ffffff" strokeWidth="8" strokeLinecap="square" />
             </LogoIcon>
             <LogoText>RAQIM CLOUD</LogoText>
           </LogoSection>
