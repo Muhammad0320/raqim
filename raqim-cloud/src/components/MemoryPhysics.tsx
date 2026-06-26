@@ -38,7 +38,7 @@ const SectionTag = styled.div`
   color: #06b6d4;
   letter-spacing: 0.05em;
   margin-bottom: 24px;
-  text-shadow: 0 0 12px rgba(6, 182, 212, 0.4);
+  text-shadow: none;
 `;
 
 const Headline = styled.h2`
@@ -94,9 +94,9 @@ const RightColumn = styled.div`
 const SvgContainer = styled.div`
   background: #000000;
   border: 1px solid #27272a;
-  border-radius: 8px;
+  border-radius: 0;
   padding: 24px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: none;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -111,9 +111,9 @@ const SvgVisual = styled.svg`
 const CodeTerminal = styled.div`
   background: #000000;
   border: 1px solid #27272a;
-  border-radius: 8px;
+  border-radius: 0;
   overflow: hidden;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: none;
   display: flex;
   flex-direction: column;
 `;

@@ -35,6 +35,7 @@ const Headline = styled(motion.h1)`
   line-height: 1.1;
   text-align: center;
   margin: 0 0 24px 0;
+  text-shadow: none;
 `;
 
 const SubHeadline = styled(motion.p)`
@@ -42,9 +43,10 @@ const SubHeadline = styled(motion.p)`
   font-size: clamp(1rem, 2vw, 1.25rem);
   color: #a1a1aa; /* zinc-400 */
   text-align: center;
-  max-width: 800px;
+  max-width: 850px;
   line-height: 1.6;
   margin: 0 0 64px 0;
+  text-shadow: none;
 `;
 
 const GridContainer = styled(motion.div)`
@@ -116,7 +118,7 @@ const Cursor = styled.span`
 `;
 
 const BenchmarkHud = styled.div`
-  background: #000000;
+  background: #09090b;
   border: 1px solid #27272a;
   border-radius: 0;
   padding: 32px;
@@ -128,11 +130,14 @@ const BenchmarkHud = styled.div`
 
 const BenchmarkValue = styled(motion.div)`
   font-family: var(--font-geist-mono), monospace;
-  font-size: clamp(3rem, 6vw, 4.5rem);
-  font-weight: 700;
-  color: #ffffff;
+  font-size: 3.75rem; /* text-6xl is 3.75rem */
+  font-weight: 900; /* font-black */
+  color: #ffffff; /* Stark white */
+  letter-spacing: -0.025em; /* tracking-tight */
   line-height: 1;
   margin-bottom: 8px;
+  text-shadow: none;
+  filter: none;
 `;
 
 const BenchmarkLabel = styled.div`
@@ -205,7 +210,7 @@ export default function Hero() {
   const rounded = useTransform(count, (latest) => Math.round(latest).toLocaleString());
 
   useEffect(() => {
-    const controls = animate(count, 104203, {
+    const controls = animate(count, 790946, {
       duration: 2.5,
       ease: "easeOut",
       delay: 0.5,
@@ -221,7 +226,7 @@ export default function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
         >
-          The Open-Source Agentic Database Operating System.
+          The Edge-Native Database Operating System.
         </Headline>
         
         <SubHeadline
@@ -229,7 +234,7 @@ export default function Hero() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
         >
-          Bypass the garbage collector. Cast raw TCP streams directly into deterministic memory layouts, and synchronize autonomous multi-agent swarms via a global peer-to-peer CRDT mesh.
+          Bypass traditional runtime bottlenecks. Raqim OS pairs a lock-free distributed Loro CRDT memory model with a bare-metal WASM sandbox to orchestrate high-throughput, autonomous multi-agent fleets with zero garbage collection overhead.
         </SubHeadline>
 
         <GridContainer
@@ -248,7 +253,7 @@ export default function Hero() {
                 const isLastLine = index === typedLines.length - 1;
                 return (
                   <TerminalLine key={index}>
-                    <pre>
+                    <pre style={{ margin: 0 }}>
                       {line}
                       {isLastLine && <Cursor />}
                     </pre>
@@ -257,7 +262,7 @@ export default function Hero() {
               })}
               {typedLines.length === 0 && (
                 <TerminalLine>
-                  <pre>
+                  <pre style={{ margin: 0 }}>
                     <Cursor />
                   </pre>
                 </TerminalLine>
@@ -267,10 +272,10 @@ export default function Hero() {
 
           <BenchmarkHud>
             <BenchmarkValue>{rounded}</BenchmarkValue>
-            <BenchmarkLabel>TRANSACTIONS / SECOND (TPS)</BenchmarkLabel>
+            <BenchmarkLabel>Transactions / Second (In-Memory CRDT Concurrency)</BenchmarkLabel>
             
             <HonestyDisclaimer>
-              *Target Metrics: Emits 790,000+ TPS inside bare-metal NVMe clusters. Emits 104,000+ TPS during local development runtimes inside WSL2 Ubuntu environments.
+              *Benchmarked natively inside an isolated WSL2/Ubuntu kernel container on an entry-level Intel Core-powered Asus ExpertBook mobile processor utilizing a local storage NVMe array. Performance scales with raw physical computing sympathy, not marketing abstractions.
             </HonestyDisclaimer>
           </BenchmarkHud>
         </GridContainer>

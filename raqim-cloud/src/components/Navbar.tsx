@@ -15,9 +15,7 @@ const NavContainer = styled.header`
   align-items: center;
   justify-content: space-between;
   padding: 0 32px;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: #000000;
   border-bottom: 1px solid #27272a;
   z-index: 100;
 `;
@@ -108,46 +106,62 @@ const CtaButton = styled(Link)`
   font-weight: 600;
   color: #ffffff;
   background: #000000;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid #27272a;
   border-radius: 0;
   text-decoration: none;
   transition: all 0.2s ease;
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.5);
+    border-color: #ffffff;
+    background: #18181b;
   }
 `;
 
-const UserBadgeLink = styled(Link)`
+const UserBlockLink = styled(Link)`
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 8px 16px;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #ffffff;
+  gap: 8px;
+  padding: 6px 12px;
   background: #09090b;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid #27272a;
   border-radius: 0;
   text-decoration: none;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.875rem;
+  color: #ffffff;
   transition: all 0.2s ease;
 
   &:hover {
-    color: #00E5FF;
-    border-color: #00E5FF;
+    background: #18181b;
+    border-color: #ffffff;
   }
+`;
+
+const AvatarImg = styled.img`
+  width: 20px;
+  height: 20px;
+  border-radius: 0;
+  border: 1px solid #27272a;
+  object-fit: cover;
+  background: #18181b;
+`;
+
+const MonospaceBadge = styled.span`
+  font-weight: 500;
 `;
 
 export default function Navbar() {
   const { profile, activeOrganizationId, organizations, fetchTenantData } = useTenantStore();
   const activeOrg = organizations.find((org) => org.id === activeOrganizationId);
   const planTier = activeOrg?.plan_tier || "OPEN_CORE";
+  const orgAlias = activeOrg?.alias || "DEV_TENANT_LOCAL";
   const isAuthenticated = !!profile;
 
   useEffect(() => {
     fetchTenantData();
   }, [fetchTenantData]);
+
+  const userName = profile?.full_name ? profile.full_name.split(' ')[0].toLowerCase() : 'user';
 
   return (
     <NavContainer>
@@ -157,8 +171,8 @@ export default function Navbar() {
           <path d="M28 15v70" stroke="currentColor" strokeWidth="8" strokeLinecap="square" />
           {/* Sharp, geometric upper loop */}
           <path d="M28 19h36l12 16l-12 16H28" stroke="currentColor" strokeWidth="8" strokeLinecap="square" strokeLinejoin="miter" />
-          {/* Intersecting sharp, glowing cyan diagonal zero-copy bypass path */}
-          <path d="M46 49l28 36" stroke="#00E5FF" strokeWidth="8" strokeLinecap="square" />
+          {/* Intersecting sharp, geometric diagonal zero-copy bypass path */}
+          <path d="M46 49l28 36" stroke="#ffffff" strokeWidth="8" strokeLinecap="square" />
         </LogoIcon>
         <LogoText>RAQIM CLOUD</LogoText>
       </LeftSection>
@@ -179,12 +193,18 @@ export default function Navbar() {
           14.2k
         </GitHubButton>
         {isAuthenticated ? (
-          <UserBadgeLink href="/dashboard">
-            [ {profile?.full_name || 'User'} // {planTier} ]
-          </UserBadgeLink>
+          <UserBlockLink href="/dashboard">
+            <AvatarImg 
+              src={profile?.avatar_url || 'https://github.com/shadcn.png'} 
+              alt={profile?.full_name || 'User'} 
+            />
+            <MonospaceBadge>
+              {userName} | {orgAlias} [{planTier}]
+            </MonospaceBadge>
+          </UserBlockLink>
         ) : (
           <CtaButton href="/auth/login">
-            [ Deploy Daemon ]
+            [ Access Control Plane ]
           </CtaButton>
         )}
       </RightSection>

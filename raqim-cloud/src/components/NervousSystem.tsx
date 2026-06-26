@@ -51,7 +51,7 @@ const SectionTag = styled.div`
   color: #00E5FF; /* sharp cyan */
   letter-spacing: 0.05em;
   margin-bottom: 24px;
-  text-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
+  text-shadow: none;
 `;
 
 const Headline = styled.h2`
@@ -108,7 +108,7 @@ const SvgContainer = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8);
+  box-shadow: none;
 `;
 
 const SvgVisual = styled.svg`
