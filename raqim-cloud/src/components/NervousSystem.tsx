@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import styled, { keyframes } from 'styled-components';
+import styled from 'styled-components';
 import { motion } from 'framer-motion';
 
 const SectionContainer = styled.section`
@@ -42,16 +42,17 @@ const RightColumn = styled(motion.div)`
   flex-direction: column;
   justify-content: center;
   padding: 64px 48px;
+  max-width: 100%;
 `;
 
 const SectionTag = styled.div`
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #00E5FF; /* sharp cyan */
-  letter-spacing: 0.05em;
+  color: #ffffff; /* Solid white */
+  letter-spacing: 0.15em; /* Wide-tracked */
+  text-transform: uppercase;
   margin-bottom: 24px;
-  text-shadow: none;
 `;
 
 const Headline = styled.h2`
@@ -70,7 +71,11 @@ const SubHeadline = styled.p`
   color: #a1a1aa; /* Zinc 400 */
   line-height: 1.6;
   margin: 0 0 40px 0;
-  max-width: 520px;
+  max-width: 28rem; /* max-w-md */
+
+  @media (min-width: 1280px) {
+    max-width: 36rem; /* xl:max-w-xl */
+  }
 `;
 
 const FeatureList = styled.div`
@@ -109,6 +114,7 @@ const SvgContainer = styled.div`
   align-items: center;
   justify-content: center;
   box-shadow: none;
+  flex: 1; /* Stretch to fill half the height of LeftColumn */
 `;
 
 const SvgVisual = styled.svg`
@@ -122,6 +128,7 @@ const CodeTerminal = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex: 1; /* Stretch to fill half the height of LeftColumn */
 `;
 
 const CodeTerminalHeader = styled.div`
@@ -157,7 +164,7 @@ const EditorContainer = styled.div`
   background: #09090b;
   padding: 24px;
   overflow-x: auto;
-  min-height: 160px;
+  flex: 1; /* Stretch editor body content */
 `;
 
 const LineNumbersGutter = styled.div`
@@ -231,24 +238,16 @@ const Operator = styled.span`
   color: #56b6c2;
 `;
 
-// Gossip pulse scrolling animation
-const gossipFlow = keyframes`
-  from { stroke-dashoffset: 0; }
-  to { stroke-dashoffset: -80; }
-`;
-
-const GossipLine = styled.path`
-  stroke: rgba(0, 229, 255, 0.45);
-  stroke-width: 1.5;
-  stroke-dasharray: 8 8;
-  animation: ${gossipFlow} 1.5s linear infinite;
+const PeerLine = styled.path`
+  stroke: #27272a; /* strict Zinc 800 */
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
 `;
 
 export default function NervousSystem() {
   const NODE_FRA = { x: 180, y: 110 };
   const NODE_IAD = { x: 180, y: 310 };
   const NODE_HND = { x: 450, y: 210 };
-  const CENTER_POINT = { x: 300, y: 210 };
 
   return (
     <SectionContainer id="architecture">
@@ -261,116 +260,72 @@ export default function NervousSystem() {
         >
           <SvgContainer>
             <SvgVisual viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet">
-              <defs>
-                <filter id="glowCyanMesh" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="5" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-                <filter id="glowResolved" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="8" result="blur" />
-                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                </filter>
-              </defs>
+              {/* Mesh Dashed peer vector lines */}
+              <PeerLine d={`M ${NODE_FRA.x} ${NODE_FRA.y} L ${NODE_IAD.x} ${NODE_IAD.y}`} />
+              <PeerLine d={`M ${NODE_IAD.x} ${NODE_IAD.y} L ${NODE_HND.x} ${NODE_HND.y}`} />
+              <PeerLine d={`M ${NODE_HND.x} ${NODE_HND.y} L ${NODE_FRA.x} ${NODE_FRA.y}`} />
 
-              {/* Zenoh Gossip dashed lines */}
-              <GossipLine d={`M ${NODE_FRA.x} ${NODE_FRA.y} L ${NODE_IAD.x} ${NODE_IAD.y}`} />
-              <GossipLine d={`M ${NODE_IAD.x} ${NODE_IAD.y} L ${NODE_HND.x} ${NODE_HND.y}`} />
-              <GossipLine d={`M ${NODE_HND.x} ${NODE_HND.y} L ${NODE_FRA.x} ${NODE_FRA.y}`} />
-
-              {/* Collision Pulses traveling to center */}
-              <motion.circle
-                r="5" fill="#00E5FF" filter="url(#glowCyanMesh)"
-                animate={{
-                  cx: [NODE_FRA.x, CENTER_POINT.x],
-                  cy: [NODE_FRA.y, CENTER_POINT.y],
-                  opacity: [1, 1, 0]
-                }}
-                transition={{
-                  duration: 6,
-                  times: [0, 0.29, 0.3],
-                  repeat: Infinity,
-                  ease: "easeOut"
-                }}
-              />
-              <motion.circle
-                r="5" fill="#00E5FF" filter="url(#glowCyanMesh)"
-                animate={{
-                  cx: [NODE_HND.x, CENTER_POINT.x],
-                  cy: [NODE_HND.y, CENTER_POINT.y],
-                  opacity: [1, 1, 0]
-                }}
-                transition={{
-                  duration: 6,
-                  times: [0, 0.29, 0.3],
-                  repeat: Infinity,
-                  ease: "easeOut"
-                }}
-              />
-
-              {/* Collision Ripple Wave */}
-              <motion.circle
-                cx={CENTER_POINT.x} cy={CENTER_POINT.y} r="10"
-                stroke="#00E5FF" strokeWidth="2" fill="none"
-                animate={{
-                  r: [10, 10, 60, 100],
-                  opacity: [0, 0, 1, 0],
-                }}
-                transition={{
-                  duration: 6,
-                  times: [0, 0.29, 0.3, 0.48],
-                  repeat: Infinity,
-                  ease: "easeOut"
-                }}
-              />
-
-              {/* Node FRA: Vector [12, 4, 1] */}
+              {/* Node FRA: Frankfurt (Flat minimal Zinc Rectangles) */}
               <g>
-                <rect x="90" y="70" width="180" height="80" rx="4" fill="#09090b" stroke="#27272a" strokeWidth="1.5" />
-                <rect x="90" y="70" width="180" height="4" fill="#00E5FF" rx="2" />
-                <text x="105" y="93" fill="#00E5FF" fontSize="11" fontFamily="monospace" fontWeight="bold">NODE: FRA (FRANKEURT)</text>
-                <text x="105" y="113" fill="#ffffff" fontSize="12" fontFamily="monospace" fontWeight="bold">VEC: [12, 4, 1]</text>
-                <text x="105" y="133" fill="#52525b" fontSize="10" fontFamily="monospace">RTT: 14ms | STATUS: ACTIVE</text>
-                <circle cx={NODE_FRA.x + 75} cy={NODE_FRA.y} r="4" fill="#00E5FF" filter="url(#glowCyanMesh)" />
+                <rect x="90" y="70" width="180" height="80" fill="#09090b" stroke="#27272a" strokeWidth="1" />
+                <text x="105" y="93" fill="#ffffff" fontSize="11" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">NODE: FRA (FRANKFURT)</text>
+                <text x="105" y="113" fill="#a1a1aa" fontSize="12" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">VEC: [12, 4, 1]</text>
+                <text x="105" y="133" fill="#52525b" fontSize="10" fontFamily="var(--font-geist-mono), monospace">RTT: 14ms | ACTIVE</text>
+                <circle cx={NODE_FRA.x + 75} cy={NODE_FRA.y} r="3" fill="#a1a1aa" />
               </g>
 
-              {/* Node IAD: Vector [11, 4, 2] */}
+              {/* Node IAD: Virginia (Flat minimal Zinc Rectangles) */}
               <g>
-                <rect x="90" y="270" width="180" height="80" rx="4" fill="#09090b" stroke="#27272a" strokeWidth="1.5" />
-                <rect x="90" y="270" width="180" height="4" fill="#27272a" rx="2" />
-                <text x="105" y="293" fill="#a1a1aa" fontSize="11" fontFamily="monospace" fontWeight="bold">NODE: IAD (VIRGINIA)</text>
-                <text x="105" y="313" fill="#ffffff" fontSize="12" fontFamily="monospace" fontWeight="bold">VEC: [11, 4, 2]</text>
-                <text x="105" y="333" fill="#52525b" fontSize="10" fontFamily="monospace">RTT: 3ms | STATUS: ACTIVE</text>
-                <circle cx={NODE_IAD.x + 75} cy={NODE_IAD.y} r="4" fill="#a1a1aa" />
+                <rect x="90" y="270" width="180" height="80" fill="#09090b" stroke="#27272a" strokeWidth="1" />
+                <text x="105" y="293" fill="#a1a1aa" fontSize="11" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">NODE: IAD (VIRGINIA)</text>
+                <text x="105" y="313" fill="#a1a1aa" fontSize="12" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">VEC: [11, 4, 2]</text>
+                <text x="105" y="333" fill="#52525b" fontSize="10" fontFamily="var(--font-geist-mono), monospace">RTT: 3ms | ACTIVE</text>
+                <circle cx={NODE_IAD.x + 75} cy={NODE_IAD.y} r="3" fill="#a1a1aa" />
               </g>
 
-              {/* Node HND: Vector [10, 4, 3] */}
+              {/* Node HND: Tokyo (Flat minimal Zinc Rectangles) */}
               <g>
-                <rect x="360" y="170" width="180" height="80" rx="4" fill="#09090b" stroke="#27272a" strokeWidth="1.5" />
-                <rect x="360" y="170" width="180" height="4" fill="#27272a" rx="2" />
-                <text x="375" y="193" fill="#a1a1aa" fontSize="11" fontFamily="monospace" fontWeight="bold">NODE: HND (TOKYO)</text>
-                <text x="375" y="213" fill="#ffffff" fontSize="12" fontFamily="monospace" fontWeight="bold">VEC: [10, 4, 3]</text>
-                <text x="375" y="233" fill="#52525b" fontSize="10" fontFamily="monospace">RTT: 81ms | STATUS: ACTIVE</text>
-                <circle cx={NODE_HND.x + 75} cy={NODE_HND.y} r="4" fill="#a1a1aa" />
+                <rect x="360" y="170" width="180" height="80" fill="#09090b" stroke="#27272a" strokeWidth="1" />
+                <text x="375" y="193" fill="#a1a1aa" fontSize="11" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">NODE: HND (TOKYO)</text>
+                <text x="375" y="213" fill="#a1a1aa" fontSize="12" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">VEC: [10, 4, 3]</text>
+                <text x="375" y="233" fill="#52525b" fontSize="10" fontFamily="var(--font-geist-mono), monospace">RTT: 81ms | ACTIVE</text>
+                <circle cx={NODE_HND.x + 75} cy={NODE_HND.y} r="3" fill="#a1a1aa" />
               </g>
 
-              {/* Stark White O(1) RESOLVED Badge */}
-              <motion.g
-                initial={{ opacity: 0, scale: 0.9 }}
+              {/* Minimalist Status Badge Sliding along Dashed peer lines */}
+              <motion.foreignObject
+                width="110"
+                height="28"
+                style={{ overflow: 'visible' }}
                 animate={{
-                  opacity: [0, 0, 1, 1, 0, 0],
-                  scale: [0.9, 0.9, 1.05, 1, 0.9, 0.9]
+                  x: [NODE_FRA.x - 55, NODE_HND.x - 55, NODE_IAD.x - 55, NODE_FRA.x - 55],
+                  y: [NODE_FRA.y - 14, NODE_HND.y - 14, NODE_IAD.y - 14, NODE_FRA.y - 14]
                 }}
                 transition={{
-                  duration: 6,
-                  times: [0, 0.28, 0.31, 0.63, 0.67, 1],
-                  repeat: Infinity,
-                  ease: "easeInOut"
+                  duration: 10,
+                  ease: "linear",
+                  repeat: Infinity
                 }}
               >
-                <rect x="200" y="190" width="200" height="40" rx="4" fill="#ffffff" stroke="#00E5FF" strokeWidth="2" filter="url(#glowResolved)" />
-                <text x="300" y="215" fill="#000000" fontSize="12" fontFamily="monospace" fontWeight="bold" textAnchor="middle">O(1) RESOLVED</text>
-              </motion.g>
-
+                <motion.div
+                  className="bg-cyan-500/10 border border-cyan-400 text-cyan-400 font-mono text-xs px-2 py-0.5 uppercase tracking-wider rounded-none"
+                  style={{
+                    backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                    border: '1px solid #22d3ee',
+                    color: '#22d3ee',
+                    fontFamily: 'var(--font-geist-mono), monospace',
+                    fontSize: '0.75rem',
+                    padding: '2px 8px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    whiteSpace: 'nowrap',
+                    display: 'inline-block',
+                    textAlign: 'center'
+                  }}
+                >
+                  O(1) Resolved
+                </motion.div>
+              </motion.foreignObject>
             </SvgVisual>
           </SvgContainer>
 
@@ -381,7 +336,7 @@ export default function NervousSystem() {
                 <MacDot $color="#ffbd2e" />
                 <MacDot $color="#27c93f" />
               </MacDotsRow>
-              <FileTab>resolve.rs</FileTab>
+              <FileTab>network.rs</FileTab>
             </CodeTerminalHeader>
             <EditorContainer>
               <LineNumbersGutter>
@@ -411,7 +366,7 @@ export default function NervousSystem() {
             <VimStatusLine>
               <div>
                 <VimMode>NORMAL</VimMode>
-                <span>src/crdt/resolve.rs</span>
+                <span>src/network.rs</span>
               </div>
               <div>
                 <span>utf-8 [rust] 5:1</span>
