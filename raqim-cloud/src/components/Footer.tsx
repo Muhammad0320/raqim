@@ -97,8 +97,7 @@ const FooterLink = styled(Link)`
   transition: all 0.2s ease-in-out;
 
   &:hover {
-    color: #00E5FF; /* glows cyan strictly on hover */
-    text-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+    color: #ffffff;
   }
 `;
 
@@ -135,8 +134,7 @@ const SocialLink = styled.a`
   transition: all 0.2s ease-in-out;
 
   &:hover {
-    color: #00E5FF;
-    text-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+    color: #ffffff;
   }
 
   svg {
