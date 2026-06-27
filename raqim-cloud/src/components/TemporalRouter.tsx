@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
-import { motion } from 'framer-motion';
+import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 
 const SectionContainer = styled.section`
   background-color: #09090b;
@@ -16,7 +16,7 @@ const ContentWrapper = styled.div`
   max-width: 1200px;
   width: 100%;
   display: grid;
-  grid-template-columns: 1fr 1fr; /* Symmetric grid system */
+  grid-template-columns: 1fr 1fr; /* divide evenly */
   background-color: #000000;
   border: 1px solid #27272a; /* strict 1px border-zinc-800 */
   overflow: hidden;
@@ -40,19 +40,24 @@ const LeftColumn = styled(motion.div)`
 `;
 
 const RightColumn = styled.div`
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 1fr 1fr; /* balanced stacked rows */
   background-color: #09090b;
+
+  @media (max-width: 1024px) {
+    grid-template-rows: auto auto;
+  }
 `;
 
 const SectionTag = styled.div`
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #ffffff; /* Solid white */
-  letter-spacing: 0.15em; /* Wide-tracked */
+  color: #a1a1aa; /* Zinc 400 */
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   margin-bottom: 24px;
+  text-shadow: none;
 `;
 
 const Headline = styled.h2`
@@ -107,7 +112,7 @@ const UiShell = styled.div`
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  flex: 1;
+  height: 100%;
 `;
 
 const GraphArea = styled.div`
@@ -116,7 +121,7 @@ const GraphArea = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1.2;
+  flex: 1; /* take up remaining space */
 `;
 
 const SvgVisual = styled.svg`
@@ -133,7 +138,7 @@ const TerminalPanel = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  flex: 0.8;
+  flex: 0 0 auto; /* strip dead space below log viewport */
 `;
 
 const TerminalHeader = styled.div`
@@ -156,7 +161,7 @@ const TerminalBody = styled.div`
 
 const TerminalLine = styled.div`
   white-space: pre-wrap;
-  color: #abb2bf;
+  color: #a1a1aa;
   line-height: 1.7;
 `;
 
@@ -180,7 +185,7 @@ const CodeTerminal = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  flex: 1;
+  height: 100%;
 `;
 
 const CodeTerminalHeader = styled.div`
@@ -264,7 +269,6 @@ const VimMode = styled.span`
   text-transform: uppercase;
 `;
 
-// One Dark Pro Syntax Highlight Spans
 const Comment = styled.span`
   color: #5c6370;
   font-style: italic;
@@ -375,7 +379,7 @@ export default function TemporalRouter() {
 
                 {/* Fork Simulation Node */}
                 <circle cx={forkNodeX} cy={timelineY} r="5" fill="#ea580c" stroke="#ea580c" strokeWidth="1" />
-                <text x={forkNodeX - 25} y={timelineY + 18} fill="#ea580c" fontSize="8" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">TX: 1780842242</text>
+                <text x={forkNodeX - 25} y={timelineY + 18} fill="#ffffff" fontSize="8" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">TX: 1780842242</text>
 
                 {/* Sandboxed Parallel Thread shooting out */}
                 <motion.path
@@ -393,7 +397,7 @@ export default function TemporalRouter() {
                 />
                 
                 {/* Sandboxed parallel thread annotation */}
-                <text x="270" y="118" fill="#ea580c" fontSize="7" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">PHANTOM WASM SANDBOX (ISOLATED)</text>
+                <text x="270" y="118" fill="#ffffff" fontSize="7" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold">PHANTOM WASM SANDBOX (ISOLATED)</text>
 
                 {/* Nodes along baseline wire */}
                 {[60, 120, 240, 300, 360, 420].map((cx, idx) => (
@@ -411,10 +415,8 @@ export default function TemporalRouter() {
                   const isSystem = line.startsWith("[SYSTEM]");
                   const isPhantom = line.startsWith("[PHANTOM_OS]");
 
-                  let prefixColor = "#a1a1aa";
-                  if (isTimeMachine) prefixColor = "#ea580c";
-                  if (isSystem) prefixColor = "#71717a";
-                  if (isPhantom) prefixColor = "#00E5FF";
+                  let prefixColor = "#ffffff";
+                  if (isSystem) prefixColor = "#a1a1aa";
 
                   const prefixMatch = line.match(/^(\[[A-Z0-9_ ]+\])(.*)/);
                   const bracket = prefixMatch ? prefixMatch[1] : "";
@@ -423,7 +425,7 @@ export default function TemporalRouter() {
                   return (
                     <TerminalLine key={index}>
                       <span style={{ color: prefixColor, fontWeight: 'bold' }}>{bracket}</span>
-                      <span style={{ color: '#ffffff' }}>{text}</span>
+                      <span style={{ color: '#a1a1aa' }}>{text}</span>
                       {isLastLine && !isComplete && <Cursor />}
                     </TerminalLine>
                   );
@@ -444,7 +446,7 @@ export default function TemporalRouter() {
                 <MacDot $color="#ffbd2e" />
                 <MacDot $color="#27c93f" />
               </MacDotsRow>
-              <FileTab>router.rs</FileTab>
+              <FileTab>src/router.rs</FileTab>
             </CodeTerminalHeader>
             <EditorContainer>
               <LineNumbersGutter>

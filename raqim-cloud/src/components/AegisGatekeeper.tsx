@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 
 const SectionContainer = styled.section`
   background-color: #000000;
@@ -16,7 +17,7 @@ const ContentWrapper = styled.div`
   max-width: 1200px;
   width: 100%;
   display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
+  grid-template-columns: 1fr 1fr; /* divide evenly */
   background-color: #09090b;
   border: 1px solid #27272a; /* strict 1px border-zinc-800 */
   overflow: hidden;
@@ -40,19 +41,27 @@ const LeftColumn = styled(motion.div)`
 `;
 
 const RightColumn = styled.div`
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 1fr 1fr; /* balanced row heights */
   background-color: #09090b;
+  border-left: none;
+
+  @media (max-width: 1024px) {
+    grid-template-rows: auto auto;
+    border-left: none;
+    border-top: 1px solid #27272a;
+  }
 `;
 
 const SectionTag = styled.div`
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #ffffff; /* Solid white */
+  color: #a1a1aa; /* Zinc-400 */
   letter-spacing: 0.15em; /* Wide-tracked */
   text-transform: uppercase;
   margin-bottom: 24px;
+  text-shadow: none;
 `;
 
 const Headline = styled.h2`
@@ -98,26 +107,17 @@ const FeatureTitle = styled.div`
 const FeatureDesc = styled.div`
   font-family: var(--font-geist-mono), monospace;
   font-size: 0.875rem;
-  color: #a1a1aa; /* Zinc 400 */
+  color: #71717a;
 `;
 
 const UiShell = styled.div`
   background: #000000;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  height: 100%;
-  flex: 1;
-`;
-
-const VisualArea = styled.div`
   padding: 32px;
-  background: #000000;
   display: flex;
   align-items: center;
   justify-content: center;
   border-bottom: 1px solid #27272a;
-  flex: 1.2;
+  height: 100%;
 `;
 
 const SvgVisual = styled.svg`
@@ -131,7 +131,7 @@ const CodeTerminal = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  flex: 0.8;
+  height: 100%;
 `;
 
 const CodeTerminalHeader = styled.div`
@@ -207,7 +207,7 @@ const VimStatusLine = styled.div`
 `;
 
 const VimMode = styled.span`
-  background: #e5c07b; /* yellow mode indicator for config file edit */
+  background: #e5c07b; /* yellow mode indicator */
   color: #18181b;
   padding: 1px 6px;
   margin-right: 8px;
@@ -270,125 +270,123 @@ export default function AegisGatekeeper() {
 
         <RightColumn>
           <UiShell>
-            <VisualArea>
-              <SvgVisual viewBox="0 0 600 260" preserveAspectRatio="xMidYMid meet">
-                {/* 1px Solid Ingress Path Line */}
-                <line x1="40" y1={Y_PATH} x2="380" y2={Y_PATH} stroke="#27272a" strokeWidth="1" />
-                <line x1="380" y1={Y_PATH} x2="440" y2={Y_PATH} stroke="#27272a" strokeWidth="1" />
-                
-                {/* Quarantine Eviction Path Line */}
-                <path d={`M 230 ${Y_PATH} L 230 200 L 300 200`} fill="none" stroke="#27272a" strokeWidth="1" />
+            <SvgVisual viewBox="0 0 600 260" preserveAspectRatio="xMidYMid meet">
+              {/* 1px Solid Ingress Path Line */}
+              <line x1="40" y1={Y_PATH} x2="380" y2={Y_PATH} stroke="#27272a" strokeWidth="1" />
+              <line x1="380" y1={Y_PATH} x2="440" y2={Y_PATH} stroke="#27272a" strokeWidth="1" />
+              
+              {/* Quarantine Eviction Path Line */}
+              <path d={`M 230 ${Y_PATH} L 230 200 L 300 200`} fill="none" stroke="#27272a" strokeWidth="1" />
 
-                {/* Audit Node Block */}
-                <g>
-                  <rect x="140" y={Y_PATH - 35} width="180" height="70" fill="#09090b" stroke="#27272a" strokeWidth="1" />
-                  <text x="230" y={Y_PATH - 15} fill="#ffffff" fontSize="9" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold" textAnchor="middle">AUDIT NODE</text>
-                  <text x="230" y={Y_PATH} fill="#a1a1aa" fontSize="7.5" fontFamily="var(--font-geist-mono), monospace" textAnchor="middle">ED25519 VERIFICATION &amp;</text>
-                  <text x="230" y={Y_PATH + 12} fill="#a1a1aa" fontSize="7.5" fontFamily="var(--font-geist-mono), monospace" textAnchor="middle">LINEAGE TOKEN MATCH</text>
-                </g>
+              {/* Audit Node Block */}
+              <g>
+                <rect x="140" y={Y_PATH - 35} width="180" height="70" fill="#09090b" stroke="#27272a" strokeWidth="1" />
+                <text x="230" y={Y_PATH - 15} fill="#ffffff" fontSize="9" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold" textAnchor="middle">AUDIT NODE</text>
+                <text x="230" y={Y_PATH} fill="#a1a1aa" fontSize="7.5" fontFamily="var(--font-geist-mono), monospace" textAnchor="middle">ED25519 VERIFICATION &amp;</text>
+                <text x="230" y={Y_PATH + 12} fill="#a1a1aa" fontSize="7.5" fontFamily="var(--font-geist-mono), monospace" textAnchor="middle">LINEAGE TOKEN MATCH</text>
+              </g>
 
-                {/* Eviction Block */}
-                <g>
-                  <rect x="300" y="175" width="260" height="50" fill="#09090b" stroke="#7f1d1d" strokeWidth="1" />
-                  <text x="430" y="205" fill="#ef4444" fontSize="8" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold" textAnchor="middle">[ ZENOH_QUARANTINE_MESH_EVICTION ]</text>
-                </g>
+              {/* Eviction Block */}
+              <g>
+                <rect x="300" y="175" width="260" height="50" fill="#09090b" stroke="#7f1d1d" strokeWidth="1" />
+                <text x="430" y="205" fill="#ef4444" fontSize="8" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold" textAnchor="middle">[ ZENOH_QUARANTINE_MESH_EVICTION ]</text>
+              </g>
 
-                {/* Hypervisor Core Block */}
-                <g>
-                  <rect x="440" y={Y_PATH - 35} width="130" height="70" fill="#09090b" stroke="#00e5ff" strokeWidth="1" />
-                  <text x="505" y={Y_PATH - 5} fill="#ffffff" fontSize="9" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold" textAnchor="middle">HYPERVISOR</text>
-                  <text x="505" y={Y_PATH + 10} fill="#00e5ff" fontSize="8" fontFamily="var(--font-geist-mono), monospace" textAnchor="middle">EXECUTION CORE</text>
-                </g>
+              {/* Hypervisor Core Block */}
+              <g>
+                <rect x="440" y={Y_PATH - 35} width="130" height="70" fill="#09090b" stroke="#27272a" strokeWidth="1" />
+                <text x="505" y={Y_PATH - 5} fill="#ffffff" fontSize="9" fontFamily="var(--font-geist-mono), monospace" fontWeight="bold" textAnchor="middle">HYPERVISOR</text>
+                <text x="505" y={Y_PATH + 10} fill="#a1a1aa" fontSize="8" fontFamily="var(--font-geist-mono), monospace" textAnchor="middle">EXECUTION CORE</text>
+              </g>
 
-                {/* Labels */}
-                <text x="40" y={Y_PATH - 15} fill="#71717a" fontSize="8" fontFamily="var(--font-geist-mono), monospace">INGRESS</text>
+              {/* Labels */}
+              <text x="40" y={Y_PATH - 15} fill="#71717a" fontSize="8" fontFamily="var(--font-geist-mono), monospace">INGRESS</text>
 
-                {/* --- ANIMATIONS --- */}
-                {/* Verified Envelope (Cyan) */}
-                <motion.g
-                  animate={{
-                    x: [40, 140, 140, 440],
-                    y: [Y_PATH - 6, Y_PATH - 6, Y_PATH - 6, Y_PATH - 6],
-                    opacity: [0, 1, 1, 1, 0]
-                  }}
-                  transition={{
-                    duration: 6,
-                    times: [0, 0.25, 0.45, 0.8, 1],
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                >
-                  <rect width="12" height="12" fill="#00e5ff" />
-                </motion.g>
+              {/* --- ANIMATIONS --- */}
+              {/* Verified Envelope (White) */}
+              <motion.g
+                animate={{
+                  x: [40, 224, 224, 499],
+                  y: [Y_PATH - 6, Y_PATH - 6, Y_PATH - 6, Y_PATH - 6],
+                  opacity: [0, 1, 1, 1, 0]
+                }}
+                transition={{
+                  duration: 6,
+                  times: [0, 0.35, 0.55, 0.9, 1],
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              >
+                <rect width="12" height="12" fill="#ffffff" />
+              </motion.g>
 
-                {/* Rogue Envelope (Red) */}
-                <motion.g
-                  animate={{
-                    x: [40, 140, 140, 140, 300],
-                    y: [Y_PATH - 6, Y_PATH - 6, Y_PATH - 6, 200 - 6, 200 - 6],
-                    opacity: [0, 0, 1, 1, 1, 0]
-                  }}
-                  transition={{
-                    duration: 6,
-                    times: [0, 0.35, 0.5, 0.65, 0.85, 1],
-                    repeat: Infinity,
-                    ease: "easeInOut"
-                  }}
-                >
-                  <rect width="12" height="12" fill="#ef4444" />
-                </motion.g>
-              </SvgVisual>
-            </VisualArea>
-
-            <CodeTerminal>
-              <CodeTerminalHeader>
-                <MacDotsRow>
-                  <MacDot $color="#ff5f56" />
-                  <MacDot $color="#ffbd2e" />
-                  <MacDot $color="#27c93f" />
-                </MacDotsRow>
-                <FileTab>aegis.toml</FileTab>
-              </CodeTerminalHeader>
-              <EditorContainer>
-                <LineNumbersGutter>
-                  1
-                  <br />
-                  2
-                  <br />
-                  3
-                  <br />
-                  4
-                  <br />
-                  5
-                  <br />
-                  6
-                </LineNumbersGutter>
-                <CodeBody>
-                  <Pre>
-                    <Comment># aegis.toml (Hot-Reloaded RAM Firewall)</Comment>
-                    <br />
-                    <SectionHeader>[groups.finance_worker]</SectionHeader>
-                    <br />
-                    <KeyName>allowed_namespaces</KeyName> <SyntaxSymbol>=</SyntaxSymbol> <SyntaxSymbol>[</SyntaxSymbol><StringVal>"/finance/ledger/*"</StringVal><SyntaxSymbol>]</SyntaxSymbol>
-                    <br />
-                    <KeyName>blocked_namespaces</KeyName> <SyntaxSymbol>=</SyntaxSymbol> <SyntaxSymbol>[</SyntaxSymbol><StringVal>"/core/admin"</StringVal><SyntaxSymbol>]</SyntaxSymbol>
-                    <br />
-                    <br />
-                    <Comment># A packet outside this ACL triggers global quarantine in O(1)</Comment>
-                  </Pre>
-                </CodeBody>
-              </EditorContainer>
-              <VimStatusLine>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <VimMode>NORMAL</VimMode>
-                  <span>aegis.toml</span>
-                </div>
-                <div>
-                  <span>utf-8 [toml] 6:1</span>
-                </div>
-              </VimStatusLine>
-            </CodeTerminal>
+              {/* Rogue Envelope (Red) */}
+              <motion.g
+                animate={{
+                  x: [40, 224, 224, 224, 300],
+                  y: [Y_PATH - 6, Y_PATH - 6, Y_PATH - 6, 200 - 6, 200 - 6],
+                  opacity: [0, 0, 1, 1, 1, 0]
+                }}
+                transition={{
+                  duration: 6,
+                  times: [0, 0.35, 0.5, 0.65, 0.85, 1],
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              >
+                <rect width="12" height="12" fill="#ef4444" />
+              </motion.g>
+            </SvgVisual>
           </UiShell>
+
+          <CodeTerminal>
+            <CodeTerminalHeader>
+              <MacDotsRow>
+                <MacDot $color="#ff5f56" />
+                <MacDot $color="#ffbd2e" />
+                <MacDot $color="#27c93f" />
+              </MacDotsRow>
+              <FileTab>aegis.toml</FileTab>
+            </CodeTerminalHeader>
+            <EditorContainer>
+              <LineNumbersGutter>
+                1
+                <br />
+                2
+                <br />
+                3
+                <br />
+                4
+                <br />
+                5
+                <br />
+                6
+              </LineNumbersGutter>
+              <CodeBody>
+                <Pre>
+                  <Comment># aegis.toml (Hot-Reloaded RAM Firewall)</Comment>
+                  <br />
+                  <SectionHeader>[groups.finance_worker]</SectionHeader>
+                  <br />
+                  <KeyName>allowed_namespaces</KeyName> <SyntaxSymbol>=</SyntaxSymbol> <SyntaxSymbol>[</SyntaxSymbol><StringVal>"/finance/ledger/*"</StringVal><SyntaxSymbol>]</SyntaxSymbol>
+                  <br />
+                  <KeyName>blocked_namespaces</KeyName> <SyntaxSymbol>=</SyntaxSymbol> <SyntaxSymbol>[</SyntaxSymbol><StringVal>"/core/admin"</StringVal><SyntaxSymbol>]</SyntaxSymbol>
+                  <br />
+                  <br />
+                  <Comment># A packet outside this ACL triggers global quarantine in O(1)</Comment>
+                </Pre>
+              </CodeBody>
+            </EditorContainer>
+            <VimStatusLine>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <VimMode>NORMAL</VimMode>
+                <span>aegis.toml</span>
+              </div>
+              <div>
+                <span>utf-8 [toml] 6:1</span>
+              </div>
+            </VimStatusLine>
+          </CodeTerminal>
         </RightColumn>
       </ContentWrapper>
     </SectionContainer>

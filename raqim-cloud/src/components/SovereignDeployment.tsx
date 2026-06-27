@@ -109,7 +109,7 @@ const TerminalBlock = styled.div`
 `;
 
 const Prompt = styled.span`
-  color: #00E5FF;
+  color: #a1a1aa;
 `;
 
 const OutputLog = styled.span`
@@ -136,7 +136,7 @@ const ServerRackSvg = styled.svg`
 
 const blinkLED = keyframes`
   0%, 100% { fill: #27272a; }
-  50% { fill: #00E5FF; }
+  50% { fill: #ffffff; }
 `;
 
 const LEDCircle = styled.circle<{ $delay: string }>`
@@ -221,7 +221,7 @@ export default function SovereignDeployment() {
               </div>
               <OutputLog>v1.0: Pulling from raqim-core</OutputLog>
               <OutputLog>Digest: sha256:7f08b3ac...</OutputLog>
-              <OutputLog style={{ color: '#00E5FF' }}>Status: Downloaded newer image [40MB]</OutputLog>
+              <OutputLog style={{ color: '#ffffff' }}>Status: Downloaded newer image [40MB]</OutputLog>
             </TerminalBlock>
           </PipelineCard>
 
