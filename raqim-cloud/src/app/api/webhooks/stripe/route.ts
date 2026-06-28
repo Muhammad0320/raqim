@@ -6,7 +6,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_mock', {
-  apiVersion: "2025-02-24.acacia" as any,
+  apiVersion: "2026-06-24.dahlia" as any,
 });
 
 const supabaseAdmin = createClient(
@@ -17,9 +17,9 @@ const supabaseAdmin = createClient(
 async function handleSubscriptionUpsert(subscriptionId: string, stripeCustomerId: string, orgIdFromEvent: string | undefined) {
   // Retrieve subscription from Stripe to get the latest status & price
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  
+
   let orgId = orgIdFromEvent || subscription.metadata?.org_id;
-  
+
   if (!orgId) {
     // Fallback: look up organization by stripe_customer_id
     const { data: orgs } = await supabaseAdmin
