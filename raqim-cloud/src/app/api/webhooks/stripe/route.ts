@@ -170,10 +170,9 @@ export async function POST(req: Request) {
         println(`[STRIPE WEBHOOK] Invoice failed. 72h deployment grace active for sub: ${stripeSubscriptionId}`);
  
         break;
-
       }
 
-      
+
       case "customer.subscription.deleted": {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId = subscription.customer as string;
@@ -185,7 +184,7 @@ export async function POST(req: Request) {
           .from("subscriptions" as any)
           .update({
             status: "canceled",
-            current_period_end: new Date(currentPeriodEnd * 1000).toISOString()
+            grace_expires_at: new Date(currentPeriodEnd * 1000).toISOString()
           })
           .eq("stripe_subscription_id", subscription.id) as any);
         break;
