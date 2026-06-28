@@ -72,8 +72,8 @@ async function handleSubscriptionUpsert(subscriptionId: string, stripeCustomerId
 }
 
 export async function POST(req: Request) {
-  const headerPayload = await headers();
-  const sig = headerPayload.get("stripe-signature");
+  const payload = await req.text()
+  const sig = req.headers.get("stripe-signature");
 
   if (!sig) {
     return NextResponse.json({ error: "Missing stripe-signature header" }, { status: 400 });
@@ -82,10 +82,9 @@ export async function POST(req: Request) {
   let event: Stripe.Event;
 
   try {
-    // Read raw body buffer for signature verification
-    const body = Buffer.from(await req.arrayBuffer());
+
     event = stripe.webhooks.constructEvent(
-      body,
+      payload,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET || 'whsec_placeholder'
     );
@@ -94,90 +93,105 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
+  const session = event.data.object as Stripe.Checkout.Session
+
+  
+  
   try {
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const orgId = session.metadata?.org_id || session.client_reference_id || undefined;
-      const subscriptionId = session.subscription as string;
-      const customerId = session.customer as string;
+    switch (event.type) {
+      case "checkout.session.completed": {
+        const orgId = session.metadata?.org_id || session.client_reference_id || undefined;
+        const subscriptionId = session.subscription as string;
+        const customerId = session.customer as string;
 
-      if (subscriptionId && customerId) {
-        await handleSubscriptionUpsert(subscriptionId, customerId, orgId);
+        if (subscriptionId && customerId) {
+          await handleSubscriptionUpsert(subscriptionId, customerId, orgId);
+        }
+
+        const subscriptionDetails = await stripe.subscriptions.retrieve(subscriptionId)
+
+        // Extract specific metered subscription item ID from the array to map our database fields.
+        const items = subscriptionDetails.items.data;
+        const mergeItemId = items.find(i => i.id === process.env.STRIPE_MERGES)?.id || null 
+        const forkItemId = items.find(i => i.id === process.env.STRIPE_MERGES)?.id || null 
+        const bandwidthItemId = items.find(i => i.id === process.env.STRIPE_MERGES)?.id || null 
+
+        let planTier;
+        if (items.find(i => i.id === process.env.STRIPE_STARTUP_BASE )?.id) {
+          planTier = "STARTUP"
+        } else if (items.find(i => i.id === process.env.STRIPE_ENTERPRISE_BASE )?.id) {
+          planTier = "ENTERPRISE"
+        } else {
+          planTier = "OPEN_CORE"
+        } 
+
+        // Atomically map map the subscription data into our relational table
+        await supabaseAdmin.from("subscriptions").upsert({
+          org_id: orgId, 
+          stripe_customer_id: customerId,
+          stripe_subscription_id: subscriptionId,
+          plan_tier: planTier,
+          status: "active",
+          stripe_merge_item_id: mergeItemId,
+          stripe_bandwidth_item_id: bandwidthItemId,
+          stripe_fork_item_id: forkItemId,
+          grace_expires_at: null, 
+          updated_at: new Date().toISOString()
+          
+        });
+
+        await supabaseAdmin.from("organizations").update({stripe_customer_id: customerId, plan_tier: planTier}).eq("id", orgId);
+
+        break; 
       }
-    } else if (event.type === "customer.subscription.updated") {
-      const subscription = event.data.object as Stripe.Subscription;
-      const orgId = subscription.metadata?.org_id || undefined;
-      const subscriptionId = subscription.id;
-      const customerId = subscription.customer as string;
 
-      if (subscriptionId && customerId) {
-        await handleSubscriptionUpsert(subscriptionId, customerId, orgId);
+      case "customer.subscription.updated": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const orgId = subscription.metadata?.org_id || undefined;
+        const subscriptionId = subscription.id;
+        const customerId = subscription.customer as string;
+
+        if (subscriptionId && customerId) {
+          await handleSubscriptionUpsert(subscriptionId, customerId, orgId);
+        }
+        break;
       }
-    } else if (event.type === "invoice.payment_failed") {
-      const invoice = event.data.object as Stripe.Invoice;
-      const customerId = invoice.customer as string;
+      case "invoice.payment_failed": {
 
-      const { data: orgs } = await supabaseAdmin
-        .from("organizations")
-        .select("id, alias")
-        .eq("stripe_customer_id", customerId);
+        const stripeSubscriptionId = session.subscription as string;
 
-      if (orgs && orgs.length > 0) {
-        const orgId = orgs[0].id;
-        const tenantAlias = orgs[0].alias;
+        // Calculate a 7 hour cryptographic grace period 
+        const graceTimeStamp = new Date()
+        
+        graceTimeStamp.setHours(graceTimeStamp.getHours() + 72);
 
-        // Do not downgrade the tenant to Open Core instantly.
-        // Update database status to "past_due".
+        await supabaseAdmin.from("subscriptions").update({status: "past_due", grace_expires_at: graceTimeStamp.toISOString() }).eq("stripe_subscription_id", stripeSubscriptionId);
+
+        println(`[STRIPE WEBHOOK] Invoice failed. 72h deployment grace active for sub: ${stripeSubscriptionId}`);
+ 
+        break;
+
+      }
+
+      
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
+        const currentPeriodEnd = subscription.current_period_end; // unix timestamp
+
+        // Extract currentPeriodEnd, do not immediately drop their enterprise status.
+        // Update database record to log cancellation but preserve feature access until currentPeriodEnd.
         await (supabaseAdmin
           .from("subscriptions" as any)
-          .update({ status: "past_due" })
-          .eq("org_id", orgId) as any);
-
-        // Generate emergency fallback license with a strict exp timestamp set to exactly now + 72 hours.
-        let privateKey = process.env.RSA_PRIVATE_KEY || process.env.RAQIM_RSA_PRIVATE_KEY;
-        if (privateKey) {
-          privateKey = privateKey.replace(/\\n/g, "\n");
-          const nowUnix = Math.floor(Date.now() / 1000);
-          const expUnix = nowUnix + (72 * 3600); // 72 hours in seconds
-
-          const fallbackToken = jwt.sign(
-            {
-              sub: tenantAlias,
-              features: ["local_swarm", "global_a2a", "global_crdt"],
-              exp: expUnix,
-              iat: nowUnix
-            },
-            privateKey,
-            { algorithm: "RS256" }
-          );
-
-          const jwtHash = crypto.createHash("sha256").update(fallbackToken).digest("hex");
-
-          // Upsert fallback token hash into database
-          await supabaseAdmin
-            .from("licenses")
-            .upsert({
-              org_id: orgId,
-              jwt_hash: jwtHash,
-              revoked: false,
-              created_at: new Date().toISOString()
-            }, { onConflict: "org_id" });
-        }
+          .update({
+            status: "canceled",
+            current_period_end: new Date(currentPeriodEnd * 1000).toISOString()
+          })
+          .eq("stripe_subscription_id", subscription.id) as any);
+        break;
       }
-    } else if (event.type === "customer.subscription.deleted") {
-      const subscription = event.data.object as Stripe.Subscription;
-      const customerId = subscription.customer as string;
-      const currentPeriodEnd = subscription.current_period_end; // unix timestamp
-
-      // Extract currentPeriodEnd, do not immediately drop their enterprise status.
-      // Update database record to log cancellation but preserve feature access until currentPeriodEnd.
-      await (supabaseAdmin
-        .from("subscriptions" as any)
-        .update({
-          status: "canceled",
-          current_period_end: new Date(currentPeriodEnd * 1000).toISOString()
-        })
-        .eq("stripe_subscription_id", subscription.id) as any);
+      default:
+        break;
     }
 
     return NextResponse.json({ received: true });
@@ -185,4 +199,8 @@ export async function POST(req: Request) {
     console.error("Webhook processing error:", err);
     return NextResponse.json({ error: `Processing Error: ${err.message}` }, { status: 500 });
   }
+}
+
+function println(message: string) {
+  console.log(message)
 }
