@@ -3,7 +3,7 @@ use axum::extract::{Multipart, Path, Query};
 use axum::response::Response;
 use axum::{
     Json, async_trait,
-    extract::{FromRef, FromRequestParts, State},
+    extract::{FromRequestParts, State},
     http::{StatusCode, request::Parts},
     routing::{get, post},
 };
@@ -19,7 +19,6 @@ use std::convert::Infallible;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_stream::wrappers::BroadcastStream;
 
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 use std::result::Result::{Err, Ok};
 use std::sync::atomic::AtomicU64;
@@ -145,7 +144,6 @@ pub struct ApiState {
     pub axon: Arc<AxonGateKeeper>,
     pub brain: Arc<SwarmStateRegistry>,
     pub aegis: Arc<AegisGateKeeper>,
-    pub decoding_key: Arc<DecodingKey>,
     pub global_net: Arc<GlobalNetworkBridge>,
     pub telemetry: Arc<TelemetryEngine>,
     pub cortex_tx: UnboundedSender<Vec<u8>>,
@@ -170,36 +168,26 @@ pub struct EnterpriseClaim {
 
 pub struct ValidatedIdentity(pub EnterpriseClaim);
 
-// THE AXUM EXTRACTOR: This automatically protects any route it is attached onto.
+// THE AXUM EXTRACTOR: Always provides active standalone identity
 #[async_trait]
 impl<S> FromRequestParts<S> for ValidatedIdentity
 where
-    ApiState: axum::extract::FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = StatusCode;
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let api_state = ApiState::from_ref(state);
-
-        let auth_header = parts
-            .headers
-            .get("Authorization")
-            .and_then(|h| h.to_str().ok())
-            .filter(|s| s.starts_with("Bearer "))
-            .map(|s| &s[7..])
-            .ok_or(StatusCode::UNAUTHORIZED)?;
-
-        // TRUE CRYPTOGRAPHIC VERIFICATION
-        let validation = Validation::new(Algorithm::RS256);
-        match decode::<EnterpriseClaim>(auth_header, &api_state.decoding_key, &validation) {
-            Ok(token_data) => Ok(ValidatedIdentity(token_data.claims)),
-
-            Err(e) => {
-                eprintln!("[SECURITY] Invalid or Expired License Key: {}", e);
-                Err(StatusCode::UNAUTHORIZED)
-            }
-        }
+    async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(ValidatedIdentity(EnterpriseClaim {
+            sub: "local_standalone".to_string(),
+            features: vec![
+                "global_crdt".to_string(),
+                "global_a2a".to_string(),
+                "global_aegis".to_string(),
+                "time_travel".to_string(),
+                "aegis".to_string(),
+            ],
+            exp: usize::MAX,
+        }))
     }
 }
 
@@ -597,17 +585,10 @@ struct ResurrectPayload {
 }
 
 async fn lift_qurantine_and_resurrect(
-    identity: ValidatedIdentity,
+    _identity: ValidatedIdentity,
     State(state): State<ApiState>,
     Json(payload): Json<ResurrectPayload>,
 ) -> Result<StatusCode, StatusCode> {
-    if !identity.0.features.contains(&"aegis".to_string()) {
-        eprintln!(
-            "[BILLING] Tenant {} attempted to use Aegis without a license.",
-            identity.0.sub
-        );
-        return Err(StatusCode::PAYMENT_REQUIRED);
-    }
 
     // Fire the Out-of-Band Context Eviction Via Zenoh
     println!(
@@ -674,13 +655,10 @@ struct TimeTravelRequest {
 
 // THE ACTIVE DEBUGGING ROUTE HANDLER
 async fn time_travel(
-    identity: ValidatedIdentity,
+    _identity: ValidatedIdentity,
     State(state): State<ApiState>,
     Json(payload): Json<TimeTravelRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    if !identity.0.features.contains(&"time_travel".to_string()) {
-        return Err(StatusCode::PAYMENT_REQUIRED);
-    }
 
     println!(
         "[TIME TRAVEL] Admin requested Reality Forkk for Agent {} at TxID {} ",

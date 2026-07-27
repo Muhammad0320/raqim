@@ -16,7 +16,6 @@ pub mod state;
 pub mod telemetry;
 pub mod utils;
 
-use jsonwebtoken::{DecodingKey, Validation, decode};
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -25,7 +24,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 
 use crate::aegis::QuarantineRecord;
-use crate::api::EnterpriseClaim;
 use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine};
@@ -224,65 +222,19 @@ pub struct RuntimeSecurityFlags {
 }
 
 impl RuntimeSecurityFlags {
-    // The fallbackk for open_core / unlicensed nodes.
-
-    pub fn new(initial_jwt: &str, decoding_key: &DecodingKey) -> Self {
-        let flags = RuntimeSecurityFlags {
-            allow_global_a2a: Arc::new(AtomicBool::new(false)),
-            allow_global_aegis: Arc::new(AtomicBool::new(false)),
-            allow_global_crdt: Arc::new(AtomicBool::new(false)),
-            allow_time_travel: Arc::new(AtomicBool::new(false)),
-            tenant_id: Arc::new(RwLock::new("local_open_core".to_string())),
-        };
-
-        flags.evaluate_jwt(initial_jwt, decoding_key);
-
-        flags
-    }
-
-    pub fn evaluate_jwt(&self, jwt: &str, decoding_key: &DecodingKey) {
-        let validation = Validation::new(jsonwebtoken::Algorithm::RS256);
-
-        if let Ok(token_data) = decode::<EnterpriseClaim>(jwt, decoding_key, &validation) {
-            let features = &token_data.claims.features;
-
-            self.allow_global_crdt.store(
-                features.contains(&"global_crdt".to_string()),
-                Ordering::SeqCst,
-            );
-            self.allow_global_a2a.store(
-                features.contains(&"global_a2a".to_string()),
-                Ordering::SeqCst,
-            );
-            self.allow_global_aegis.store(
-                features.contains(&"global_aegis".to_string()),
-                Ordering::SeqCst,
-            );
-            self.allow_time_travel.store(
-                features.contains(&"time_travel".to_string()),
-                Ordering::SeqCst,
-            );
-
-            if let Ok(mut t_id) = self.tenant_id.write() {
-                *t_id = token_data.claims.sub.clone();
-            }
-
-            println!(
-                "[SECURITY] Hot-Swap: cryptograhic claims activated for tenant: {} ",
-                token_data.claims.sub
-            );
-        } else {
-            // Fallback to strict open core restricton
-            self.allow_global_a2a.store(false, Ordering::SeqCst);
-            self.allow_global_aegis.store(false, Ordering::SeqCst);
-            self.allow_global_crdt.store(false, Ordering::SeqCst);
-            self.allow_time_travel.store(false, Ordering::SeqCst);
-
-            if let Ok(mut t_id) = self.tenant_id.write() {
-                *t_id = "local_open_core".to_string();
-            }
-
-            println!("[WARNING] Security downgrade: Open Core limits enforced ");
+    pub fn new() -> Self {
+        RuntimeSecurityFlags {
+            allow_global_a2a: Arc::new(AtomicBool::new(true)),
+            allow_global_aegis: Arc::new(AtomicBool::new(true)),
+            allow_global_crdt: Arc::new(AtomicBool::new(true)),
+            allow_time_travel: Arc::new(AtomicBool::new(true)),
+            tenant_id: Arc::new(RwLock::new("local_standalone".to_string())),
         }
+    }
+}
+
+impl Default for RuntimeSecurityFlags {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -63,21 +63,21 @@ impl EmbeddingProvider for LocalBgeProvider {
 }
 
 // ========================================
-// PATH B: HIGH-THROUGHTPUT BENCHMARK MOCK
+// PATH B: HIGH-THROUGHPUT BENCHMARK MOCK
 // ========================================
-#[cfg(feature = "mock-embedding")]
+#[cfg(all(feature = "mock-embedding", not(feature = "native-embedding")))]
 #[derive(Debug, Clone)]
 pub struct LocalBgeProvider;
 
-#[cfg(feature = "mock-embedding")]
+#[cfg(all(feature = "mock-embedding", not(feature = "native-embedding")))]
 impl LocalBgeProvider {
     pub fn new() -> Self {
         print!("[BENCHMARK PROFILE] Spawning Zero-Overhead Mock Semantic Engine... ");
-        Self
+        Self {}
     }
 }
 
-#[cfg(feature = "mock-embedding")]
+#[cfg(all(feature = "mock-embedding", not(feature = "native-embedding")))]
 #[async_trait]
 impl EmbeddingProvider for LocalBgeProvider {
     async fn embed(&self, _text: &str) -> Result<Vec<f32>, anyhow::Error> {

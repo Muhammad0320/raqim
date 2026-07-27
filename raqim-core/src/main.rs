@@ -63,9 +63,8 @@ async fn main() {
         ct_clone.cancel();
     });
 
-    // BOOT TELEMETRY SINKER
-    let telemetry = TelemetryEngine::new(&config.tenant_id, &config.license_key);
-    TelemetryEngine::start_sinker_daemon(telemetry.clone());
+    // BOOT TELEMETRY
+    let telemetry = TelemetryEngine::new(&config.tenant_id);
 
     // THE INTERNAL EVENT BUS
     let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(5000);
@@ -101,47 +100,9 @@ async fn main() {
         }
     });
 
-    // BOOT-TIME LICENSE_VERIFIICATION
-    const RAQIM_PUBLIC_KEY: &[u8] = include_bytes!("../../keys/raqim_public.pem");
-
-    let decoding_key = Arc::new(
-        jsonwebtoken::DecodingKey::from_rsa_pem(RAQIM_PUBLIC_KEY)
-            .expect("FATAL: Invalid RSA PEM format"),
-    );
-
-    let security_flags = RuntimeSecurityFlags::new(&config.license_key, &decoding_key);
-
-    // Spawning a dynamic hot swap listener
-    let decoding_key_clone = decoding_key.clone();
-    let mut license_rx = event_tx.subscribe();
-    let flag_worker = security_flags.clone();
-
-    let allow_wan = Arc::new(AtomicBool::new(false));
-
-    let allow_wan_clone = allow_wan.clone();
-    tokio::spawn(async move {
-        println!("[SYSTEM] Ingess security claim listener spawned successfully. ");
-        while let Ok(event) = license_rx.recv().await {
-            if let SystemEvent::LicenseUpdated { new_jwt } = event {
-                flag_worker.evaluate_jwt(&new_jwt, &decoding_key_clone);
-            }
-
-            let allow_global_a2a = flag_worker.allow_global_a2a.clone().load(Ordering::Relaxed);
-            let allow_global_aegis = flag_worker
-                .allow_global_aegis
-                .clone()
-                .load(Ordering::Relaxed);
-            let allow_global_crdt = flag_worker
-                .allow_global_crdt
-                .clone()
-                .load(Ordering::Relaxed);
-
-            // Determine if Zenoh needs to connect to the cloud router at all.
-            let allow_wan_bool = allow_global_a2a || allow_global_aegis || allow_global_crdt;
-
-            allow_wan_clone.store(allow_wan_bool, Ordering::SeqCst);
-        }
-    });
+    // BOOT SECURITY FLAGS
+    let security_flags = RuntimeSecurityFlags::new();
+    let allow_wan = Arc::new(AtomicBool::new(true));
 
     // Securely loads the swarm key from disk. Generate it if it doesn't exist/
     let key_dir = Path::new("./ca-keys");
@@ -524,7 +485,6 @@ async fn main() {
         global_tx_counter: tx_counter.clone(),
         wal: wal.clone(),
         event_tx: event_tx.clone(),
-        decoding_key,
 
         ui_tx: ui_tx.clone(),
         phantom_ui_tx: phantom_ui_tx.clone(),

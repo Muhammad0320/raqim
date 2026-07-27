@@ -185,6 +185,7 @@ impl ServerHandler for RaqimHandler {
                         public_key: self.pub_key_bytes,
                         signature,
                         state_bytes: state_bytes.into_vec(),
+                        capability_cert: Vec::new(),
                     };
 
                     // Zero-copy serialize the state
@@ -255,8 +256,9 @@ impl ServerHandler for RaqimHandler {
                         capability: target_capability,
                         question: question_bytes,
                         sender_hex,
-                        public_key: self.pub_key_bytes.to_vec(),
+                        public_key: hex::encode(self.pub_key_bytes),
                         signature: signature.to_vec(),
+                        capability_cert: String::new(),
                     };
 
                     // 2. Connect to RQM Daemon Websocket.
