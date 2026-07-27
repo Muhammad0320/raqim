@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@/utils/supabase/server';
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -8,13 +8,14 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    // Cryptographically exchange the single-use auth code for a secure session JWT
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
       return NextResponse.redirect(`${origin}${next}`);
+    } else {
+      console.error('OAuth Code Exchange Error:', error);
+      return NextResponse.redirect(`${origin}/auth/login?error=${encodeURIComponent(error.message)}`);
     }
   }
 
-  // Fallback to error handling route if exchange fails
-  return NextResponse.redirect(`${origin}/auth/login?error=auth_callback_failed`);
+  return NextResponse.redirect(`${origin}/auth/login?error=${encodeURIComponent('No authentication code provided.')}`);
 }

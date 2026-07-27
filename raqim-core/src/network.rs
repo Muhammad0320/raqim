@@ -236,7 +236,7 @@ impl GlobalNetworkBridge {
             return;
         }
 
-        let key_expr = format!("{}/system/queatine", self.workspace_prefix);
+        let key_expr = format!("{}/system/quarantine", self.workspace_prefix);
         let bytes = postcard::to_allocvec(&record).unwrap();
         let _ = self.session.put(key_expr, bytes).await;
     }
