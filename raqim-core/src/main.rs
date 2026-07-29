@@ -23,7 +23,6 @@ use raqim_core::{
 };
 use tower_http::cors::{Any, CorsLayer};
 
-use md5::{Digest, Md5};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -118,30 +117,30 @@ async fn main() {
 
     let allow_wan = Arc::new(AtomicBool::new(false));
 
-    let allow_wan_clone = allow_wan.clone();
-    tokio::spawn(async move {
-        println!("[SYSTEM] Ingess security claim listener spawned successfully. ");
-        while let Ok(event) = license_rx.recv().await {
-            if let SystemEvent::LicenseUpdated { new_jwt } = event {
-                flag_worker.evaluate_jwt(&new_jwt, &decoding_key_clone);
-            }
+    // let allow_wan_clone = allow_wan.clone();
+    // tokio::spawn(async move {
+    //     println!("[SYSTEM] Ingess security claim listener spawned successfully. ");
+    //     while let Ok(event) = license_rx.recv().await {
+    //         if let SystemEvent::LicenseUpdated { new_jwt } = event {
+    //             flag_worker.evaluate_jwt(&new_jwt, &decoding_key_clone);
+    //         }
 
-            let allow_global_a2a = flag_worker.allow_global_a2a.clone().load(Ordering::Relaxed);
-            let allow_global_aegis = flag_worker
-                .allow_global_aegis
-                .clone()
-                .load(Ordering::Relaxed);
-            let allow_global_crdt = flag_worker
-                .allow_global_crdt
-                .clone()
-                .load(Ordering::Relaxed);
+    //         let allow_global_a2a = flag_worker.allow_global_a2a.clone().load(Ordering::Relaxed);
+    //         let allow_global_aegis = flag_worker
+    //             .allow_global_aegis
+    //             .clone()
+    //             .load(Ordering::Relaxed);
+    //         let allow_global_crdt = flag_worker
+    //             .allow_global_crdt
+    //             .clone()
+    //             .load(Ordering::Relaxed);
 
-            // Determine if Zenoh needs to connect to the cloud router at all.
-            let allow_wan_bool = allow_global_a2a || allow_global_aegis || allow_global_crdt;
+    //         // Determine if Zenoh needs to connect to the cloud router at all.
+    //         let allow_wan_bool = allow_global_a2a || allow_global_aegis || allow_global_crdt;
 
-            allow_wan_clone.store(allow_wan_bool, Ordering::SeqCst);
-        }
-    });
+    //         allow_wan_clone.store(allow_wan_bool, Ordering::SeqCst);
+    //     }
+    // });
 
     // Securely loads the swarm key from disk. Generate it if it doesn't exist/
     let key_dir = Path::new("./ca-keys");
@@ -363,11 +362,16 @@ async fn main() {
                             }
                         };
 
-                        // Compute the Agent ID Hex directly from the valid public key bytes.
+                        // Compute the Agent ID Hex directly from the valid public key bytes
                         let pub_key_bytes = agent_private_key.verifying_key().to_bytes();
-                        let mut hasher = Md5::new();
-                        hasher.update(pub_key_bytes);
-                        let agent_id_byte: [u8; 16] = hasher.finalize().into();
+
+                        // Initialize blake3 key derivation function with Strict Domain Separation
+                        let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
+                        hasher.update(&pub_key_bytes);
+
+                        let mut agent_id_byte = [0u8; 16];
+                        hasher.finalize_xof().fill(&mut agent_id_byte);
+
                         let agent_hex = hex::encode(agent_id_byte);
 
                         println!(

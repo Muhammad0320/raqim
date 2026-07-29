@@ -4,7 +4,6 @@ use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
-use md5::{Digest, Md5};
 use raqim_core::api::WsMessage;
 use serde_json::{Value, json};
 use std::fs;
@@ -137,7 +136,7 @@ impl ServerHandler for RaqimHandler {
                     let mut derived_16_bytes = [0u8; 16];
                     hasher.finalize_xof().fill(&mut derived_16_bytes);
 
-                    let agent_hex = hex::encode(derived_16_bytes);
+                    // let agent_hex = hex::encode(derived_16_bytes);
 
                     // --- Translation layer ----
                     let intent_path = args

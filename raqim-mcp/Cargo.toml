@@ -20,6 +20,5 @@ futures-util = "0.3"
 uuid = "1.23.1"
 
 toml_edit = "0.22"
-md-5 = "0.10" 
 
 blake3 =  "1.5"

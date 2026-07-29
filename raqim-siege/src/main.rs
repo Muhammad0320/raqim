@@ -1,13 +1,9 @@
-use md5::{Digest, Md5};
 use rand_core::OsRng;
 use raqim_siege::{AgentState, AgentStatus, CapabilityCertificate, IngressEnvelope};
 use std::{fs, time::Instant};
 
 use ed25519_dalek::{Signer, SigningKey};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-};
+use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() {
@@ -26,7 +22,7 @@ async fn main() {
     let master_key_array: [u8; 32] = master_key_bytes.as_slice().try_into().unwrap();
     let master_signing_key = SigningKey::from_bytes(&master_key_array);
 
-    // Forge 50 distict agents and Certificates.
+    // Forge 50 agents and Certificates.
     println!(
         "[SIEGE CA] Minting {} Crytographic Identity and Passports.... ",
         num_agents
@@ -38,9 +34,11 @@ async fn main() {
         let agent_signing_key = SigningKey::generate(&mut csprng);
         let pub_key_bytes = agent_signing_key.verifying_key().to_bytes();
 
-        let mut hasher = Md5::new();
-        hasher.update(pub_key_bytes);
-        let agent_id: [u8; 16] = hasher.finalize().into();
+        let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
+        hasher.update(&pub_key_bytes);
+
+        let mut agent_id = [0u8; 16];
+        hasher.finalize_xof().fill(&mut agent_id);
         let agent_hex = hex::encode(agent_id);
 
         let namespace = format!("/siege/shard_{:02}", i);
