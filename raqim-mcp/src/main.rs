@@ -131,9 +131,11 @@ impl ServerHandler for RaqimHandler {
                 if name == "commit_thought" {
                     // Mathematical derivation. (The absolute Truth)
                     // The hash the exact public key that was used to initialize this MCP Server instance.
-                    let mut hasher = Md5::new();
-                    hasher.update(self.pub_key_bytes);
-                    let derived_16_bytes: [u8; 16] = hasher.finalize().into();
+                    let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
+                    hasher.update(&self.pub_key_bytes);
+
+                    let mut derived_16_bytes = [0u8; 16];
+                    hasher.finalize_xof().fill(&mut derived_16_bytes);
 
                     let agent_hex = hex::encode(derived_16_bytes);
 
