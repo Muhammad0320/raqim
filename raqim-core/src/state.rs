@@ -2,7 +2,7 @@ use crate::{AgentState, AgentStatus};
 use dashmap::DashMap;
 use loro::{ImportStatus, LoroDoc, LoroList, LoroMap};
 use parking_lot::RwLock;
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, println, sync::Arc};
 
 // The isolated CRDT Memory Shard for a Single Swarm namespace
 pub struct SwarmState {
@@ -145,6 +145,24 @@ impl SwarmStateRegistry {
     pub fn purge_phantom_shards(&self) -> usize {
         let mut purge_count = 0;
 
-        // Retain only production
+        // Retain only production shards & Active phantom shards still held by rurnning tasks
+        self.shards.retain(|key, brain| {
+            if key.starts_with("phantom_") {
+                if Arc::strong_count(brain) == 1 {
+                    purge_count += 1;
+                    return false;
+                }
+            }
+            true
+        });
+
+        if purge_count > 0 {
+            println!(
+                "[SWARM REGISTRY] Evicted {} dead phantom simulation shards from RAM. ",
+                purge_count
+            );
+        }
+
+        purge_count
     }
 }
