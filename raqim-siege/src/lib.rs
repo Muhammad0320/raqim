@@ -1,3 +1,5 @@
+use std::{println, vec};
+
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 
@@ -37,3 +39,6 @@ pub struct CapabilityCertificate {
     pub expiration_timestamp: u64,
     pub master_signature: Vec<u8>,
 }
+
+
+

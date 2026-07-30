@@ -2,6 +2,7 @@ pub mod aegis;
 pub mod api;
 pub mod axon;
 pub mod compactor;
+
 pub mod config;
 pub mod cortex;
 pub mod embedding;

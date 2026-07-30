@@ -573,3 +573,12 @@ pub fn listen_for_local_thoughts(
                 .insert_json5("connect/endpoints", r#"["tcp/router.raqim.cloud:7447"]"#)
                 .unwrap();
         }
+
+
+
+        // If they don't have global A2A we force zenoh to route the GET requests only to subscribers currently residing on thier local machine.
+        let query_target = if self.allow_global_a2a {
+            zenoh::query::QueryTarget::All
+        } else {
+            zenoh::query::QueryTarget::BestMatching
+        };
