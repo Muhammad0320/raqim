@@ -7,13 +7,18 @@ use memmap2::MmapOptions;
 use rkyv::to_bytes;
 use std::{
     collections::BTreeMap,
+    eprintln,
     fs::File,
     io::Read,
-    sync::{Arc, RwLock},
+    sync::Arc,
     thread::{self, JoinHandle},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::io::AsyncWriteExt;
+use tokio::{
+    sync::{RwLock, mpsc, oneshot},
+    time::interval,
+};
 use tokio_uring::fs::OpenOptions;
 
 pub struct WalEngine {
@@ -28,8 +33,9 @@ pub enum WalCommand {
 }
 
 impl WalEngine {
+    /// Bootstraps the enterprise WAL with automatic env detection
     pub async fn start(file_path: String) -> (Arc<Self>, JoinHandle<()>) {
-        println!("Bismillah. Booting io_uring Nucleus WAL Engine on dedicated OS thread...");
+        println!("Bismillah. Booting Portable Nucleus WAL Engine...");
 
         // Bounded channel to prevent OOM crashes
         let (tx, mut rx) = mpsc::channel::<OpLog>(100_000);
@@ -39,9 +45,127 @@ impl WalEngine {
         let index_clone = index.clone();
         let fp_clone = file_path.clone();
 
-        // 1. We spawn a physical OS thread entirely dedicated to the Hard Drive
-        let handle = thread::spawn(move || {
-            // 2. We boot the io_uring runtime inside this specific thread
+        // Spawn Tokio Worker task
+        let handle = thread::spawn(async move {
+            let mut active_file = tokio::fs::OpenOptions::new()
+                .create(true)
+                .read(true)
+                .write(true)
+                .open(&file_path)
+                .await
+                .expect("Failed to open io_uring WAL file");
+
+            // Query initial file offset asychronously
+            let metadata = active_file
+                .metadata()
+                .await
+                .expect("Failed to stat WAL file");
+            let mut current_offset = metadata.len();
+            let mut batch: Vec<OpLog> = Vec::with_capacity(6_000);
+
+            // Group commit timer (flushes the disk cache every 2ms if data is pending)
+            let mut flush_interval = interval(Duration::from_millis(2));
+
+            loop {
+                tokio::select! {
+                    // Path A: Incoming log item
+                    msg = rx.recv() => {
+                        match msg  {
+                            Some(log) => {
+                              batch.push(log);
+
+                            // Drain the channel of any other pending thoughts for batching
+                            while batch.len() < 6_000 {
+                                    if let Ok(pending_log) = rx.try_recv() {
+                                        batch.push(pending_log);
+                                    } else {
+                                        break;
+                                    }
+                            }
+
+                            if !batch.is_empty() {
+                                Self::wri
+                            }
+
+                    // Record the offset for the first tx_id in this batch
+                    let first_txid = batch[0].state.transaction_id;
+                    {
+                        let mut idx = index_clone.write().unwrap();
+                        idx.insert(first_txid, current_offset);
+                    }
+
+                    // Zero-copy serialize the entire batch instantly
+                    let bytes = to_bytes::<rkyv::rancor::Error>(&batch)
+                        .expect("Failed to serrialize batch")
+                        .into_vec();
+
+                    // Frame it: Calculate the 4-byte length prefix (Little Endian format)
+                    let len_prefix = (bytes.len() as u32).to_le_bytes().to_vec();
+
+                    //  --- THE LINE-BY-LINE PHYSICS OF IO_URING ---
+
+                    // We pass OWNERSHIP of the  `len_prefix` to the kernel
+                    let (res, _returnerd_len_buf) =
+                        file.write_at(len_prefix, current_offset).await;
+                    let written_len = res.expect("WAL length write Error") as u64;
+                    current_offset += written_len;
+
+                    // We pass the OWNERSHIP of the `payload` to the kernel
+                    let (res, _returnerd_payload_buf) =
+                        file.write_at(bytes, current_offset).await;
+                    let written_payload = res.expect("WAL paylaod write error") as u64;
+                    current_offset += written_payload;
+
+                    // 5. Force to metal (fsync).
+                    if let Err(e) = file.sync_data().await {
+                        eprintln!("WAL io_uring Sync Error: {}", e);
+                    }
+
+                    batch.clear();
+
+                    }
+                            None => break
+
+                        }
+
+                    }
+
+                    cmd = cmd_rx.recv() => {
+                        match cmd {
+                         // Path B: Command to rotate.
+                        Some(WalCommand::Rotate(reply_tx)) => {
+
+                            println!("[WAL_ENGINE] Halting I/O. Rotating WAL segment...");
+
+                            // 1. Force final sync on the current file
+                            let _ = file.sync_data().await;
+
+                            // Generate archived filename based on unix timestamp
+                            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+                            let archived_name = format!("{fp_clone}_{timestamp}.wal");
+
+                            // Rename the physical file
+                            std::fs::rename(&fp_clone, &archived_name).unwrap();
+
+                            // Open a fresh active file & reset offset
+                            file = OpenOptions::new().create(true).read(true).write(true).open(&fp_clone).await.unwrap();
+                            current_offset = 0;
+
+                            // Tell the compactor the achived file is ready
+                            let _ = reply_tx.send(archived_name);
+                            println!("[WAL_ENGINE] Rotation complete. I/O resumed.");
+
+                    }
+
+                            None => break,
+                        }
+
+                    }
+
+                }
+            }
+
+            // ---------------------------
             tokio_uring::start(async move {
                 let mut file = OpenOptions::new()
                     .create(true)
@@ -60,7 +184,6 @@ impl WalEngine {
                 loop {
                     tokio::select! {
                         // Path A: We receive a network thought
-
                         msg = rx.recv() => {
                             match msg  {
 
@@ -117,7 +240,6 @@ impl WalEngine {
                         batch.clear();
 
                         }
-
                                 None => break
 
                             }
@@ -126,28 +248,28 @@ impl WalEngine {
 
                         cmd = cmd_rx.recv() => {
                             match cmd {
-                                                            // Path B: Command to rotate.
-                                Some(WalCommand::Rotate(reply_tx)) => {
+                             // Path B: Command to rotate.
+                            Some(WalCommand::Rotate(reply_tx)) => {
 
-                            println!("[WAL_ENGINE] Halting I/O. Rotating WAL segment...");
+                                println!("[WAL_ENGINE] Halting I/O. Rotating WAL segment...");
 
-                            // 1. Force final sync on the current file
-                            let _ = file.sync_data().await;
+                                // 1. Force final sync on the current file
+                                let _ = file.sync_data().await;
 
-                            // Generate archived filename based on unix timestamp
-                            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
-                            let archived_name = format!("{fp_clone}_{timestamp}.wal");
+                                // Generate archived filename based on unix timestamp
+                                let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+                                let archived_name = format!("{fp_clone}_{timestamp}.wal");
 
-                            // Rename the physical file
-                            std::fs::rename(&fp_clone, &archived_name).unwrap();
+                                // Rename the physical file
+                                std::fs::rename(&fp_clone, &archived_name).unwrap();
 
-                            // Open a fresh active file & reset offset
-                            file = OpenOptions::new().create(true).read(true).write(true).open(&fp_clone).await.unwrap();
-                            current_offset = 0;
+                                // Open a fresh active file & reset offset
+                                file = OpenOptions::new().create(true).read(true).write(true).open(&fp_clone).await.unwrap();
+                                current_offset = 0;
 
-                            // Tell the compactor the achived file is ready
-                            let _ = reply_tx.send(archived_name);
-                            println!("[WAL_ENGINE] Rotation complete. I/O resumed.");
+                                // Tell the compactor the achived file is ready
+                                let _ = reply_tx.send(archived_name);
+                                println!("[WAL_ENGINE] Rotation complete. I/O resumed.");
 
                         }
 
@@ -182,6 +304,42 @@ impl WalEngine {
             cmd_sender: cmd_tx,
             index,
         })
+    }
+
+    /// Internal Helper: Zero-copy serialization and non-blocking write.
+    async fn write_batch_to_disk(
+        file: &mut tokio::fs::File,
+        current_offset: &mut u64,
+        batch: &[OpLog],
+        index: &Arc<RwLock<BTreeMap<u64, u64>>>,
+    ) {
+        let first_txid = batch[0].state.transaction_id;
+
+        // zero-copy serialize the entire batch
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(batch)
+            .expect("Failed to serialize batch")
+            .into_vec();
+
+        let len_prefix = (bytes.len() as u32).to_le_bytes();
+
+        // Update in-memory index using async RWLock
+        {
+            let mut idx = index.write().await;
+            idx.insert(first_txid, *current_offset);
+        }
+
+        // Sequential write using tokio async I/O
+        if let Err(e) = file.write_all(&len_prefix).await {
+            eprintln!("[WAL_ENGINE FATAL] Length prefix write failed: {}", e);
+            return;
+        }
+
+        if let Err(e) = file.write_all(&bytes).await {
+            eprintln!(" [WAL_ENGINE FATAL] Payload write failed: {}", e);
+            return;
+        }
+
+        *current_offset += 4 + bytes.len() as u64;
     }
 
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
