@@ -63,8 +63,8 @@ async fn main() {
     });
 
     // BOOT TELEMETRY SINKER
-    let telemetry = TelemetryEngine::new(&config.tenant_id);
-    TelemetryEngine::start_sinker_daemon(telemetry.clone());
+    // let telemetry = TelemetryEngine::new(&config.tenant_id);
+    // TelemetryEngine::start_sinker_daemon(telemetry.clone());
 
     // THE INTERNAL EVENT BUS
     let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(5000);

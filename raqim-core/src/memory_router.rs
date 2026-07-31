@@ -709,6 +709,8 @@ impl MemoryRouter {
             }
         });
 
+        self.brain.purge_phantom_shards();
+
         Ok(())
     }
 }
