@@ -1,12 +1,44 @@
 use crate::OpLog;
 use blake3::Hasher;
 use dashmap::DashMap;
+use parking_lot::RwLock;
 use rkyv::Archived;
+use serde::{Deserialize, Serialize};
+
+/// A completed cryptographic audit checkpoint batch ready for ledger immutability
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarkleBatch {
+    pub batch_id: u64,
+    pub namespace: String,
+    pub markle_root: [u8; 32],
+    pub parent_batch_root: [u8; 32],
+    pub leaves: Vec<[u8; 32]>,
+}
+
+/// A verifiable inclusion path mapping a specific transaction leaf to the root
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InclusionProof {
+    pub leaf_index: usize,
+    pub sibling_hashes: Vec<[u8; 32]>,
+    pub markle_root: [u8; 32],
+}
+
+/// Thread-safe active workspace buffer for a single namespace
+pub struct ActiveTreeBuffer {
+    pub current_batch_id: u64,
+    pub parent_batch_root: [u8; 32],
+    pub accumulated_leaves: Vec<[u8; 32]>,
+    pub accumulated_logs: Vec<OpLog>,
+}
 
 /// The active Governance GateKeeper.
 pub struct AxonGateKeeper {
-    // True conncurrency, The Markle DAG is now sharded per namespace
-    last_known_hash: DashMap<String, [u8; 32]>,
+    /// Thread-safe active memory arenas partiioned per swarm namespce
+    pub active_bufferes: DashMap<String, Arc<RwLock<ActiveTreeBuffer>>>,
+
+    /// The global completed block ledger for historical lookups
+    pub batch_arrive: DashMap<u64, MarkleBatch>,
+    pub global_batch_counter: std::sync::atomic::AtomicU64,
 }
 
 impl AxonGateKeeper {
