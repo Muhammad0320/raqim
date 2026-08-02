@@ -6,10 +6,11 @@ use std::sync::{Arc, Mutex};
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
 
 /// The Enterprise Interface. Allows swapping local FastEmbed for remote OpenAI/Voyage API calls
-
+// Supporting single and high-throughtput batch vectorization
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error>;
+    async fn embed_batch(&self, text: &[String]) -> Result<Vec<Vec<f32>>, anyhow::Error>;
     fn dimension(&self) -> i32;
 }
 
@@ -20,7 +21,7 @@ pub trait EmbeddingProvider: Send + Sync {
 /// The Open-Core Default: BGE-Base-EN-v1.5 (768 dims)
 #[cfg(feature = "native-embedding")]
 pub struct LocalBgeProvider {
-    model: Mutex<TextEmbedding>,
+    model: Arc<Mutex<TextEmbedding>>,
 }
 
 #[cfg(feature = "native-embedding")]
@@ -33,7 +34,7 @@ impl LocalBgeProvider {
             .expect("FATAL: Failed to load BGE weights.");
 
         Self {
-            model: Mutex::new(model),
+            model: Arc::new(Mutex::new(model)),
         }
     }
 }
@@ -42,19 +43,25 @@ impl LocalBgeProvider {
 #[async_trait]
 impl EmbeddingProvider for LocalBgeProvider {
     async fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error> {
-        // Run CPU-bound fastembed inside tokio::task::spawn_blocking to prevent async starvation
-        let text_clone = text.to_string();
-        let model_arc = Arc::new(Mutex::new(
-            TextEmbedding::try_new(InitOptions::new(EmbeddingModel::BGEBaseENV15)).unwrap(),
-        ));
+        let res = self.embed_batch(&[text.to_string()]).await?;
 
+        Ok(res[0].clone())
+    }
+
+    async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, anyhow::Error> {
+        let texts_clone = texts.to_vec();
+        let model_clone = self.model.clone();
+
+        // Offload CPU/SIMD matrix multiplication to Tokio blocking thread pool
         let res = tokio::task::spawn_blocking(move || {
-            let mut model = model_arc.lock().unwrap();
-            model.embed(vec![text_clone], None)
+            let mut model = model_clone
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Mutex lock error: {}", e))?;
+            model.embed(texts_clone, None)
         })
         .await??;
 
-        Ok(res[0].clone())
+        Ok(res)
     }
 
     fn dimension(&self) -> i32 {
@@ -82,6 +89,10 @@ impl LocalBgeProvider {
 impl EmbeddingProvider for LocalBgeProvider {
     async fn embed(&self, _text: &str) -> Result<Vec<f32>, anyhow::Error> {
         Ok(vec![0.0f32; 768])
+    }
+
+    async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, anyhow::Error> {
+        Ok(vec![vec![0.0f32; 768]; texts.len()])
     }
 
     fn dimension(&self) -> i32 {
