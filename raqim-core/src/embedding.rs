@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
+use wasmtime::WaitResult::Ok;
 
 #[cfg(feature = "native-embedding")]
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
@@ -119,7 +120,7 @@ impl OpenAIProvider {
 
 #[async_trait]
 impl EmbeddingProvider for OpenAIProvider {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error> {
+    async fn embed_batch(&self, text: &[String]) -> Result<Vec<Vec<f32>>, anyhow::Error> {
         let res = self
             .client
             .post("https://api.openai.com/v1/embeddings")
@@ -130,15 +131,28 @@ impl EmbeddingProvider for OpenAIProvider {
             .json::<serde_json::Value>()
             .await?;
 
-        let embedding_array = res["data"][0]["embedding"]
+        let data_array = res["data"]
             .as_array()
-            .ok_or_else(|| anyhow::anyhow!("Invalid OpenAI Response"))?;
-        let floats: Vec<f32> = embedding_array
-            .iter()
-            .map(|v: &serde_json::Value| v.as_f64().unwrap() as f32)
-            .collect();
+            .ok_or_else(|| anyhow::anyhow!("Invalid OpenAI response payload"))?;
 
-        Ok(floats)
+        let mut results = Vec::with_capacity(data_array.len());
+        for items in data_array {
+            let embedding = items["embedding"]
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("Malformed embedding vector"))?
+                .iter()
+                .map(|v| v.as_f64().unwrap() as f32)
+                .collect();
+
+            results.push(embedding);
+        }
+
+        Ok(results)
+    }
+
+    async fn embed(&self, text: &str) -> Result<Vec<f32>, anyhow::Error> {
+        let res = self.embed_batch(&[text.to_string()]).await?;
+        Ok(res[0].clone())
     }
 
     fn dimension(&self) -> i32 {
