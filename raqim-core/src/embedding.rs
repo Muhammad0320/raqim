@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
-use wasmtime::WaitResult::Ok;
 
 #[cfg(feature = "native-embedding")]
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
