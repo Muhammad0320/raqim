@@ -96,8 +96,6 @@ impl WalCompactor {
         let mut logs_to_archive: Vec<OpLog> = Vec::new();
         let mut semantic_payloads: Vec<String> = Vec::new();
 
-        let mut vector = Vec::new();
-
         // 3. Zero-copy Framing Extraction
         while offset < buffer.len() {
             if offset + 4 > buffer.len() {
