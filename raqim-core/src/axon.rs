@@ -45,22 +45,30 @@ pub struct AxonGateKeeper {
 impl AxonGateKeeper {
     pub fn new() -> Self {
         Self {
-            active_buffers: DashMap::new(), 
-            batch_archive: DashMap::new(), 
-            global_batch_counter: std::sync::atomic::AtomicU64::new(0)
+            active_buffers: DashMap::new(),
+            batch_archive: DashMap::new(),
+            global_batch_counter: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
-    /// Ingest a raw thought, cryptographically seals its position ans triggers automatic Markle Tree crystallization when chunk capacity hits 1,024 
-    pub fn seal_thought(&self, mut log: OpLog) -> (Oplog, Option<MarkleBatch>) {
+    /// Ingest a raw thought, cryptographically seals its position ans triggers automatic Markle Tree crystallization when chunk capacity hits 1,024
+    pub fn seal_thought(&self, mut log: OpLog) -> (OpLog, Option<MarkleBatch>) {
         let namespace = log.state.namespace.clone();
 
         // Pass 1: Acquire reference to the namespace buffer
-        let buffer_arc = self.active_buffers.entry(namespace.clone()).or_insert_with(|| {
-
-            Arc::new(RwLock::new( ActiveTreeBuffer { current_batch_id: self.global_batch_counter.fetch_add(1, SeqCst), parent_batch_root: [0u8; 32], accumulated_leaves: Vec::with_capacity(1024), accumulated_logs: Vec::with_capacity(1024) } ))
-
-        }).value().clone();
+        let buffer_arc = self
+            .active_buffers
+            .entry(namespace.clone())
+            .or_insert_with(|| {
+                Arc::new(RwLock::new(ActiveTreeBuffer {
+                    current_batch_id: self.global_batch_counter.fetch_add(1, SeqCst),
+                    parent_batch_root: [0u8; 32],
+                    accumulated_leaves: Vec::with_capacity(1024),
+                    accumulated_logs: Vec::with_capacity(1024),
+                }))
+            })
+            .value()
+            .clone();
 
         let mut buffer = buffer_arc.write();
 
@@ -78,29 +86,27 @@ impl AxonGateKeeper {
 
         // Cap Checkpoint: If capacity hits 1,024 leaves, crystallize the Markle Tree
         if buffer.accumulated_leaves.len() >= 1024 {
-
             let root = Self::compute_markle_root(&buffer.accumulated_leaves);
 
             let completed_batch = MarkleBatch {
-                batch_id: buffer.current_batch_id, 
+                batch_id: buffer.current_batch_id,
                 namespace: namespace.clone(),
-                markle_root: root, 
-                parent_batch_root: buffer.parent_batch_root, 
-                leaves: buffer.accumulated_leaves.clone()
-
+                markle_root: root,
+                parent_batch_root: buffer.parent_batch_root,
+                leaves: buffer.accumulated_leaves.clone(),
             };
 
             //  Archive completed block for historical query proofs
-            self.batch_archive.insert(completed_batch.batch_id, completed_batch.clone());
+            self.batch_archive
+                .insert(completed_batch.batch_id, completed_batch.clone());
 
             // Advace the StatePipeline cleanly
-            buffer.parent_batch_root = root; 
+            buffer.parent_batch_root = root;
             buffer.current_batch_id = self.global_batch_counter.fetch_add(1, SeqCst);
             buffer.accumulated_leaves.clear();
             buffer.accumulated_logs.clear();
 
-            return  (log, Some(completed_batch));
-
+            return (log, Some(completed_batch));
         }
 
         (log, None)
@@ -108,16 +114,33 @@ impl AxonGateKeeper {
 
     /// Internal Engine loop: Condenses an arbitrary array of leaf hashes into a single Markle Root
     pub fn compute_markle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
-
         if leaves.is_empty() {
             return [0u8; 32];
         }
 
         let mut current_level = leaves.to_vec();
         while current_level.len() > 1 {
-            let mut next_level
+            let mut next_level = Vec::with_capacity((current_level.len() + 1) / 2);
+
+            for chunk in next_level.chunks(2) {
+                if chunk.len() == 2 {
+                    let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
+                    hasher.update(&chunk[0]);
+                    hasher.update(&chunk[1]);
+                    next_level.push(hasher.finalize().into());
+                } else {
+                    // Odd element cleanujp
+                    let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
+                    hasher.update(&chunk[0]);
+                    hasher.update(&chunk[0]);
+                    next_level.push(hasher.finalize().into());
+                }
+            }
+
+            current_level = next_level;
         }
 
+        current_level[0]
     }
 
     /// Agent B uses this to verify the thoughts it received from iceoryx2
