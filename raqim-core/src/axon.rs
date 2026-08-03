@@ -225,13 +225,12 @@ impl AxonGateKeeper {
         current_hash == proof.markle_root
     }
 
-    /// Agent B uses this to verify the thoughts it received from iceoryx2
+    /// Network p2p Verification Anchor: Validates signatures over raw FFI slices safely
     pub fn verify_foreign_thoughts(&self, log: &Archived<OpLog>) -> bool {
-        let mut hasher = Hasher::new();
+        let mut hasher = Hasher::new_derive_key("raqim.axon.v1.leaf");
 
         hasher.update(log.delta.as_slice());
         hasher.update(log.agent_id.as_slice());
-        hasher.update(log.previous_hash.as_slice());
 
         let expected_hash: [u8; 32] = hasher.finalize().into();
 

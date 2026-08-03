@@ -25,6 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 
 use crate::aegis::QuarantineRecord;
+use crate::axon::MarkleBatch;
 use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine};
@@ -137,7 +138,7 @@ pub async fn execute_raqim_cascade(
         .append_agent_thought(&agent_hex, &enriched_state)
         .unwrap();
 
-    telemetry.record_crdt_merge();
+    // telemetry.record_crdt_merge();
 
     // Contruct the raw log
     let raw_log = OpLog {
@@ -152,7 +153,9 @@ pub async fn execute_raqim_cascade(
     };
 
     // 3. Cryptographically Seal (Markle DAG)
-    let sealed_log = axon.seal_thought(raw_log);
+    let (sealed_log, optional_markle_batch) = axon.seal_thought(raw_log);
+
+    // TODO: Trigger system event
 
     // 4. Fire to wal (Durability)
     wal.append(sealed_log.clone()).await;
@@ -210,6 +213,10 @@ pub enum SystemEvent {
 
     GlobalQuarantineSync {
         record: QuarantineRecord,
+    },
+
+    MarkleBatchCrystallized {
+        batch: MarkleBatch,
     },
 }
 

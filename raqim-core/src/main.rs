@@ -24,10 +24,10 @@ use raqim_core::{
 use tower_http::cors::{Any, CorsLayer};
 
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::{fs, println};
 
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
@@ -236,6 +236,51 @@ async fn main() {
         "[SYSTEM] Bootstrapped Tx Counter at TxID: {} ",
         starting_tx_id + 1
     );
+
+    // ============================
+    // THE PHOENIX HYDRATION PROTOCOL: Reconstructs in-memory Axon Merkle trees from uncompacted WAL frames on boot.
+    // ============================
+    println!("[INITIALIIZATION] Phoenix protocol: Hydrating Axon state from active WAL...");
+    if Path::new(&config.wal_path).exists() {
+        if let Ok(wal_bytes) = fs::read(&config.wal_path) {
+            let mut offset = 0;
+            let mut recovered_count = 0;
+
+            while offset < wal_bytes.len() {
+                if offset + 4 > wal_bytes.len() {
+                    break;
+                }
+
+                let mut len_bytes = [0u8; 4];
+                len_bytes.copy_from_slice(&wal_bytes[offset..offset + 4]);
+                let entry_len = u32::from_le_bytes(len_bytes) as usize;
+                offset += 4;
+
+                if offset + entry_len > len_bytes.len() {
+                    break;
+                }
+
+                let entry_slice = &wal_bytes[offset..offset + entry_len];
+
+                if let Ok(archived_log) =
+                    rkyv::access::<<OpLog as rkyv::Archive>::Archived>(entry_slice)
+                {
+                    if let Ok(recovered_log) =
+                        rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
+                    {
+                        axon.hydrate_from_recoverey(&recovered_log);
+                        recovered_count += 1;
+                    }
+                }
+
+                offset += entry_len;
+            }
+            println!(
+                "[INITIALIIZATION] Phoenix protocol Complete. Hydrated {} log frames into Axon DAG memory. ",
+                recovered_count
+            );
+        }
+    }
 
     // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
     let mut valut_rx = event_tx.subscribe();
@@ -528,7 +573,6 @@ async fn main() {
         global_tx_counter: tx_counter.clone(),
         wal: wal.clone(),
         event_tx: event_tx.clone(),
-        decoding_key,
 
         ui_tx: ui_tx.clone(),
         phantom_ui_tx: phantom_ui_tx.clone(),
@@ -631,7 +675,9 @@ async fn main() {
 
                     // Read the exact payload bytes: Read into the preallocated screatch bufffer.
                     // We slice the scratch buffer to the exact length of the incoming payload complately bypassing the OS memory allocator
-                    let active_payload_slice = &mut payload_scratch_buf[0..payload_len];
+
+
+                    let active_payload_slice : &mut [u8] = &mut payload_scratch_buf[0..payload_len];
 
                     if let Err(e) = tokio::io::AsyncReadExt::read_exact(&mut reader, active_payload_slice).await {
                         eprintln!("[TCP EDGE]: Failed to load TCP payload {}", e);

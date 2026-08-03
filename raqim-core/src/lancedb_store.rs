@@ -269,6 +269,17 @@ impl LanceEngine {
                 format!(" {{ \"message\": \"{}\" }} ", "License Key was updated"),
             ),
 
+            SystemEvent::MarkleBatchCrystallized { batch } => {
+                let m = format!(
+                    "{{\"batch_id\": {}, \"namespace\": \"{}\", \"merkle_root\": \"{}\", \"leaves_count\": {}}}",
+                    batch.batch_id,
+                    batch.namespace,
+                    hex::encode(batch.markle_root),
+                    batch.leaves.len()
+                );
+                ("MarkleBatchCrystallized", "SYSTEM".to_string(), m)
+            }
+
             _ => ("default", "default".to_string(), "default".to_string()),
         };
 
