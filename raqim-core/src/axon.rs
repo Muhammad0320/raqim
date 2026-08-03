@@ -200,7 +200,30 @@ impl AxonGateKeeper {
     }
 
     /// Verifies a localizes audit record using inclusion proof with zero db dependencies
-    pub fn verify_inclusion(log: &OpLog, proof: &InclusionProof) -> bool {}
+    pub fn verify_inclusion(log: &OpLog, proof: &InclusionProof) -> bool {
+        let mut leaf_hasher = Hasher::new_derive_key("raqim.axon.v1.leaf");
+        leaf_hasher.update(&log.delta);
+        leaf_hasher.update(&log.agent_id);
+        let mut current_hash: [u8; 32] = leaf_hasher.finalize().into();
+
+        let mut index = proof.leaf_index;
+
+        for sibling in &proof.sibling_hashes {
+            let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
+            if index % 2 == 0 {
+                hasher.update(&current_hash);
+                hasher.update(sibling);
+            } else {
+                hasher.update(sibling);
+                hasher.update(&current_hash);
+            }
+
+            current_hash = hasher.finalize().into();
+            index /= 2;
+        }
+
+        current_hash == proof.markle_root
+    }
 
     /// Agent B uses this to verify the thoughts it received from iceoryx2
     pub fn verify_foreign_thoughts(&self, log: &Archived<OpLog>) -> bool {
