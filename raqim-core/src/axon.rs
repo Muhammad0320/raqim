@@ -1,9 +1,10 @@
 use crate::OpLog;
 use blake3::Hasher;
 use dashmap::DashMap;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, lock_api::RwLock};
 use rkyv::Archived;
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, atomic::Ordering::SeqCst};
 
 /// A completed cryptographic audit checkpoint batch ready for ledger immutability
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,44 +35,89 @@ pub struct ActiveTreeBuffer {
 /// The active Governance GateKeeper.
 pub struct AxonGateKeeper {
     /// Thread-safe active memory arenas partiioned per swarm namespce
-    pub active_bufferes: DashMap<String, Arc<RwLock<ActiveTreeBuffer>>>,
+    pub active_buffers: DashMap<String, Arc<RwLock<ActiveTreeBuffer>>>,
 
     /// The global completed block ledger for historical lookups
-    pub batch_arrive: DashMap<u64, MarkleBatch>,
+    pub batch_archive: DashMap<u64, MarkleBatch>,
     pub global_batch_counter: std::sync::atomic::AtomicU64,
 }
 
 impl AxonGateKeeper {
     pub fn new() -> Self {
         Self {
-            last_known_hash: DashMap::new(),
+            active_buffers: DashMap::new(), 
+            batch_archive: DashMap::new(), 
+            global_batch_counter: std::sync::atomic::AtomicU64::new(0)
         }
     }
 
-    /// Intercepts the raw thought, cryptographically seals it into a specific namespace DAG, and returns the mutated Oplog ready or the WAL and Cortex.
-    pub fn seal_thought(&self, mut log: OpLog) -> OpLog {
-        let mut hasher = Hasher::new();
+    /// Ingest a raw thought, cryptographically seals its position ans triggers automatic Markle Tree crystallization when chunk capacity hits 1,024 
+    pub fn seal_thought(&self, mut log: OpLog) -> (Oplog, Option<MarkleBatch>) {
         let namespace = log.state.namespace.clone();
 
-        // Acquire a localized, sharded reference to the namespace hash; If it doesn't exist we default to genesis zero hash
-        let mut shard_hash_ref = self.last_known_hash.entry(namespace).or_insert([0u8; 32]);
+        // Pass 1: Acquire reference to the namespace buffer
+        let buffer_arc = self.active_buffers.entry(namespace.clone()).or_insert_with(|| {
 
-        // 2. Mutate the log to include the prev link in the chain
-        log.previous_hash = *shard_hash_ref;
+            Arc::new(RwLock::new( ActiveTreeBuffer { current_batch_id: self.global_batch_counter.fetch_add(1, SeqCst), parent_batch_root: [0u8; 32], accumulated_leaves: Vec::with_capacity(1024), accumulated_logs: Vec::with_capacity(1024) } ))
 
-        // 3. Hash the payloadsize, agent_id and previous hash
-        hasher.update(&log.delta);
-        hasher.update(&log.agent_id);
-        hasher.update(&log.previous_hash);
+        }).value().clone();
 
-        // 4. Finalize the current hash and mutate the log
-        let current_hash: [u8; 32] = hasher.finalize().into();
-        log.current_hash = current_hash;
+        let mut buffer = buffer_arc.write();
 
-        // 5. Update the gatekeepers memory for this specific namespace.
-        *shard_hash_ref = current_hash;
+        // Compute the discrete leaf cryptographic hash using domain separation
+        let mut leaf_hasher = Hasher::new_derive_key("raqim.axon.v1.leaf");
+        leaf_hasher.update(&log.delta);
+        leaf_hasher.update(&log.agent_id);
+        let leaf_hash: [u8; 32] = leaf_hasher.finalize().into();
 
-        log
+        log.previous_hash = buffer.parent_batch_root;
+        log.current_hash = leaf_hash;
+
+        buffer.accumulated_leaves.push(leaf_hash);
+        buffer.accumulated_logs.push(log.clone());
+
+        // Cap Checkpoint: If capacity hits 1,024 leaves, crystallize the Markle Tree
+        if buffer.accumulated_leaves.len() >= 1024 {
+
+            let root = Self::compute_markle_root(&buffer.accumulated_leaves);
+
+            let completed_batch = MarkleBatch {
+                batch_id: buffer.current_batch_id, 
+                namespace: namespace.clone(),
+                markle_root: root, 
+                parent_batch_root: buffer.parent_batch_root, 
+                leaves: buffer.accumulated_leaves.clone()
+
+            };
+
+            //  Archive completed block for historical query proofs
+            self.batch_archive.insert(completed_batch.batch_id, completed_batch.clone());
+
+            // Advace the StatePipeline cleanly
+            buffer.parent_batch_root = root; 
+            buffer.current_batch_id = self.global_batch_counter.fetch_add(1, SeqCst);
+            buffer.accumulated_leaves.clear();
+            buffer.accumulated_logs.clear();
+
+            return  (log, Some(completed_batch));
+
+        }
+
+        (log, None)
+    }
+
+    /// Internal Engine loop: Condenses an arbitrary array of leaf hashes into a single Markle Root
+    pub fn compute_markle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
+
+        if leaves.is_empty() {
+            return [0u8; 32];
+        }
+
+        let mut current_level = leaves.to_vec();
+        while current_level.len() > 1 {
+            let mut next_level
+        }
+
     }
 
     /// Agent B uses this to verify the thoughts it received from iceoryx2
