@@ -7,7 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, atomic::Ordering::SeqCst};
 
 /// A completed cryptographic audit checkpoint batch ready for ledger immutability
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+)]
 pub struct MarkleBatch {
     pub batch_id: u64,
     pub namespace: String,
@@ -51,14 +53,17 @@ impl AxonGateKeeper {
         }
     }
 
-    /// Ingest a raw thought, cryptographically seals its position ans triggers automatic Markle Tree crystallization when chunk capacity hits 1,024
-    pub fn seal_thought(&self, mut log: OpLog) -> (OpLog, Option<MarkleBatch>) {
-        let namespace = log.state.namespace.clone();
-
+    /// Single Core Ingestion Engine: Appends leaf hash, checks batch capacity, and crystallizes Merkle Root if full
+    fn ingest_leaf_internal(
+        &self,
+        namespace: &str,
+        leaf_hash: [u8; 32],
+        log: OpLog,
+    ) -> Option<MarkleBatch> {
         // Pass 1: Acquire reference to the namespace buffer
         let buffer_arc = self
             .active_buffers
-            .entry(namespace.clone())
+            .entry(namespace.to_string())
             .or_insert_with(|| {
                 Arc::new(RwLock::new(ActiveTreeBuffer {
                     current_batch_id: self.global_batch_counter.fetch_add(1, SeqCst),
@@ -71,18 +76,8 @@ impl AxonGateKeeper {
             .clone();
 
         let mut buffer = buffer_arc.write();
-
-        // Compute the discrete leaf cryptographic hash using domain separation
-        let mut leaf_hasher = Hasher::new_derive_key("raqim.axon.v1.leaf");
-        leaf_hasher.update(&log.delta);
-        leaf_hasher.update(&log.agent_id);
-        let leaf_hash: [u8; 32] = leaf_hasher.finalize().into();
-
-        log.previous_hash = buffer.parent_batch_root;
-        log.current_hash = leaf_hash;
-
         buffer.accumulated_leaves.push(leaf_hash);
-        buffer.accumulated_logs.push(log.clone());
+        buffer.accumulated_logs.push(log);
 
         // Cap Checkpoint: If capacity hits 1,024 leaves, crystallize the Markle Tree
         if buffer.accumulated_leaves.len() >= 1024 {
@@ -90,7 +85,7 @@ impl AxonGateKeeper {
 
             let completed_batch = MarkleBatch {
                 batch_id: buffer.current_batch_id,
-                namespace: namespace.clone(),
+                namespace: namespace.to_string(),
                 markle_root: root,
                 parent_batch_root: buffer.parent_batch_root,
                 leaves: buffer.accumulated_leaves.clone(),
@@ -106,10 +101,36 @@ impl AxonGateKeeper {
             buffer.accumulated_leaves.clear();
             buffer.accumulated_logs.clear();
 
-            return (log, Some(completed_batch));
+            return Some(completed_batch);
         }
 
-        (log, None)
+        None
+    }
+
+    /// Ingest a raw thought, cryptographically seals its position ans triggers automatic Markle Tree crystallization when chunk capacity hits 1,024
+    pub fn seal_thought(&self, mut log: OpLog) -> (OpLog, Option<MarkleBatch>) {
+        let namespace = log.state.namespace.clone();
+
+        // Compute the discrete leaf cryptographic hash using domain separation
+        let mut leaf_hasher = Hasher::new_derive_key("raqim.axon.v1.leaf");
+        leaf_hasher.update(&log.delta);
+        leaf_hasher.update(&log.agent_id);
+        let leaf_hash: [u8; 32] = leaf_hasher.finalize().into();
+
+        // Fetch parent root hash for temporal linkage
+        let parent_root = self
+            .active_buffers
+            .get(&namespace)
+            .map(|b| b.read().parent_batch_root)
+            .unwrap_or([0u8; 32]);
+
+        log.previous_hash = parent_root;
+        log.current_hash = leaf_hash;
+
+        // Delegate to internal ingestion helper
+        let batch = self.ingest_leaf_internal(&namespace, leaf_hash, log.clone());
+
+        (log, batch)
     }
 
     /// Internal Engine loop: Condenses an arbitrary array of leaf hashes into a single Markle Root
@@ -197,6 +218,12 @@ impl AxonGateKeeper {
             sibling_hashes,
             markle_root: batch.markle_root,
         })
+    }
+
+    /// THE PHOENIX CRASH RECOVERY COMPONENT
+    pub fn hydrate_from_recovery(&self, log: &OpLog) {
+        let namespace = log.state.namespace.clone();
+        let _ = self.ingest_leaf_internal(&namespace, log.current_hash, log.clone());
     }
 
     /// Verifies a localizes audit record using inclusion proof with zero db dependencies
