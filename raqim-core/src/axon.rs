@@ -1,5 +1,5 @@
 use crate::OpLog;
-use blake3::{Hash, Hasher};
+use blake3::Hasher;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use rkyv::Archived;
@@ -120,9 +120,9 @@ impl AxonGateKeeper {
 
         let mut current_level = leaves.to_vec();
         while current_level.len() > 1 {
-            let mut next_level = Vec::with_capacity((current_level.len() + 1) / 2);
+            let mut next_level: Vec<[u8; 32]> = Vec::with_capacity((current_level.len() + 1) / 2);
 
-            for chunk in next_level.chunks(2) {
+            for chunk in current_level.chunks(2) {
                 if chunk.len() == 2 {
                     let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
                     hasher.update(&chunk[0]);
@@ -160,7 +160,7 @@ impl AxonGateKeeper {
         let mut index = leaf_index;
 
         while current_level.len() > 1 {
-            let next_level = Vec::new();
+            let mut next_level = Vec::new();
 
             for chunk in current_level.chunks(2) {
                 if chunk.len() == 2 {
@@ -169,7 +169,7 @@ impl AxonGateKeeper {
                     hasher.update(&chunk[1]);
                     next_level.push(hasher.finalize().into());
                 } else {
-                    let mut hasher = Hash::new_derive_key("raqim.axon.v1.node");
+                    let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
                     hasher.update(&chunk[0]);
                     hasher.update(&chunk[0]);
                     next_level.push(hasher.finalize().into());

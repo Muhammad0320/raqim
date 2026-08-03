@@ -100,8 +100,6 @@ impl WalEngine {
                         let _ = active_file.sync_data().await;
                     }
 
-
-
                     // Path C: Segment Rotation Command
                     cmd = cmd_rx.recv() => {
                         match cmd {
