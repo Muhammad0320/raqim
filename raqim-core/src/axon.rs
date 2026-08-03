@@ -1,7 +1,7 @@
 use crate::OpLog;
-use blake3::Hasher;
+use blake3::{Hash, Hasher};
 use dashmap::DashMap;
-use parking_lot::{RwLock, lock_api::RwLock};
+use parking_lot::RwLock;
 use rkyv::Archived;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, atomic::Ordering::SeqCst};
@@ -142,6 +142,65 @@ impl AxonGateKeeper {
 
         current_level[0]
     }
+
+    /// Compiles an O(log N) verification math track for targeted historical batch block
+    pub fn generate_inclusion_proof(
+        &self,
+        batch_id: u64,
+        leaf_index: usize,
+    ) -> Option<InclusionProof> {
+        let batch = self.batch_archive.get(&batch_id)?;
+
+        if leaf_index >= batch.leaves.len() {
+            return None;
+        }
+
+        let mut sibling_hashes = Vec::new();
+        let mut current_level = batch.leaves.clone();
+        let mut index = leaf_index;
+
+        while current_level.len() > 1 {
+            let next_level = Vec::new();
+
+            for chunk in current_level.chunks(2) {
+                if chunk.len() == 2 {
+                    let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
+                    hasher.update(&chunk[0]);
+                    hasher.update(&chunk[1]);
+                    next_level.push(hasher.finalize().into());
+                } else {
+                    let mut hasher = Hash::new_derive_key("raqim.axon.v1.node");
+                    hasher.update(&chunk[0]);
+                    hasher.update(&chunk[0]);
+                    next_level.push(hasher.finalize().into());
+                }
+            }
+
+            // Extract the immediate sibling index parameter
+            let sibling_idx = if index % 2 == 0 {
+                if index + 1 < current_level.len() {
+                    index + 1
+                } else {
+                    index
+                }
+            } else {
+                index - 1
+            };
+
+            sibling_hashes.push(current_level[sibling_idx]);
+            current_level = next_level;
+            index /= 2;
+        }
+
+        Some(InclusionProof {
+            leaf_index,
+            sibling_hashes,
+            markle_root: batch.markle_root,
+        })
+    }
+
+    /// Verifies a localizes audit record using inclusion proof with zero db dependencies
+    pub fn verify_inclusion(log: &OpLog, proof: &InclusionProof) -> bool {}
 
     /// Agent B uses this to verify the thoughts it received from iceoryx2
     pub fn verify_foreign_thoughts(&self, log: &Archived<OpLog>) -> bool {
