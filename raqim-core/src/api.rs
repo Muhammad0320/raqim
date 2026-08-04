@@ -556,7 +556,7 @@ pub async fn vault_telemetry_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
 ) -> Result<Json<VaultTelemetry>, StatusCode> {
-    let wal_pending_count = state.wal.get_pending_count();
+    let wal_pending_count = state.wal.get_pending_count().await;
 
     let total_vectors = state.lance.get_total_vector_count().await.unwrap_or(0);
 

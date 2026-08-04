@@ -614,8 +614,8 @@ impl LanceEngine {
     pub async fn fetch_closest_snapshot(
         &self,
         agent_hex: &str,
-        target_tx_id: i64,
-    ) -> Result<(u64, u64, Vec<u8>), anyhow::Error> {
+        target_tx_id: u128,
+    ) -> Result<(u128, u64, Vec<u8>), anyhow::Error> {
         let table = self.db.open_table(&self.snapshot_table).execute().await?;
 
         // SQL-Style Filter: Find the highest TxID for this agent that's <= target.
@@ -625,10 +625,6 @@ impl LanceEngine {
                 "agent_id = '{}' AND tx_id <= {} ",
                 agent_hex, target_tx_id
             ))
-            // Ensure we get the absolute closest one
-            // .order_by(vec![
-            //     lancedb::query::ExecutableQuery::order_by("tx_id").desc(),
-            // ])
             .limit(1)
             .execute()
             .await?;
@@ -639,7 +635,7 @@ impl LanceEngine {
                 .column_by_name("tx_id")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<Int64Array>()
+                .downcast_ref::<StringArray>()
                 .unwrap();
 
             let time_col = batch
@@ -657,7 +653,7 @@ impl LanceEngine {
                 .unwrap();
 
             return Ok((
-                tx_col.value(0) as u64,
+                u128::from_str_radix(tx_col.value(0), 16).unwrap_or(0),
                 time_col.value(0) as u64,
                 blob_col.value(0).to_vec(),
             ));

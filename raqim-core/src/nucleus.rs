@@ -177,10 +177,13 @@ impl WalEngine {
         batch: &[OpLog],
         index: &Arc<RwLock<BTreeMap<u128, u64>>>,
     ) {
+        if batch.is_empty() {
+            return;
+        }
         let first_txid = batch[0].state.transaction_id;
 
         // zero-copy serialize the entire batch
-        let bytes = to_bytes::<rkyv::rancor::Error>(batch)
+        let bytes = to_bytes::<rkyv::rancor::Error>(&batch.to_vec())
             .expect("Failed to serialize batch")
             .into_vec();
 

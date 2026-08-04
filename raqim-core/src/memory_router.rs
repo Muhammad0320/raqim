@@ -151,7 +151,7 @@ impl MemoryRouter {
     }
 
     /// FORENSIC TIME MACHINE
-    pub async fn fetch_by_txid(&self, target_tx_id: u64) -> Result<String, anyhow::Error> {
+    pub async fn fetch_by_txid(&self, target_tx_id: u128) -> Result<String, anyhow::Error> {
         let mut result = None;
 
         // 1. Hot Memory ( Zero-copy WAL scan )
@@ -215,17 +215,17 @@ impl MemoryRouter {
     pub async fn rebuild_agent_timeline(
         &self,
         agent_hex: &str,
-        target_tx_id: u64,
+        target_tx_id: u128,
         wal_engine: Arc<WalEngine>,
-    ) -> Result<(Vec<u8>, Vec<OpLog>, u64, u64), anyhow::Error> {
+    ) -> Result<(Vec<u8>, Vec<OpLog>, u128, u64), anyhow::Error> {
         self.telemetry.record_time_travel();
 
         // RESOLVE THE TARGET INFINITY HACK
         // Find the highest known tx_id for this agent.
-        let actual_target_transaction = if target_tx_id == u64::MAX {
+        let actual_target_transaction = if target_tx_id == u128::MAX {
             // Checking the WAL Index first
             let wal_max = {
-                let idex = wal_engine.index.read().unwrap();
+                let idex = wal_engine.index.read().await;
                 idex.keys().copied().filter(|&k| k > 0).max()
             };
 
