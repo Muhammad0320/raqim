@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{eprintln, format, println};
 
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmStateRegistry;
@@ -230,7 +231,7 @@ impl GlobalNetworkBridge {
         ))
     }
 
-    /// Executed  by AegisGateKeeper when quarantine is triggered locally.
+    /// Broadcasts local quarantine to the global swarm over Zenoh
     pub async fn broadcast_quarantine_sync(&self, record: QuarantineRecord) {
         if !self.allow_global_aegis.load(Ordering::Relaxed) {
             return;
@@ -238,7 +239,56 @@ impl GlobalNetworkBridge {
 
         let key_expr = format!("{}/system/quarantine", self.workspace_prefix);
         let bytes = postcard::to_allocvec(&record).unwrap();
-        let _ = self.session.put(key_expr, bytes).await;
+        if let Err(e) = self.session.put(key_expr, bytes).await {
+            eprintln!(
+                "[NETWORK WARN] Failed to broadcast quarantine record: {} ",
+                e
+            );
+        }
+    }
+
+    /// Listens for global quarantine signals broadcast by peer nodes over zenoh
+    pub async fn listen_for_global_quarantine(&self, aegis: Arc<AegisGateKeeper>) {
+        let key_exp = format!("{}/system/quarantine", self.workspace_prefix);
+        let session_clone = self.session.clone();
+        let allow_aegis = self.allow_global_aegis.clone();
+        let my_node_id = self.os_node_id.clone();
+
+        println!(
+            "[NETWORK CORE] Aegis Global Quarantine subscriber active on: {} ",
+            key_exp.clone()
+        );
+
+        tokio::spawn(async move {
+            let subscriber = match session_clone.declare_subscriber(&key_exp).await {
+                Ok(sub) => sub,
+                Err(e) => {
+                    eprintln!(
+                        "[NETWORK FATAL] Failed to declare quarantine subscriber: {}",
+                        e
+                    );
+                    return;
+                }
+            };
+
+            while let Ok(sample) = subscriber.recv_async().await {
+                if !allow_aegis.load(Ordering::Relaxed) {
+                    return;
+                }
+
+                let payload_bytes = sample.payload().to_bytes();
+
+                // Deserialize incoming quarantine record
+                if let Ok(record) = postcard::from_bytes::<QuarantineRecord>(&payload_bytes) {
+                    // Assimilate directly into local aegis blocklist
+                    aegis.assimilate_remote_quarantine(record);
+                } else {
+                    eprintln!(
+                        "[NETWORK WARN] Received malformed QuarantineRecord on system channel "
+                    );
+                }
+            }
+        });
     }
 
     /// Listens for foreign thoughts from the global network using a wildcard, dropping echoes from outselves
