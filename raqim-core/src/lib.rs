@@ -19,7 +19,8 @@ pub mod utils;
 
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::format;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
@@ -34,7 +35,7 @@ use crate::{axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngi
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
 pub struct AgentState {
     pub agent_id: Option<[u8; 16]>,
-    pub transaction_id: u64,
+    pub transaction_id: u128,
 
     pub timestamp: i64,
     pub status: AgentStatus,
@@ -88,6 +89,11 @@ pub struct IngressEnvelope {
     pub capability_cert: Vec<u8>, // The master token signed by the Master Key
 }
 
+#[inline(always)]
+pub fn generate_uuidv7_txid() -> u128 {
+    uuid::Uuid::now_v7().as_u128()
+}
+
 pub async fn execute_raqim_cascade(
     archive_state: &rkyv::Archived<AgentState>, // True Zero Copy
     axon: Arc<AxonGateKeeper>,
@@ -95,12 +101,11 @@ pub async fn execute_raqim_cascade(
     shard_brain: Arc<SwarmStateRegistry>,
     cortex_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
-    global_tx_counter: Arc<AtomicU64>,
     tx: Sender<SystemEvent>,
     seeds: Vec<u64>,
     responses: Vec<String>,
     telemetry: Arc<TelemetryEngine>,
-) -> Result<u64, anyhow::Error> {
+) -> Result<u128, anyhow::Error> {
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];
 
@@ -115,10 +120,13 @@ pub async fn execute_raqim_cascade(
 
     let agent_hex = hex::encode(final_agent_id);
 
+    // Generate globally uniique, time-ordered 128-bit UUIDv7
+    let tx_id = generate_uuidv7_txid();
+
     let enriched_state = AgentState {
         agent_id: Some(final_agent_id),
         namespace: archive_state.namespace.to_string(),
-        transaction_id: global_tx_counter.fetch_add(1, Ordering::SeqCst),
+        transaction_id: tx_id,
 
         timestamp: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -156,6 +164,9 @@ pub async fn execute_raqim_cascade(
     let (sealed_log, optional_markle_batch) = axon.seal_thought(raw_log);
 
     // TODO: Trigger system event
+    if let Some(batch) = optional_markle_batch {
+        let _ = tx.send(SystemEvent::MarkleBatchCrystallized { batch });
+    }
 
     // 4. Fire to wal (Durability)
     wal.append(sealed_log.clone()).await;
@@ -166,21 +177,24 @@ pub async fn execute_raqim_cascade(
 
     global_net.broadcast_to_world(&sealed_log).await;
 
+    // Convert u128 to hex string for human-readable sse event
+    let tx_id_hex = format!("{:032x}", tx_id);
+
     let _ = tx.send(SystemEvent::ThoughtCommitted {
         agent_id: agent_hex.clone(),
-        tx_id: enriched_state.clone().transaction_id,
+        tx_id: tx_id_hex,
         namespace: enriched_state.clone().namespace,
         text: enriched_state.clone().text,
     });
 
-    Ok(enriched_state.transaction_id)
+    Ok(tx_id)
 }
 
 #[derive(Clone, Debug, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize)]
 pub enum SystemEvent {
     ThoughtCommitted {
         agent_id: String,
-        tx_id: u64,
+        tx_id: String,
         namespace: String,
         text: String,
     },

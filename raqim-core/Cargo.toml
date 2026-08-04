@@ -27,7 +27,7 @@ blake3 =  "1.5"
 zenoh = "1.7.2"
 sysinfo = "0.30"
 hex =  "0.4"
-uuid = { version = "1.8", features = ["v4"] }
+uuid = { version = "1.10", features = ["v7", "serde"] }
 
 lancedb = "0.9"
 arrow-array = "52.2"
