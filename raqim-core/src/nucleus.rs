@@ -207,8 +207,8 @@ impl WalEngine {
     }
 
     /// Returns the exact number of uncompacted thoughts currently in the Hot WAL. O(1) operation utilizing the BTreeMap index
-    pub fn get_pending_count(&self) -> usize {
-        self.index.read().unwrap().len()
+    pub async fn get_pending_count(&self) -> usize {
+        self.index.read().await.len()
     }
 
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.

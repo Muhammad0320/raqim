@@ -13,6 +13,7 @@ use lancedb::connection::Connection;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use std::collections::HashMap;
+use std::format;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -119,7 +120,7 @@ impl LanceEngine {
                 .column_by_name("transaction_id")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<Int64Array>()
+                .downcast_ref::<StringArray>()
                 .unwrap();
             let dist_col = batch
                 .column_by_name("_distance")
@@ -133,7 +134,8 @@ impl LanceEngine {
                 let similatiry = 1.0 - dist_col.value(i);
 
                 results.push(VaultSearchResult {
-                    tx_id: tx_id_col.value(i) as u128,
+                    tx_id: u128::from_str_radix(&tx_id_col.value(i).to_string().as_str(), 16)
+                        .unwrap_or(0),
                     agent_hex: agent_id_col.value(i).to_string(),
                     namespace: ns_col.value(i).to_string(),
                     source: "LANCEDB".to_string(),
@@ -150,7 +152,7 @@ impl LanceEngine {
     /// The exact Apache Arrow Schema mapping for our OpLog
     fn schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
-            Field::new("tx_id", DataType::Int64, false),
+            Field::new("tx_id", DataType::Utf8, false),
             Field::new("agent_id", DataType::Utf8, false),
             Field::new("namespace", DataType::Utf8, false),
             Field::new("timestamp", DataType::Int64, false),
@@ -371,7 +373,10 @@ impl LanceEngine {
         }
 
         // 1. Columnar transformation (Tearing struct apart)
-        let tx_ids: Vec<i64> = logs.iter().map(|l| l.state.transaction_id as i64).collect();
+        let tx_ids: Vec<String> = logs
+            .iter()
+            .map(|l| format!("{:032x}", l.state.transaction_id))
+            .collect();
         let agent_ids: Vec<String> = logs.iter().map(|l| hex::encode(l.agent_id)).collect();
         let statuses: Vec<String> = logs
             .iter()
@@ -394,7 +399,7 @@ impl LanceEngine {
         let texts: Vec<String> = logs.iter().map(|l| l.state.text.clone()).collect();
 
         // 2. Build the Zero-Copy Arrow Arrays
-        let tx_id_array = Arc::new(Int64Array::from(tx_ids));
+        let tx_id_array = Arc::new(StringArray::from(tx_ids));
         let agent_id_array = Arc::new(StringArray::from(agent_ids));
         let payload_array = Arc::new(BinaryArray::from(payloads));
         let timestamp_array = Arc::new(Int64Array::from(timestmaps));
@@ -480,13 +485,14 @@ impl LanceEngine {
                 .column_by_name("tx_id")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<arrow_array::Int64Array>()
+                .downcast_ref::<arrow_array::StringArray>()
                 .unwrap();
 
             for i in 0..tx_col.len() {
-                let tx = tx_col.value(i) as u128;
+                let tx_str = tx_col.value(i);
+                let tx = u128::from_str_radix(tx_str, 16).unwrap_or(0);
                 if tx > max_tx {
-                    max_tx = tx
+                    max_tx = tx;
                 }
             }
         }
@@ -758,7 +764,7 @@ impl LanceEngine {
                 .column_by_name("transaction_id")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<Int64Array>()
+                .downcast_ref::<StringArray>()
                 .unwrap();
             let status_col = batch
                 .column_by_name("status")
@@ -775,7 +781,8 @@ impl LanceEngine {
 
             for i in 0..tx_col.len() {
                 nodes.push(TimelineNode {
-                    tx_id: tx_col.value(i) as u128,
+                    tx_id: u128::from_str_radix(&tx_col.value(i).to_string().as_str(), 16)
+                        .unwrap_or(0),
                     timestamp: timestamp_col.value(i).to_string(),
                     agent_status: status_col.value(i).to_string(),
                     payload_preview: text_col.value(i).to_string(),
