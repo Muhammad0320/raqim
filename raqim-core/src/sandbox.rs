@@ -61,7 +61,7 @@ pub struct SandboxContent {
 
 #[derive(Debug, Clone, Copy)]
 pub struct CheckPointTracker {
-    pub last_snapshot_tx: u64,
+    pub last_snapshot_tx: u128,
     pub last_snapshot_time: u64,
 }
 
@@ -137,7 +137,7 @@ impl WasmEngine {
         wasm_binary: &[u8],
         content: SandboxContent,
         tracker: &mut CheckPointTracker,
-        current_tx_id: u64,
+        current_tx_id: u128,
         historical_snapshot: Option<Vec<u8>>,
     ) -> Result<(), anyhow::Error> {
         let mut linker = Linker::new(&self.engine);

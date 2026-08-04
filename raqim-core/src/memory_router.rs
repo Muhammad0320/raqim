@@ -235,7 +235,7 @@ impl MemoryRouter {
                 // If WAL is empty/ compacted, ask lanceDB for the absolute highest recorded tx_id
                 let (max_lance_tx, _, _) = self
                     .lance_engine
-                    .fetch_closest_snapshot(agent_hex, i64::MAX)
+                    .fetch_closest_snapshot(agent_hex, u128::MAX)
                     .await
                     .unwrap_or((0, 0, Vec::new()));
                 max_lance_tx
@@ -247,14 +247,14 @@ impl MemoryRouter {
         // 1. O(1) COLD MEMORY JUMP (LanceDB)
         let (snapshot_txid, snapshot_timestamp, memory_blob) = self
             .lance_engine
-            .fetch_closest_snapshot(agent_hex, target_tx_id as i64)
+            .fetch_closest_snapshot(agent_hex, target_tx_id)
             .await
             .unwrap_or((0, 0, Vec::new()));
 
         // Determine if we need deep discovery (LanceDB) or Hot Recoverey (WAL)
         let oldest_wal_tx = {
-            let idx = wal_engine.index.read().unwrap();
-            idx.keys().next().cloned().unwrap_or(u64::MAX) // Get the current smallest TxID currently in the WAL
+            let idx = wal_engine.index.read().await;
+            idx.keys().next().cloned().unwrap_or(u128::MAX) // Get the current smallest TxID currently in the WAL
         };
 
         println!(
@@ -266,7 +266,7 @@ impl MemoryRouter {
 
         // 2. O(1) WAL INDEX SEEK
         // We calculate the very next TxID we need to read
-        let next_txid = (snapshot_txid as u64) + 1;
+        let next_txid = snapshot_txid;
 
         if actual_target_transaction < oldest_wal_tx {
             // DEEP TIME TRAVEL: The WAL has been compacted. We must read from LanceDB.
@@ -297,7 +297,7 @@ impl MemoryRouter {
                     .column_by_name("transaction_id")
                     .unwrap()
                     .as_any()
-                    .downcast_ref::<arrow_array::Int64Array>()
+                    .downcast_ref::<arrow_array::StringArray>()
                     .expect(" FATAL: trasaction_id column isn't an Int64Array");
                 let text_col = batch
                     .column_by_name("text")
@@ -370,7 +370,11 @@ impl MemoryRouter {
                         state: crate::AgentState {
                             agent_id: Some([0; 16]),
                             namespace: namespace_col.value(i).to_string(),
-                            transaction_id: tx_id_col.value(i) as u64,
+                            transaction_id: u128::from_str_radix(
+                                &tx_id_col.value(i).to_string().as_str(),
+                                16,
+                            )
+                            .unwrap_or(0),
                             timestamp: timestamp_col.value(i),
                             status,
                             text: text_col.value(i).to_string(),
@@ -386,7 +390,7 @@ impl MemoryRouter {
             if next_txid <= target_tx_id {
                 // Ask the mutex protected BTreeMap for the exact byte offset on the SSD
                 let start_byte = {
-                    let idx = wal_engine.index.read().unwrap();
+                    let idx = wal_engine.index.read().await;
                     idx.get(&next_txid).cloned().unwrap_or(0)
                 };
 
@@ -449,7 +453,7 @@ impl MemoryRouter {
     pub async fn boot_historical_agent(
         &self,
         agent_hex: &str,
-        target_tx_id: Option<u64>,
+        target_tx_id: Option<u128>,
         fork_config: Option<ForkConfig>,
         is_isolated_debug: bool,
         phantom_ui_tx: tokio::sync::broadcast::Sender<UiEvent>,
@@ -462,7 +466,7 @@ impl MemoryRouter {
             ));
         }
 
-        let fetch_target = target_tx_id.unwrap_or(u64::MAX);
+        let fetch_target = target_tx_id.unwrap_or(u128::MAX);
 
         let (memory_blob, historical_oplog, snapshot_tx, snapshot_timestamp) = self
             .rebuild_agent_timeline(agent_hex, fetch_target, self.wal_engine.clone())
@@ -678,8 +682,7 @@ impl MemoryRouter {
 
         // If we're time travelling the agent starts from the target_tx_id
         // If Resurrection, we pass in the CURRENT global counter so it resumes at the tip of reality
-        let execution_start_tx =
-            target_tx_id.unwrap_or_else(|| self.global_tx_counter.load(Ordering::SeqCst));
+        let execution_start_tx = target_tx_id.unwrap_or(snapshot_tx);
 
         tokio::spawn(async move {
             // Read the WASM binary from the disk
