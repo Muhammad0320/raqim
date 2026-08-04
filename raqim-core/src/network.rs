@@ -199,7 +199,7 @@ impl GlobalNetworkBridge {
         if let Ok(Ok(reply)) = timeout(Duration::from_secs(15), reply_future).await {
             if let Ok(sample) = reply.result() {
                 // Return the answer bytes back to the caller
-                let res_bytes = sample.payload().to_bytes().to_vec();
+                let res_bytes: Vec<u8> = sample.payload().to_bytes().to_vec();
                 telemetry.record_a2a_bytes(res_bytes.len() as u64);
 
                 // Attempt to parse the pythons SDK's envelope to extract the true responder and answer

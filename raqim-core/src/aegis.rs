@@ -5,6 +5,7 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
+use std::eprintln;
 use std::sync::mpsc::channel;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
@@ -137,6 +138,11 @@ impl AegisGateKeeper {
         }
     }
 
+    #[inline(always)]
+    pub fn is_quarantined(&self, agent_hex: &str) -> bool {
+        self.quarantine_blocklist.contains_key(agent_hex)
+    }
+
     /// Locks down the agent globally across the OS
     pub fn trigger_quarantine(&self, agent_hex: &str, target: &str, v_type: &str, reason: &str) {
         let timestamp = SystemTime::now()
@@ -176,6 +182,37 @@ impl AegisGateKeeper {
         let _ = eprintln!(
             "\n[AEGIS RED ALERT] Unauthorized access attempts by {} on path: {}, Violation Type: {}, Reason: {} ",
             agent_hex, target, v_type, reason
+        );
+    }
+
+    /// Remote Ingestion: Triggered when a foreign node broadcasts a quarantine over Zenoh
+    pub fn assimilate_remote_quarantine(&self, record: QuarantineRecord) {
+        // prevent redundant processing if already blocklisted
+        if self.quarantine_blocklist.contains_key(&record.agent_hex) {
+            return;
+        }
+
+        //  Mutate local firewall blocklist instantly.
+        self.quarantine_blocklist
+            .insert(record.agent_hex.clone(), record.clone());
+
+        // Trigger local security breach alerts
+        let _ = self.tx.send(SystemEvent::SecurityBreach {
+            agent_id: record.agent_hex.clone(),
+            reason: format!(
+                "Global Network Quarantine: {}",
+                record.violation_type.clone()
+            ),
+            culprit_text: record.payload_preview.clone(),
+        });
+
+        let _ = self.ui_tx.send(UiEvent::AegisAlert {
+            record: record.clone(),
+        });
+
+        eprintln!(
+            "[AEGIS MESH INTERDICTION] Remote quarantine assimilated from network for agent {}. Reason: {} ",
+            record.agent_hex, record.violation_type
         );
     }
 
