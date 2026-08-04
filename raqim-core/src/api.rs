@@ -113,7 +113,7 @@ pub enum UiEvent {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct VaultSearchResult {
-    pub tx_id: u64,
+    pub tx_id: u128,
     pub agent_hex: String,
     pub namespace: String,
     pub payload: String,
@@ -912,7 +912,7 @@ pub async fn active_qurantine_endpoint(
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TimelineNode {
-    pub tx_id: u64,
+    pub tx_id: u128,
     pub timestamp: String,
     pub agent_status: String,
     pub payload_preview: String,

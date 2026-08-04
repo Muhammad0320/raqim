@@ -5,7 +5,7 @@ use crate::{
 use aho_corasick::AhoCorasick;
 use memmap2::MmapOptions;
 use rkyv::to_bytes;
-use std::os::unix::fs::OpenOptionsExt;
+
 use std::{
     collections::BTreeMap,
     eprintln,
@@ -206,6 +206,11 @@ impl WalEngine {
         *current_offset += 4 + bytes.len() as u64;
     }
 
+    /// Returns the exact number of uncompacted thoughts currently in the Hot WAL. O(1) operation utilizing the BTreeMap index
+    pub fn get_pending_count(&self) -> usize {
+        self.index.read().unwrap().len()
+    }
+
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
     pub async fn append(&self, log: OpLog) {
         let _ = self.sender.send(log).await;
@@ -270,11 +275,6 @@ impl WalEngine {
         }
         results.reverse();
         Ok(results)
-    }
-
-    /// Returns the exact number of uncompacted thoughts currently in the Hot WAL. O(1) operation utilizing the BTreeMap index
-    pub fn get_pending_count(&self) -> usize {
-        self.index.read().unwrap().len()
     }
 
     /// Scans the raw WAL file to find the highest TxID it contains.

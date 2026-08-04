@@ -10,7 +10,6 @@ use rkyv::{Archive, Archived};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;

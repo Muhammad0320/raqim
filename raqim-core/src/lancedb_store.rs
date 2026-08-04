@@ -133,7 +133,7 @@ impl LanceEngine {
                 let similatiry = 1.0 - dist_col.value(i);
 
                 results.push(VaultSearchResult {
-                    tx_id: tx_id_col.value(i) as u64,
+                    tx_id: tx_id_col.value(i) as u128,
                     agent_hex: agent_id_col.value(i).to_string(),
                     namespace: ns_col.value(i).to_string(),
                     source: "LANCEDB".to_string(),
@@ -150,7 +150,7 @@ impl LanceEngine {
     /// The exact Apache Arrow Schema mapping for our OpLog
     fn schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
-            Field::new("tx_id", DataType::Int128, false),
+            Field::new("tx_id", DataType::Int64, false),
             Field::new("agent_id", DataType::Utf8, false),
             Field::new("namespace", DataType::Utf8, false),
             Field::new("timestamp", DataType::Int64, false),
@@ -455,6 +455,45 @@ impl LanceEngine {
         }
     }
 
+    /// Return (max_tx_id, total_vector_count)
+    pub async fn get_vault_metrics(&self) -> Result<(u128, u64), anyhow::Error> {
+        let table_res = self.db.open_table(&self.history_table).execute().await;
+
+        let table = match table_res {
+            Ok(t) => t,
+            Err(_) => return Ok((0, 0)),
+        };
+
+        let total_rows = table.count_rows(None).await? as u64;
+
+        if total_rows == 0 {
+            return Ok((0, 0));
+        }
+
+        // Bypass SQL. Stream the raw Apache Arrow batches and use SIMD max aggregation
+        let mut stream = table.query().execute().await?;
+        let mut max_tx: u128 = 0;
+
+        if let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+            let tx_col = batch
+                .column_by_name("tx_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<arrow_array::Int64Array>()
+                .unwrap();
+
+            for i in 0..tx_col.len() {
+                let tx = tx_col.value(i) as u128;
+                if tx > max_tx {
+                    max_tx = tx
+                }
+            }
+        }
+
+        Ok((max_tx, total_rows))
+    }
+
     // REAL RAG: Seaches semantic history using methematical vector proximity
     pub async fn search_memory(
         &self,
@@ -677,45 +716,6 @@ impl LanceEngine {
         Ok(format!("{} ({:.1})%", top_ns, percent))
     }
 
-    /// Return (max_tx_id, total_vector_count)
-    pub async fn get_vault_metrics(&self) -> Result<(u128, u64), anyhow::Error> {
-        let table_res = self.db.open_table(&self.history_table).execute().await;
-
-        let table = match table_res {
-            Ok(t) => t,
-            Err(_) => return Ok((0, 0)),
-        };
-
-        let total_rows = table.count_rows(None).await? as u64;
-
-        if total_rows == 0 {
-            return Ok((0, 0));
-        }
-
-        // Bypass SQL. Stream the raw Apache Arrow batches and use SIMD max aggregation
-        let mut stream = table.query().execute().await?;
-        let mut max_tx: u128 = 0;
-
-        if let Some(batch_result) = stream.next().await {
-            let batch = batch_result?;
-            let tx_col = batch
-                .column_by_name("tx_id")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<arrow_array::Int64Array>()
-                .unwrap();
-
-            for i in 0..tx_col.len() {
-                let tx = tx_col.value(i) as u128;
-                if tx > max_tx {
-                    max_tx = tx
-                }
-            }
-        }
-
-        Ok((max_tx, total_rows))
-    }
-
     /// Computes the exact size of the LanceDB directory on Disk
     pub async fn get_index_size_mb(&self) -> f64 {
         let table_dir = format!("{}/{}.lance", &self.storage_path, &self.history_table);
@@ -775,7 +775,7 @@ impl LanceEngine {
 
             for i in 0..tx_col.len() {
                 nodes.push(TimelineNode {
-                    tx_id: tx_col.value(i) as u64,
+                    tx_id: tx_col.value(i) as u128,
                     timestamp: timestamp_col.value(i).to_string(),
                     agent_status: status_col.value(i).to_string(),
                     payload_preview: text_col.value(i).to_string(),
