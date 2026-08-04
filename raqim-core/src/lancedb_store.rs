@@ -150,7 +150,7 @@ impl LanceEngine {
     /// The exact Apache Arrow Schema mapping for our OpLog
     fn schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
-            Field::new("tx_id", DataType::Int64, false),
+            Field::new("tx_id", DataType::Int128, false),
             Field::new("agent_id", DataType::Utf8, false),
             Field::new("namespace", DataType::Utf8, false),
             Field::new("timestamp", DataType::Int64, false),
@@ -678,7 +678,7 @@ impl LanceEngine {
     }
 
     /// Return (max_tx_id, total_vector_count)
-    pub async fn get_vault_metrics(&self) -> Result<(u64, u64), anyhow::Error> {
+    pub async fn get_vault_metrics(&self) -> Result<(u128, u64), anyhow::Error> {
         let table_res = self.db.open_table(&self.history_table).execute().await;
 
         let table = match table_res {
@@ -694,7 +694,7 @@ impl LanceEngine {
 
         // Bypass SQL. Stream the raw Apache Arrow batches and use SIMD max aggregation
         let mut stream = table.query().execute().await?;
-        let mut max_tx: u64 = 0;
+        let mut max_tx: u128 = 0;
 
         if let Some(batch_result) = stream.next().await {
             let batch = batch_result?;
@@ -706,7 +706,7 @@ impl LanceEngine {
                 .unwrap();
 
             for i in 0..tx_col.len() {
-                let tx = tx_col.value(i) as u64;
+                let tx = tx_col.value(i) as u128;
                 if tx > max_tx {
                     max_tx = tx
                 }

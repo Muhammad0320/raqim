@@ -589,7 +589,6 @@ async fn lift_qurantine_and_resurrect(
     State(state): State<ApiState>,
     Json(payload): Json<ResurrectPayload>,
 ) -> Result<StatusCode, StatusCode> {
-
     // Fire the Out-of-Band Context Eviction Via Zenoh
     println!(
         "[AEGIS] Dispatching Context Eviction to: {}... ",
@@ -659,7 +658,6 @@ async fn time_travel(
     State(state): State<ApiState>,
     Json(payload): Json<TimeTravelRequest>,
 ) -> Result<StatusCode, StatusCode> {
-
     println!(
         "[TIME TRAVEL] Admin requested Reality Forkk for Agent {} at TxID {} ",
         payload.agent_hex, payload.target_tx_id
@@ -827,7 +825,6 @@ pub async fn http_ingress_endpoint(
             task_brain,
             task_cortex,
             task_net,
-            task_counter_tx,
             task_event,
             Vec::new(),
             Vec::new(),

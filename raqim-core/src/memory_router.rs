@@ -651,7 +651,6 @@ impl MemoryRouter {
             shard: self.brain.clone(),
             cortex_tx: self.cortex_tx.clone(),
             global_net: active_net.clone(),
-            global_tx_counter: self.global_tx_counter.clone(),
             event_tx: actual_tx.clone(),
             wasi: wasi_ctx,
             lance: self.lance_engine.clone(),

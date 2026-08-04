@@ -770,7 +770,6 @@ async fn main() {
                         task_brain.clone(),
                         task_cortex_tx.clone(),
                         global_publisher.clone(),
-                        task_tx_couter.clone(),
                         task_event_tx.clone(),
                         Vec::new(),
                         Vec::new(),

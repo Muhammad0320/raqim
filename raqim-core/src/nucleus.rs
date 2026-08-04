@@ -24,7 +24,7 @@ pub struct WalEngine {
     sender: mpsc::Sender<OpLog>,
     pub cmd_sender: mpsc::Sender<WalCommand>,
     // The O(1) INDEX: Maps TxID -> Physical byte offset in the WAL.
-    pub index: Arc<RwLock<BTreeMap<u64, u64>>>,
+    pub index: Arc<RwLock<BTreeMap<u128, u64>>>,
 }
 
 pub enum WalCommand {
@@ -175,7 +175,7 @@ impl WalEngine {
         file: &mut tokio::fs::File,
         current_offset: &mut u64,
         batch: &[OpLog],
-        index: &Arc<RwLock<BTreeMap<u64, u64>>>,
+        index: &Arc<RwLock<BTreeMap<u128, u64>>>,
     ) {
         let first_txid = batch[0].state.transaction_id;
 
@@ -279,7 +279,7 @@ impl WalEngine {
 
     /// Scans the raw WAL file to find the highest TxID it contains.
     /// Executes syncronously during the OS Bootstrap phase.
-    pub fn get_highest_tx_id(&self, file_path: &str) -> u64 {
+    pub fn get_highest_tx_id(&self, file_path: &str) -> u128 {
         let mut file = match std::fs::File::open(file_path) {
             Ok(f) => f,
             Err(_) => {
@@ -291,7 +291,7 @@ impl WalEngine {
             }
         };
 
-        let mut highest_tx = 0;
+        let mut highest_tx: u128 = 0;
         let mut len_buf = [0u8; 4];
 
         // PHYSICS: Iterate throught the append-only binary log.
@@ -304,13 +304,15 @@ impl WalEngine {
                 break;
             }
 
-            // Zero-copy pointer cast to extract tx_id
-            let archived_log =
-                unsafe { rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(&payload) };
+            // Bounds-checked zero-copy pointer access
+            if let Ok(archived_log) =
+                rkyv::access::<<OpLog as rkyv::Archive>::Archived, rkyv::rancor::Error>(&payload)
+            {
+                let tx_id = archived_log.state.transaction_id.to_native();
 
-            let tx_id = archived_log.state.transaction_id.into();
-            if tx_id > highest_tx {
-                highest_tx = tx_id;
+                if tx_id > highest_tx {
+                    highest_tx = tx_id;
+                }
             }
         }
 
