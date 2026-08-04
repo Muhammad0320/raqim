@@ -224,18 +224,18 @@ async fn main() {
         Arc::new(LanceEngine::new(&config.lance_path, &config.table_name, embedder).await);
 
     // THE BOOTSTRAP PROTOCOL
-    let (lance_highest_tx, _valut_capacity) =
-        lance_engine.get_vault_metrics().await.unwrap_or((0, 0));
-    let wal_highest_tx = wal.get_highest_tx_id(&config.wal_path);
+    // let (lance_highest_tx, _valut_capacity) =
+    //     lance_engine.get_vault_metrics().await.unwrap_or((0, 0));
+    // let wal_highest_tx = wal.get_highest_tx_id(&config.wal_path);
 
-    // The abs truth is the highest number found in either store.
-    let starting_tx_id = std::cmp::max(lance_highest_tx, wal_highest_tx);
-    let tx_counter = Arc::new(AtomicU64::new(starting_tx_id + 1));
+    // // The abs truth is the highest number found in either store.
+    // let starting_tx_id = std::cmp::max(lance_highest_tx, wal_highest_tx);
+    // let tx_counter = Arc::new(AtomicU64::new(starting_tx_id + 1));
 
-    println!(
-        "[SYSTEM] Bootstrapped Tx Counter at TxID: {} ",
-        starting_tx_id + 1
-    );
+    // println!(
+    //     "[SYSTEM] Bootstrapped Tx Counter at TxID: {} ",
+    //     starting_tx_id + 1
+    // );
 
     // ============================
     // THE PHOENIX HYDRATION PROTOCOL: Reconstructs in-memory Axon Merkle trees from uncompacted WAL frames on boot.
@@ -331,7 +331,6 @@ async fn main() {
         wal.clone(),
         cortex_tx.clone(),
         global_net.clone(),
-        tx_counter.clone(),
         event_tx.clone(),
         master_signing_key.clone(),
         security_flags.allow_time_travel.clone(),
@@ -436,7 +435,6 @@ async fn main() {
                         let w_clone = w_wal.clone();
                         let c_clone = w_cortex_tx.clone();
                         let g_clone = w_global_net.clone();
-                        let t_clone = w_tx_couter.clone();
                         let tx_clone = w_event_tx.clone();
                         let lance_clone = w_lance.clone();
                         let ae_clone = w_aegis.clone();
@@ -450,7 +448,6 @@ async fn main() {
                             shard: shard_clone,
                             cortex_tx: c_clone,
                             global_net: g_clone,
-                            global_tx_counter: t_clone,
                             event_tx: tx_clone,
                             wasi: wasi_ctx,
                             agent_hex: agent_hex.clone(),
@@ -796,7 +793,7 @@ async fn main() {
                     let _ = task_ui_tx.send(UiEvent::ThoughtCommitted {
                         agent_hex: agent_hex.clone(),
                         intent_path: path_intent.to_string(),
-                        tx_id,
+                        tx_id: format!("{:032x}", tx_id),
                         text,
                     });
 

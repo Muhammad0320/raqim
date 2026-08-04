@@ -19,7 +19,6 @@ use std::{fs::File, sync::Arc};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
-use tokio_util::io::simplex::new;
 
 use crate::AgentStatus;
 use crate::aegis::AegisGateKeeper;
@@ -52,7 +51,6 @@ pub struct MemoryRouter {
     wal_engine: Arc<WalEngine>,
     cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
-    global_tx_counter: Arc<AtomicU64>,
     event_tx: Sender<SystemEvent>,
     master_signing_key: SigningKey,
     allow_time_travel: Arc<AtomicBool>,
@@ -70,7 +68,6 @@ impl MemoryRouter {
         wal_engine: Arc<WalEngine>,
         cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
         global_net: Arc<GlobalNetworkBridge>,
-        global_tx_counter: Arc<AtomicU64>,
         event_tx: Sender<SystemEvent>,
         master_signing_key: SigningKey,
         allow_time_travel: Arc<AtomicBool>,
@@ -86,7 +83,6 @@ impl MemoryRouter {
             wal_engine,
             cortex_tx,
             global_net,
-            global_tx_counter,
             event_tx,
             master_signing_key,
             allow_time_travel,
@@ -123,6 +119,36 @@ impl MemoryRouter {
                 }
             }
         }
+    }
+
+    // RAG CONTEXT: Prioritize the hot WAL, fills the rest with semantic lanceDB
+    pub async fn semantic_search_with_context(
+        &self,
+        query: &str,
+        namespace: &str,
+        limit: usize,
+    ) -> Result<Vec<String>, anyhow::Error> {
+        let mut final_context = Vec::new();
+
+        // 1. HOT MEMORY (WAL): Zero-Copy Semantic Filtering
+        self.scan_wal_zero_copy(|archived| {
+            // PHYSICS: We read the name_space as a string slice without allocating mem
+            let log_namespace = archived.state.namespace.as_str();
+
+            if log_namespace.starts_with(namespace) {
+                final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
+            }
+        });
+
+        // 2. Supplement with Deep Semantic search
+        let mut deep_memories = self
+            .lance_engine
+            .search_memory(query, namespace, limit)
+            .await?;
+
+        final_context.append(&mut deep_memories);
+
+        Ok(final_context)
     }
 
     /// FORENSIC TIME MACHINE
@@ -183,36 +209,6 @@ impl MemoryRouter {
             "TxID {} not found in WAL or LanceDB.",
             target_tx_id
         ))
-    }
-
-    // RAG CONTEXT: Prioritize the hot WAL, fills the rest with semantic lanceDB
-    pub async fn semantic_search_with_context(
-        &self,
-        query: &str,
-        namespace: &str,
-        limit: usize,
-    ) -> Result<Vec<String>, anyhow::Error> {
-        let mut final_context = Vec::new();
-
-        // 1. HOT MEMORY (WAL): Zero-Copy Semantic Filtering
-        self.scan_wal_zero_copy(|archived| {
-            // PHYSICS: We read the name_space as a string slice without allocating mem
-            let log_namespace = archived.state.namespace.as_str();
-
-            if log_namespace.starts_with(namespace) {
-                final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
-            }
-        });
-
-        // 2. Supplement with Deep Semantic search
-        let mut deep_memories = self
-            .lance_engine
-            .search_memory(query, namespace, limit)
-            .await?;
-
-        final_context.append(&mut deep_memories);
-
-        Ok(final_context)
     }
 
     /// THE RESURRECTION ENGINE

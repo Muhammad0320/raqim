@@ -93,7 +93,7 @@ pub enum UiEvent {
     ThoughtCommitted {
         agent_hex: String,
         intent_path: String,
-        tx_id: u64,
+        tx_id: String,
         text: String,
     },
 
