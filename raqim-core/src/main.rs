@@ -223,6 +223,21 @@ async fn main() {
     let lance_engine =
         Arc::new(LanceEngine::new(&config.lance_path, &config.table_name, embedder).await);
 
+    // 1. Boot global Quarantine network subscriber
+    global_net.listen_for_global_quarantine(aegis.clone()).await;
+
+    // 2. Wire SystemEvent subscriber loop for outbound local quarantine events
+    let mut system_rx = event_tx.subscribe();
+    let net_clone = global_net.clone();
+
+    tokio::spawn(async move {
+        while let Ok(event) = system_rx.recv().await {
+            if let SystemEvent::GlobalQuarantineSync { record } = event {
+                net_clone.broadcast_quarantine_sync(record);
+            }
+        }
+    });
+
     // THE BOOTSTRAP PROTOCOL
     // let (lance_highest_tx, _valut_capacity) =
     //     lance_engine.get_vault_metrics().await.unwrap_or((0, 0));

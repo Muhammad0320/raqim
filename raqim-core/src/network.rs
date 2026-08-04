@@ -252,7 +252,6 @@ impl GlobalNetworkBridge {
         let key_exp = format!("{}/system/quarantine", self.workspace_prefix);
         let session_clone = self.session.clone();
         let allow_aegis = self.allow_global_aegis.clone();
-        let my_node_id = self.os_node_id.clone();
 
         println!(
             "[NETWORK CORE] Aegis Global Quarantine subscriber active on: {} ",
