@@ -139,7 +139,7 @@ impl LanceEngine {
 
             for i in 0..tx_col.len() {
                 let parsed_tx = u128::from_str_radix(tx_col.value(i), 16).unwrap_or(0);
-                result.push(ColdSearchResult {
+                results.push(ColdSearchResult {
                     tx_id: parsed_tx,
                     agent_hex: agent_id_col.value(i).to_string(),
                     namespace: namespace_col.value(i).to_string(),

@@ -33,6 +33,7 @@ use uuid::Uuid;
 use crate::aegis::{CapabilityCertificate, QuarantineRecord};
 use crate::axon::AxonGateKeeper;
 use crate::health::SystemHealth;
+use crate::hot_memory::HotVectorBuffer;
 use crate::lancedb_store::LanceEngine;
 use crate::nucleus::WalEngine;
 use crate::registry::SwarmRegistry;
@@ -157,6 +158,8 @@ pub struct ApiState {
     pub health_tx: Sender<SystemHealth>,
     pub swarm_registry: Arc<SwarmRegistry>,
     pub master_signing_key: SigningKey,
+
+    pub hot_buffer: HotVectorBuffer,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -552,6 +555,39 @@ pub async fn unified_vault_search(
     Ok(Json(unified_results))
 }
 
+// 2. THE RAG SEMANTIC SEARCH ENDPOINT
+#[derive(Deserialize)]
+pub struct RagQuery {
+    namespace: String,
+    query: String,
+    limit: Option<usize>,
+}
+
+pub async fn semantic_search_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+    Query(params): Query<RagQuery>,
+) -> Result<Json<Vec<String>>, StatusCode> {
+    let limit = params.limit.unwrap_or(5);
+
+    match state
+        .mem_router
+        .query_hybrid_memory(
+            &params.query,
+            Some(&params.namespace),
+            limit,
+            &state.hot_buffer,
+        )
+        .await
+    {
+        Ok(memories) => Ok(Json(memories)),
+        Err(e) => {
+            eprintln!("[RAG Hybrid ERROR] {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub async fn vault_telemetry_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
@@ -843,34 +879,6 @@ pub async fn http_ingress_endpoint(
     });
 
     Ok(StatusCode::ACCEPTED)
-}
-
-// 2. THE RAG SEMANTIC SEARCH ENDPOINT
-#[derive(Deserialize)]
-pub struct RagQuery {
-    namespace: String,
-    query: String,
-    limit: Option<usize>,
-}
-
-pub async fn semantic_search_endpoint(
-    identity: ValidatedIdentity,
-    State(state): State<ApiState>,
-    Query(params): Query<RagQuery>,
-) -> Result<Json<Vec<String>>, StatusCode> {
-    let limit = params.limit.unwrap_or(5);
-
-    match state
-        .mem_router
-        .semantic_search_with_context(&params.query, &params.namespace, limit)
-        .await
-    {
-        Ok(memories) => Ok(Json(memories)),
-        Err(e) => {
-            eprintln!("[RAG ERROR] {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
 }
 
 pub async fn sse_health_endpoint(
