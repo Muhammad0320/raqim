@@ -17,6 +17,8 @@ pub mod state;
 pub mod telemetry;
 pub mod utils;
 
+pub mod hot_memory;
+
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::format;

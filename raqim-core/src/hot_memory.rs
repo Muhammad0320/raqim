@@ -27,7 +27,7 @@ impl HotVectorBuffer {
     /// Pushes a newly commited thought and it's vector into hot RAM
     pub fn push(&self, entry: HotVectorEntry) {
         let mut lock = self.entries.write();
-        if lock.len() >= self.capability {
+        if lock.len() >= self.capacity {
             lock.pop_front();
         }
         lock.push_back(entry);
@@ -56,7 +56,7 @@ impl HotVectorBuffer {
         }
 
         // Sort by highest similarity first
-        sort_entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored_entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scored_entries.truncate(top_k);
         scored_entries
     }

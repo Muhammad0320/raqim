@@ -26,6 +26,18 @@ pub struct LanceEngine {
     pub embedder: Box<dyn EmbeddingProvider>, // Polymorphic injection
 }
 
+#[derive(Clone, Debug)]
+pub struct ColdSearchResult {
+    pub tx_id: u128,
+    pub agent_hex: String,
+    pub status: String,
+    pub text: String,
+    pub namespace: String,
+    pub timestamp: i64,
+
+    pub distance: f32,
+}
+
 impl LanceEngine {
     pub async fn new(
         storage_path: &str,
@@ -63,6 +75,84 @@ impl LanceEngine {
             embedder,
             dims: 768,
         }
+    }
+
+    /// Executes Cold vector Prosimity search using a pre-computed query vector
+    pub async fn search_cold_vector(
+        &self,
+        query_vector: &[f32],
+        namespace_filter: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ColdSearchResult>, anyhow::Error> {
+        let table = self.db.open_table(&self.history_table).execute().await?;
+
+        let mut query_builder = table.query().nearest_to(query_vector)?;
+
+        if let Some(ns) = namespace_filter {
+            if !ns.is_empty() {
+                query_builder = query_builder.only_if(format!("namespace = '{}'", ns));
+            }
+        }
+
+        let mut stream = query_builder.limit(limit).execute().await?;
+        let mut results = Vec::new();
+
+        while let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+
+            let tx_col = batch
+                .column_by_name("tx_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let agent_id_col = batch
+                .column_by_name("agent_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let namespace_col = batch
+                .column_by_name("namespace")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let status_col = batch
+                .column_by_name("status")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let text_col = batch
+                .column_by_name("text")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let timestamp_col = batch
+                .column_by_name("timestamp")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+
+            for i in 0..tx_col.len() {
+                let parsed_tx = u128::from_str_radix(tx_col.value(i), 16).unwrap_or(0);
+                result.push(ColdSearchResult {
+                    tx_id: parsed_tx,
+                    agent_hex: agent_id_col.value(i).to_string(),
+                    namespace: namespace_col.value(i).to_string(),
+                    status: status_col.value(i).to_string(),
+                    text: text_col.value(i).to_string(),
+                    timestamp: timestamp_col.value(i),
+
+                    distance: 0.0,
+                });
+            }
+        }
+
+        Ok(results)
     }
 
     /// The Semantic Retriever. Now returns a structured UI data, not a raw string.
