@@ -661,6 +661,7 @@ async fn main() {
                 let mut session_established = false;
                 let mut cached_agent_hex = String::new();
                 let mut cached_group_name = String::new();
+                let mut session_pub_key = [0u8; 32];
 
                 loop {
                    //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
@@ -687,8 +688,6 @@ async fn main() {
 
                     // Read the exact payload bytes: Read into the preallocated screatch bufffer.
                     // We slice the scratch buffer to the exact length of the incoming payload complately bypassing the OS memory allocator
-
-
                     let active_payload_slice : &mut [u8] = &mut payload_scratch_buf[0..payload_len];
 
                     if let Err(e) = tokio::io::AsyncReadExt::read_exact(&mut reader, active_payload_slice).await {
@@ -724,17 +723,16 @@ async fn main() {
                     let agent_pub_key: [u8; 32] = archived_ingress.public_key.try_into().unwrap_or([0; 32]);
                     let mut packet_sig = [0u8; 64];
                     packet_sig.copy_from_slice( archived_ingress.signature.as_slice() );
-
-                    // UNIFIED PERIMETER: Validates lineage, check signature, and checks the namespace instantly
-
-                    // ONLY verify the heavy Master Certificate on the very first packet.
+                     
+                    // UNIFIED PERIMETER: Validates lineage, check signature. ONLY verify the heavy Master Certificate on the very first packet.
                     if !session_established {
 
-                            match task_aegis.verify_session_lineage(archived_ingress.capability_cert.as_slice()) {
+                            match task_aegis.verify_session_lineage(archived_ingress.capability_cert.as_slice(), &agent_pub_key) {
                                 Ok((agent_hex, group_name)) => {
                                     session_established = true;
                                     cached_agent_hex = agent_hex;
                                     cached_group_name = group_name;
+                                    session_pub_key = agent_pub_key;
                                 }
 
                                 Err(e) => {
@@ -743,10 +741,17 @@ async fn main() {
 
                                 }
                             }
+                    }   else {
+                        // Enforce Key Consistency: Detect public key swiitching on active session
+                        if agent_pub_key != session_pub_key {
+                            eprintln!("[AEGIS INTERDICTION] Key Drift Attack detected. Dropping Socket. ");
+                            break;
+                        }
                     }
 
                     // Perform ultrafast packet audit for each packet.
-                    if let  Err(e) = task_aegis.authorize_packet_fast(&cached_agent_hex, &cached_group_name, &agent_pub_key, state_slice, &packet_sig, path_intent) {
+                    let packet_timestamp = archived_state.timestamp;
+                    if let  Err(e) = task_aegis.authorize_packet_fast(&cached_agent_hex, &cached_group_name, &agent_pub_key, state_slice, &packet_sig, path_intent, packet_timestamp) {
 
                         eprintln!("[AEGIS INTERDICTION] Fast Audit failed: {} ", e);
                         break;
