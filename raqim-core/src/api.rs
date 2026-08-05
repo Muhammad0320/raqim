@@ -159,7 +159,7 @@ pub struct ApiState {
     pub swarm_registry: Arc<SwarmRegistry>,
     pub master_signing_key: SigningKey,
 
-    pub hot_buffer: HotVectorBuffer,
+    pub hot_buffer: Arc<HotVectorBuffer>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

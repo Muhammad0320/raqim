@@ -10,6 +10,7 @@ use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::CortexDataPlane;
 use raqim_core::embedding::{EmbeddingProvider, LocalBgeProvider, OpenAIProvider};
 use raqim_core::health::{HealthMonitor, SystemHealth};
+use raqim_core::hot_memory::HotVectorBuffer;
 use raqim_core::lancedb_store::LanceEngine;
 use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
@@ -206,6 +207,7 @@ async fn main() {
         .await,
     );
     let wasm_engine = Arc::new(WasmEngine::new());
+    let hot_buffer = Arc::new(HotVectorBuffer::new(10_0000));
 
     let embedder: Box<dyn EmbeddingProvider> = match config.embedder_type.as_str() {
         "openai" => {
@@ -591,6 +593,8 @@ async fn main() {
         health_tx: health_tx.clone(),
         swarm_registry: registry.clone(),
         master_signing_key: master_signing_key.clone(),
+
+        hot_buffer: hot_buffer.clone(),
     };
 
     let axum_app = build_admin_router(api_state).layer(
