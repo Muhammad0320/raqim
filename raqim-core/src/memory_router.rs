@@ -7,6 +7,8 @@ use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
 use rand_core::OsRng;
 use rkyv::{Archive, Archived};
+use std::collections::HashMap;
+use std::format;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::atomic::AtomicBool;
@@ -25,6 +27,7 @@ use crate::aegis::CapabilityCertificate;
 use crate::api::ForkConfig;
 use crate::api::UiEvent;
 use crate::axon::AxonGateKeeper;
+use crate::hot_memory::HotVectorBuffer;
 use crate::network::GlobalNetworkBridge;
 use crate::sandbox::SandboxContent;
 use crate::sandbox::WasmEngine;
@@ -53,6 +56,16 @@ pub struct MemoryRouter {
     event_tx: Sender<SystemEvent>,
     master_signing_key: SigningKey,
     allow_time_travel: Arc<AtomicBool>,
+}
+
+pub struct UnifiedSearchResult {
+    pub tx_id: u128,
+    pub agent_hex: String,
+    pub namespace: String,
+    pub text: String,
+    pub timestamp: i64,
+    pub score: f32,
+    pub source: &'static str,
 }
 
 impl MemoryRouter {
@@ -709,5 +722,105 @@ impl MemoryRouter {
         self.brain.purge_phantom_shards();
 
         Ok(())
+    }
+
+    /// Unified hybrid search engine: Scatters query to Cold LanceDB and Hot RAM Vector Buffer concurrently performs Receprpcal Rank Fusion (RRF) and Time-Decay Scoring, and formats context strings.
+    pub async fn query_hybrid_memory(
+        &self,
+        query: &str,
+        namespace: Option<&str>,
+        limit: usize,
+        hot_buffer: &HotVectorBuffer,
+    ) -> Result<Vec<String>, anyhow::Error> {
+        // Embed query once
+        let query_vector = self.lance_engine.embedder.embed(query).await?;
+
+        // PARALLEL SCATTER-GATHER (Cold LanceDB + Hot RAM)
+        let cold_future = self
+            .lance_engine
+            .search_cold_vector(&query_vector, namespace, limit * 2);
+
+        let hot_result = hot_buffer.search_hot(&query_vector, namespace, limit * 2);
+
+        let cold_result = cold_future.await.unwrap_or_default();
+
+        // RECIPROCAL RANK FUSION (RRF) & DEDUPLICATION BY UUIDv7 tx_id
+        let mut fused_map: HashMap<u128, UnifiedSearchResult> = HashMap::new();
+        let k = 60.0f32; // std RRF smoothing constant
+        let current_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // Process Cold Results
+        for (rank, cold) in cold_result.into_iter().enumerate() {
+            let rrf_score = 1.0 / (k + (rank + 1) as f32);
+
+            // Time decay multiplier: e^(-lambda * delta_t_hours)
+            let age_hours = ((current_ts - cold.timestamp).max(0) as f32) / 3600.0;
+            let time_decay = (-0.05 * age_hours).exp();
+            let final_score = rrf_score * time_decay;
+
+            fused_map.insert(
+                cold.tx_id,
+                UnifiedSearchResult {
+                    tx_id: cold.tx_id,
+                    agent_hex: cold.agent_hex,
+                    namespace: cold.namespace,
+                    text: cold.text,
+                    timestamp: cold.timestamp,
+                    score: final_score,
+                    source: "COLD_LANCEDB",
+                },
+            );
+        }
+
+        // Process Hot RAM Results (Boosted by recency)
+        for (rank, (hot, sim_score)) in hot_result.into_iter().enumerate() {
+            let rrf_score = 1.0 / (k + (rank + 1) as f32);
+            let age_hours = ((current_ts - hot.timestamp).max(0) as f32) / 3600.0;
+            let time_decay = (-0.01 * age_hours).exp(); // Slower decay for hot memory
+            let final_score = (rrf_score + sim_score) * time_decay * 1.25; // 25% Hot Recency Boost
+
+            fused_map
+                .entry(hot.tx_id)
+                .and_modify(|existing| {
+                    if final_score > existing.score {
+                        existing.score = final_score;
+                        existing.source = "HOT_RAM_BUFFER";
+                    }
+                })
+                .or_insert(UnifiedSearchResult {
+                    tx_id: hot.tx_id,
+                    agent_hex: hot.agent_hex,
+                    namespace: hot.namespace,
+                    text: hot.text,
+                    timestamp: hot.timestamp,
+                    score: final_score,
+                    source: "HOT_RAM_BUFFER",
+                });
+        }
+
+        // SORT BY HYBRID RRF SCORE
+        let mut final_list: Vec<UnifiedSearchResult> = fused_map.into_values().collect();
+        final_list.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        final_list.truncate(limit);
+
+        // Format Hyper-Rich Context String For LLM Prompt Window
+        let formatted_memories: Vec<String> = final_list
+            .into_iter()
+            .map(|res| {
+                format!(
+                    "[Time: {}] [TxID: {:032x}] [Source: {}] Namespace: '{}' -> {} ",
+                    res.timestamp, res.tx_id, res.source, res.namespace, res.text
+                )
+            })
+            .collect();
+
+        Ok(formatted_memories)
     }
 }
