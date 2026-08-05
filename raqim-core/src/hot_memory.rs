@@ -49,7 +49,22 @@ impl HotVectorBuffer {
                     continue;
                 }
             }
+
+            // Compute Cosine proximity Dot product in Ram
+            let similarity = cosine_similarity(query_vector, &entry.vector);
+            scored_entries.push((entry.clone(), similarity));
         }
+
+        // Sort by highest similarity first
+        sort_entries.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored_entries.truncate(top_k);
+        scored_entries
+    }
+
+    /// Evicts entries older than a specific transaction ID when compaction flushes to LanceDB
+    pub fn evits_compacted_up_to(&self, max_compacted_tx: u128) {
+        let mut lock = self.entries.write();
+        lock.retain(|e| e.tx_id > max_compacted_tx);
     }
 }
 
