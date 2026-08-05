@@ -215,6 +215,7 @@ pub enum SystemEvent {
 
     CompactionTriggered {
         archived_count: usize,
+        max_compacted_tx: u128,
     },
     PluginLoaded {
         plugin_name: String,

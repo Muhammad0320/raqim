@@ -292,12 +292,57 @@ async fn main() {
 
                 offset += entry_len;
             }
+
+
+            if !recovered_logs.is_empty() {
+                // Batch embed all recovered WAL texts to restore hot vector memory
+                // Batch-embed all recovered WAL texts to restore hot vector memory
+                let texts: Vec<String> = recovered_logs
+                    .iter()
+                    .map(|l| format!("[{:?}] Agent in {} stated {}", l.state.status, l.state.namespace, l.state.text))
+                    .collect();
+
+                if let Ok(vectors) = embedder.embed_batch(&texts).await {
+                    let mut hot_entries = Vec::with_capacity(recovered_logs.len());
+                    for (i, log) in recovered_logs.into_iter().enumerate() {
+                        hot_entries.push(HotVectorEntry {
+                            tx_id: log.state.transaction_id,
+                            agent_hex: hex::encode(log.agent_id),
+                            namespace: log.state.namespace,
+                            text: log.state.text,
+                            timestamp: log.state.timestamp,
+                            vector: vectors[i].clone(),
+                        });
+                    }
+                    hot_buffer.push_batch(hot_entries);
+                    println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_buffer.len());
+                }                
+
+            }
+
             println!(
                 "[INITIALIIZATION] Phoenix protocol Complete. Hydrated {} log frames into Axon DAG memory. ",
                 recovered_count
             );
         }
     }
+
+
+    // ---  COMPACTION EVENT LISTENENR  (Watermark eviction) ---- 
+    let mut system_rx = event_tx.subscribe();
+    let hot_buffer_clone = hot_buffer.clone();
+
+    tokio::spawn(async move {
+
+            while let Ok(event) = system_rx.recv().await {
+
+                if let SystemEvent::CompactionTriggered { .., max_compacted_tx } = event {
+                    hot_buffer_clone.evits_compacted_up_to(max_compacted_tx);
+                }
+
+            }
+
+    });
 
     // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
     let mut valut_rx = event_tx.subscribe();

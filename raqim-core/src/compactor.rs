@@ -160,6 +160,13 @@ impl WalCompactor {
             }
         };
 
+        // extract max tx_id
+        let max_compacted_tx = logs_to_archive
+            .iter()
+            .map(|l| l.state.transaction_id)
+            .max()
+            .unwrap_or(0);
+
         self.lance_engine
             .archive_batch(&logs_to_archive, &vectors)
             .await;
@@ -179,6 +186,7 @@ impl WalCompactor {
 
         let _ = self.tx.send(SystemEvent::CompactionTriggered {
             archived_count: logs_to_archive.len(),
+            max_compacted_tx,
         });
     }
 
