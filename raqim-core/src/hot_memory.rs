@@ -1,5 +1,5 @@
 use parking_lot::RwLock;
-use std::collections::VecDeque;
+use std::{collections::VecDeque, println};
 
 #[derive(Clone, Debug)]
 pub struct HotVectorEntry {
@@ -13,24 +13,27 @@ pub struct HotVectorEntry {
 
 pub struct HotVectorBuffer {
     entries: RwLock<VecDeque<HotVectorEntry>>,
-    capacity: usize,
 }
 
 impl HotVectorBuffer {
     pub fn new(capacity: usize) -> Self {
         Self {
             entries: RwLock::new(VecDeque::with_capacity(capacity)),
-            capacity,
         }
     }
 
     /// Pushes a newly commited thought and it's vector into hot RAM
     pub fn push(&self, entry: HotVectorEntry) {
         let mut lock = self.entries.write();
-        if lock.len() >= self.capacity {
-            lock.pop_front();
-        }
         lock.push_back(entry);
+    }
+
+    /// Batch pushes recovered entried during Phoenix Boot Hydration
+    pub fn push_back(&self, entries: Vec<HotVectorEntry>) {
+        let mut lock = self.entries.write();
+        for entry in entries {
+            lock.push_back(entry);
+        }
     }
 
     /// SIMD-Accelerated Cosine Proximity Searchh over Hot RAM
@@ -61,10 +64,22 @@ impl HotVectorBuffer {
         scored_entries
     }
 
-    /// Evicts entries older than a specific transaction ID when compaction flushes to LanceDB
-    pub fn evits_compacted_up_to(&self, max_compacted_tx: u128) {
+    /// WATERMARK EVICTION: Evists entries ONLY if they have been durably archived into LanceDB
+    pub fn evits_compacted_up_to(&self, max_compacted_tx: u128) -> usize {
         let mut lock = self.entries.write();
+        let initial_len = lock.len();
+
         lock.retain(|e| e.tx_id > max_compacted_tx);
+
+        let evicted_count = initial_len - lock.len();
+        if evicted_count > 0 {
+            println!(
+                "[HOT MEMORY] Evicted {} entries from RAM (Compaction Watermark: {:032x}) ",
+                evicted_count, max_compacted_tx
+            );
+        }
+
+        evicted_count
     }
 }
 
