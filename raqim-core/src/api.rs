@@ -648,7 +648,7 @@ pub struct ForkConfig {
 #[derive(Deserialize)]
 struct TimeTravelRequest {
     agent_hex: String,
-    target_tx_id: u64,
+    target_tx_id: u128,
     fork_config: ForkConfig,
 }
 

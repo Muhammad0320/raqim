@@ -723,7 +723,7 @@ async fn main() {
                     let agent_pub_key: [u8; 32] = archived_ingress.public_key.try_into().unwrap_or([0; 32]);
                     let mut packet_sig = [0u8; 64];
                     packet_sig.copy_from_slice( archived_ingress.signature.as_slice() );
-                     
+
                     // UNIFIED PERIMETER: Validates lineage, check signature. ONLY verify the heavy Master Certificate on the very first packet.
                     if !session_established {
 
@@ -738,7 +738,6 @@ async fn main() {
                                 Err(e) => {
                                     eprintln!("[AEGIS INTERDICTION] Handshake Failed: {} ", e);
                                     break;
-
                                 }
                             }
                     }   else {
@@ -750,7 +749,7 @@ async fn main() {
                     }
 
                     // Perform ultrafast packet audit for each packet.
-                    let packet_timestamp = archived_state.timestamp;
+                    let packet_timestamp = archived_state.timestamp.as_slice() ;
                     if let  Err(e) = task_aegis.authorize_packet_fast(&cached_agent_hex, &cached_group_name, &agent_pub_key, state_slice, &packet_sig, path_intent, packet_timestamp) {
 
                         eprintln!("[AEGIS INTERDICTION] Fast Audit failed: {} ", e);
