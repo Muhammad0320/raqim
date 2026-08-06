@@ -19,6 +19,7 @@ pub mod utils;
 
 pub mod hot_memory;
 
+use blake3::Hasher;
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::format;
@@ -84,11 +85,46 @@ pub struct A2AEnvelope {
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct IngressEnvelope {
-    pub intent_path: String,      // "raqim_finance/ledger" ( Checked by Aegis )
-    pub public_key: [u8; 32],     // The Ed25519 public key of the sender
-    pub signature: [u8; 64],      // The mathematical signauture proving authenticity
-    pub state_bytes: Vec<u8>,     // The actual thought
-    pub capability_cert: Vec<u8>, // The master token signed by the Master Key
+    pub intent_path: String,
+    pub public_key: [u8; 32],
+    pub signature: [u8; 64],
+    pub state_bytes: Vec<u8>,
+    pub capability_cert: Vec<u8>,
+}
+
+/// The Cryptographic Boundary Representation of a Non-Deterministoc Side-Effect
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+pub struct EffectRecord {
+    pub agent_id: [u8; 16],
+    pub step_ordinal: u64,
+
+    /// 32-byte Blake3 hash of the input signature (Prompt text + model name + parameters)
+    pub call_signature_hash: [u8; 32],
+
+    pub output_payload: Vec<u8>,
+
+    /// 128-bit transaction ID binding this effect to the Merkle DAG
+    pub tranaction_id: u128,
+
+    pub timestamp: i64,
+}
+
+/// The Unique Lookup Key computed fpr in-memory RAM Effect matching
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EffectKey(pub [u8; 32]);
+
+impl EffectKey {
+    /// Computes a domain-separated BLAKE3 key over (agent_id + step_ordinal + call_signature_hash)
+    pub fn derive(agent_id: &[u8; 16], step_ordinal: u64, call_hash: &[u8; 32]) -> Self {
+        let mut hasher = Hasher::new_derive_key("raqim.effect.v1.key");
+        hasher.update(agent_id);
+        hasher.update(&step_ordinal.to_le_bytes());
+        hasher.update(call_hash);
+
+        let mut key_bytes = [0u8; 32];
+        hasher.finalize_xof().fill(&mut key_bytes);
+        Self(key_bytes)
+    }
 }
 
 #[inline(always)]
@@ -165,7 +201,6 @@ pub async fn execute_raqim_cascade(
     // 3. Cryptographically Seal (Markle DAG)
     let (sealed_log, optional_markle_batch) = axon.seal_thought(raw_log);
 
-    // TODO: Trigger system event
     if let Some(batch) = optional_markle_batch {
         let _ = tx.send(SystemEvent::MarkleBatchCrystallized { batch });
     }
