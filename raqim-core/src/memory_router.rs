@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::format;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
+use std::println;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
@@ -22,6 +23,7 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 
+use crate::AgentState;
 use crate::AgentStatus;
 use crate::EffectKey;
 use crate::EffectRecord;
@@ -830,7 +832,7 @@ impl MemoryRouter {
         Ok(formatted_memories)
     }
 
-    /// Record Effect: captures a live side-effect, writes it to the wal & merkle DAG and updates the RAM
+    /// Record Effect (Record mode) : captures a live side-effect, writes it to the wal & merkle DAG and updates the RAM
     pub async fn record_effect(
         &self,
         agent_id: [u8; 16],
@@ -851,15 +853,70 @@ impl MemoryRouter {
             step_ordinal,
             call_signature_hash,
             output_payload: output_payload.clone(),
-            tranaction_id,
+            transaction_id,
             timestamp,
         };
 
         // Calculate RAM Lookup Key
         let effect_key = EffectKey::derive(&agent_id, step_ordinal, &call_signature_hash.clone());
 
-        self.effect_index.insert(effect_key, record);
+        self.effect_index.insert(effect_key, record.clone());
 
-        Ok(0)
+        let state = AgentState {
+            agent_id: Some(agent_id),
+            transaction_id,
+            timestamp,
+            namespace: namespace.to_string(),
+            status: AgentStatus::ToolExecution,
+            text: format!(
+                "[EFFECT_RECORD] Step: {} | Len: {} bytes ",
+                step_ordinal,
+                output_payload.len()
+            ),
+        };
+
+        let raw_oplog = OpLog {
+            agent_id,
+            state,
+            delta: output_payload.clone(),
+            previous_hash: [0u8; 32],
+            current_hash: [0u8; 32],
+            entropy_seeds: Vec::new(),
+            network_responses: Vec::new(),
+        };
+
+        let (sealed_log, optional_batch) = self.axon.seal_thought(oplog);
+
+        if let Some(batch) = optional_batch {
+            let _ = self
+                .event_tx
+                .send(SystemEvent::MarkleBatchCrystallized { batch });
+        }
+
+        self.wal_engine.append(sealed_log).await;
+
+        println!(
+            " [EFFECT ENGINE] Recorded Side-Effect for Agent: {} at Step: {} [TxID: {:032x}] ",
+            agent_hex, step_ordinal, transaction_id
+        );
+
+        Ok(transaction_id)
+    }
+
+    /// Get Effect (Replay mode): Perform 0(1) Ram lookup to fetch recorded payload
+    pub fn get_effect(
+        &self,
+        agent_id: &[u8; 16],
+        step_ordinal: u64,
+        call_signature_hash: &[u8; 32],
+    ) -> Option<EffectRecord> {
+        let record_key = EffectKey::derive(agent_id, step_ordinal, call_signature_hash);
+
+        // O(1) sharded RAM lookup
+        if let Some(record) = self.effect_index.get(&record_key) {
+            return Some(record.value().clone());
+        }
+
+        None
     }
 }
