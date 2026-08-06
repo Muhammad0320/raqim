@@ -101,7 +101,7 @@ impl SwarmState {
         delta: &[u8],
     ) -> Result<ImportStatus, loro::LoroError> {
         // parses the binary data and merges it into out local graph.
-        self.doc.read().import(delta)
+        self.doc.write().import(delta)
     }
 }
 
