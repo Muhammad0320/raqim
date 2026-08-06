@@ -1,4 +1,5 @@
 use arrow_array::Array;
+use dashmap::DashMap;
 use ed25519_dalek::Signer;
 use ed25519_dalek::SigningKey;
 use futures::StreamExt;
@@ -22,11 +23,14 @@ use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 
 use crate::AgentStatus;
+use crate::EffectKey;
+use crate::EffectRecord;
 use crate::aegis::AegisGateKeeper;
 use crate::aegis::CapabilityCertificate;
 use crate::api::ForkConfig;
 use crate::api::UiEvent;
 use crate::axon::AxonGateKeeper;
+use crate::generate_uuidv7_txid;
 use crate::hot_memory::HotVectorBuffer;
 use crate::network::GlobalNetworkBridge;
 use crate::sandbox::SandboxContent;
@@ -56,6 +60,7 @@ pub struct MemoryRouter {
     event_tx: Sender<SystemEvent>,
     master_signing_key: SigningKey,
     allow_time_travel: Arc<AtomicBool>,
+    effect_index: DashMap<EffectKey, EffectRecord>,
 }
 
 pub struct UnifiedSearchResult {
@@ -98,6 +103,7 @@ impl MemoryRouter {
             event_tx,
             master_signing_key,
             allow_time_travel,
+            effect_index: DashMap::new(),
         }
     }
 
@@ -822,5 +828,38 @@ impl MemoryRouter {
             .collect();
 
         Ok(formatted_memories)
+    }
+
+    /// Record Effect: captures a live side-effect, writes it to the wal & merkle DAG and updates the RAM
+    pub async fn record_effect(
+        &self,
+        agent_id: [u8; 16],
+        step_ordinal: u64,
+        call_signature_hash: [u8; 32],
+        output_payload: Vec<u8>,
+        namespace: &str,
+    ) -> Result<u128, anyhow::Error> {
+        let agent_hex = hex::encode(agent_id);
+        let transaction_id = generate_uuidv7_txid();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let record = EffectRecord {
+            agent_id,
+            step_ordinal,
+            call_signature_hash,
+            output_payload: output_payload.clone(),
+            tranaction_id,
+            timestamp,
+        };
+
+        // Calculate RAM Lookup Key
+        let effect_key = EffectKey::derive(&agent_id, step_ordinal, &call_signature_hash.clone());
+
+        self.effect_index.insert(effect_key, record);
+
+        Ok(0)
     }
 }

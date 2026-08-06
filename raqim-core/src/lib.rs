@@ -104,7 +104,7 @@ pub struct EffectRecord {
     pub output_payload: Vec<u8>,
 
     /// 128-bit transaction ID binding this effect to the Merkle DAG
-    pub tranaction_id: u128,
+    pub transaction_id: u128,
 
     pub timestamp: i64,
 }
