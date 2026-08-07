@@ -5,7 +5,7 @@ from typing import Dict, Callable, Awaitable
 import websockets
 import zenoh
 import httpx
-import hashlib
+import blake3
 
 from raqim_core import RaqimCryptoCore  # Our compiled PyO3 Rust extension!
 
@@ -17,8 +17,7 @@ class RaqimClient:
        
        # Mathematically bind the 16-bytes routing ID to the 32-byte public key
         public_key_bytes = bytes(self.crypto_core.public_key_bytes)
-        derived_16_bytes = hashlib.md5(public_key_bytes).digest()
-       
+        derived_16_bytes = blake3.blake3(public_key_bytes, derive_key="raqim.agent.v1.identity").digest(len=16)
        
         # The 32-character hex string representing the 16-bytes
         self.agent_hex = derived_16_bytes.hex()
@@ -70,7 +69,7 @@ class RaqimClient:
                 print("[OS OVERRIDE] Developer hook executed. Reality re-seeded.")
             else: 
                 print("[OS WARNING] No eviction hook registered. Agent memory is corrupted ")
-
+    
     async def commit_thought(self, agent_hex: str, intent_path: str, text: str):
         """Firehose Data Plane: Shoots pure RKYV bytes over raw TCP."""
         # The Rust PyO3 extension handles the blazing-fast serialization and signing

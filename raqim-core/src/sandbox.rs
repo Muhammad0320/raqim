@@ -1,7 +1,6 @@
 use ed25519_dalek::{Signer, SigningKey};
 use std::result::Result;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use wasmtime_wasi::WasiCtxBuilder;
@@ -30,7 +29,6 @@ pub struct SandboxContent {
     pub shard: Arc<SwarmStateRegistry>,
     pub cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
     pub global_net: Arc<GlobalNetworkBridge>,
-    pub global_tx_counter: Arc<AtomicU64>,
     pub event_tx: Sender<SystemEvent>,
     pub wasi: WasiP1Ctx,
     pub lance: Arc<LanceEngine>,
@@ -63,7 +61,7 @@ pub struct SandboxContent {
 
 #[derive(Debug, Clone, Copy)]
 pub struct CheckPointTracker {
-    pub last_snapshot_tx: u64,
+    pub last_snapshot_tx: u128,
     pub last_snapshot_time: u64,
 }
 
@@ -139,7 +137,7 @@ impl WasmEngine {
         wasm_binary: &[u8],
         content: SandboxContent,
         tracker: &mut CheckPointTracker,
-        current_tx_id: u64,
+        current_tx_id: u128,
         historical_snapshot: Option<Vec<u8>>,
     ) -> Result<(), anyhow::Error> {
         let mut linker = Linker::new(&self.engine);
@@ -174,7 +172,6 @@ impl WasmEngine {
                 let wal_clone = layers.wal.clone();
                 let cortex_tx_clone = layers.cortex_tx.clone();
                 let global_net_clone = layers.global_net.clone();
-                let counter_clone = layers.global_tx_counter.clone();
                 let event_tx_clone = layers.event_tx.clone();
                 let seeds_to_save = layers.live_seeds.clone();
                 let network_to_save = layers.replay_responses.clone();
@@ -217,7 +214,6 @@ impl WasmEngine {
                         shard_clone,
                         cortex_tx_clone,
                         global_net_clone,
-                        counter_clone,
                         event_tx_clone,
                         seeds_to_save,
                         network_to_save,

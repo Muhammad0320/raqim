@@ -10,6 +10,7 @@ use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::CortexDataPlane;
 use raqim_core::embedding::{EmbeddingProvider, LocalBgeProvider, OpenAIProvider};
 use raqim_core::health::{HealthMonitor, SystemHealth};
+use raqim_core::hot_memory::HotVectorBuffer;
 use raqim_core::lancedb_store::LanceEngine;
 use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
@@ -23,12 +24,11 @@ use raqim_core::{
 };
 use tower_http::cors::{Any, CorsLayer};
 
-use md5::{Digest, Md5};
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::{fs, println};
 
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
@@ -64,8 +64,8 @@ async fn main() {
     });
 
     // BOOT TELEMETRY SINKER
-    let telemetry = TelemetryEngine::new(&config.tenant_id, &config.license_key);
-    TelemetryEngine::start_sinker_daemon(telemetry.clone());
+    // let telemetry = TelemetryEngine::new(&config.tenant_id);
+    // TelemetryEngine::start_sinker_daemon(telemetry.clone());
 
     // THE INTERNAL EVENT BUS
     let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(5000);
@@ -109,7 +109,7 @@ async fn main() {
             .expect("FATAL: Invalid RSA PEM format"),
     );
 
-    let security_flags = RuntimeSecurityFlags::new(&config.license_key, &decoding_key);
+    let security_flags = RuntimeSecurityFlags::new();
 
     // Spawning a dynamic hot swap listener
     let decoding_key_clone = decoding_key.clone();
@@ -118,30 +118,30 @@ async fn main() {
 
     let allow_wan = Arc::new(AtomicBool::new(false));
 
-    let allow_wan_clone = allow_wan.clone();
-    tokio::spawn(async move {
-        println!("[SYSTEM] Ingess security claim listener spawned successfully. ");
-        while let Ok(event) = license_rx.recv().await {
-            if let SystemEvent::LicenseUpdated { new_jwt } = event {
-                flag_worker.evaluate_jwt(&new_jwt, &decoding_key_clone);
-            }
+    // let allow_wan_clone = allow_wan.clone();
+    // tokio::spawn(async move {
+    //     println!("[SYSTEM] Ingess security claim listener spawned successfully. ");
+    //     while let Ok(event) = license_rx.recv().await {
+    //         if let SystemEvent::LicenseUpdated { new_jwt } = event {
+    //             flag_worker.evaluate_jwt(&new_jwt, &decoding_key_clone);
+    //         }
 
-            let allow_global_a2a = flag_worker.allow_global_a2a.clone().load(Ordering::Relaxed);
-            let allow_global_aegis = flag_worker
-                .allow_global_aegis
-                .clone()
-                .load(Ordering::Relaxed);
-            let allow_global_crdt = flag_worker
-                .allow_global_crdt
-                .clone()
-                .load(Ordering::Relaxed);
+    //         let allow_global_a2a = flag_worker.allow_global_a2a.clone().load(Ordering::Relaxed);
+    //         let allow_global_aegis = flag_worker
+    //             .allow_global_aegis
+    //             .clone()
+    //             .load(Ordering::Relaxed);
+    //         let allow_global_crdt = flag_worker
+    //             .allow_global_crdt
+    //             .clone()
+    //             .load(Ordering::Relaxed);
 
-            // Determine if Zenoh needs to connect to the cloud router at all.
-            let allow_wan_bool = allow_global_a2a || allow_global_aegis || allow_global_crdt;
+    //         // Determine if Zenoh needs to connect to the cloud router at all.
+    //         let allow_wan_bool = allow_global_a2a || allow_global_aegis || allow_global_crdt;
 
-            allow_wan_clone.store(allow_wan_bool, Ordering::SeqCst);
-        }
-    });
+    //         allow_wan_clone.store(allow_wan_bool, Ordering::SeqCst);
+    //     }
+    // });
 
     // Securely loads the swarm key from disk. Generate it if it doesn't exist/
     let key_dir = Path::new("./ca-keys");
@@ -207,6 +207,7 @@ async fn main() {
         .await,
     );
     let wasm_engine = Arc::new(WasmEngine::new());
+    let hot_buffer = Arc::new(HotVectorBuffer::new(10_0000));
 
     let embedder: Box<dyn EmbeddingProvider> = match config.embedder_type.as_str() {
         "openai" => {
@@ -224,19 +225,124 @@ async fn main() {
     let lance_engine =
         Arc::new(LanceEngine::new(&config.lance_path, &config.table_name, embedder).await);
 
+    // 1. Boot global Quarantine network subscriber
+    global_net.listen_for_global_quarantine(aegis.clone()).await;
+
+    // 2. Wire SystemEvent subscriber loop for outbound local quarantine events
+    let mut system_rx = event_tx.subscribe();
+    let net_clone = global_net.clone();
+
+    tokio::spawn(async move {
+        while let Ok(event) = system_rx.recv().await {
+            if let SystemEvent::GlobalQuarantineSync { record } = event {
+                net_clone.broadcast_quarantine_sync(record);
+            }
+        }
+    });
+
     // THE BOOTSTRAP PROTOCOL
-    let (lance_highest_tx, _valut_capacity) =
-        lance_engine.get_vault_metrics().await.unwrap_or((0, 0));
-    let wal_highest_tx = wal.get_highest_tx_id(&config.wal_path);
+    // let (lance_highest_tx, _valut_capacity) =
+    //     lance_engine.get_vault_metrics().await.unwrap_or((0, 0));
+    // let wal_highest_tx = wal.get_highest_tx_id(&config.wal_path);
 
-    // The abs truth is the highest number found in either store.
-    let starting_tx_id = std::cmp::max(lance_highest_tx, wal_highest_tx);
-    let tx_counter = Arc::new(AtomicU64::new(starting_tx_id + 1));
+    // // The abs truth is the highest number found in either store.
+    // let starting_tx_id = std::cmp::max(lance_highest_tx, wal_highest_tx);
+    // let tx_counter = Arc::new(AtomicU64::new(starting_tx_id + 1));
 
-    println!(
-        "[SYSTEM] Bootstrapped Tx Counter at TxID: {} ",
-        starting_tx_id + 1
-    );
+    // println!(
+    //     "[SYSTEM] Bootstrapped Tx Counter at TxID: {} ",
+    //     starting_tx_id + 1
+    // );
+
+    // ============================
+    // THE PHOENIX HYDRATION PROTOCOL: Reconstructs in-memory Axon Merkle trees from uncompacted WAL frames on boot.
+    // ============================
+    println!("[INITIALIIZATION] Phoenix protocol: Hydrating Axon state from active WAL...");
+    if Path::new(&config.wal_path).exists() {
+        if let Ok(wal_bytes) = fs::read(&config.wal_path) {
+            let mut offset = 0;
+            let mut recovered_count = 0;
+
+            while offset < wal_bytes.len() {
+                if offset + 4 > wal_bytes.len() {
+                    break;
+                }
+
+                let mut len_bytes = [0u8; 4];
+                len_bytes.copy_from_slice(&wal_bytes[offset..offset + 4]);
+                let entry_len = u32::from_le_bytes(len_bytes) as usize;
+                offset += 4;
+
+                if offset + entry_len > len_bytes.len() {
+                    break;
+                }
+
+                let entry_slice = &wal_bytes[offset..offset + entry_len];
+
+                if let Ok(archived_log) =
+                    rkyv::access::<<OpLog as rkyv::Archive>::Archived>(entry_slice)
+                {
+                    if let Ok(recovered_log) =
+                        rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
+                    {
+                        axon.hydrate_from_recoverey(&recovered_log);
+                        recovered_count += 1;
+                    }
+                }
+
+                offset += entry_len;
+            }
+
+
+            if !recovered_logs.is_empty() {
+                // Batch embed all recovered WAL texts to restore hot vector memory
+                // Batch-embed all recovered WAL texts to restore hot vector memory
+                let texts: Vec<String> = recovered_logs
+                    .iter()
+                    .map(|l| format!("[{:?}] Agent in {} stated {}", l.state.status, l.state.namespace, l.state.text))
+                    .collect();
+
+                if let Ok(vectors) = embedder.embed_batch(&texts).await {
+                    let mut hot_entries = Vec::with_capacity(recovered_logs.len());
+                    for (i, log) in recovered_logs.into_iter().enumerate() {
+                        hot_entries.push(HotVectorEntry {
+                            tx_id: log.state.transaction_id,
+                            agent_hex: hex::encode(log.agent_id),
+                            namespace: log.state.namespace,
+                            text: log.state.text,
+                            timestamp: log.state.timestamp,
+                            vector: vectors[i].clone(),
+                        });
+                    }
+                    hot_buffer.push_batch(hot_entries);
+                    println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_buffer.len());
+                }                
+
+            }
+
+            println!(
+                "[INITIALIIZATION] Phoenix protocol Complete. Hydrated {} log frames into Axon DAG memory. ",
+                recovered_count
+            );
+        }
+    }
+
+
+    // ---  COMPACTION EVENT LISTENENR  (Watermark eviction) ---- 
+    let mut system_rx = event_tx.subscribe();
+    let hot_buffer_clone = hot_buffer.clone();
+
+    tokio::spawn(async move {
+
+            while let Ok(event) = system_rx.recv().await {
+
+                if let SystemEvent::CompactionTriggered { .., max_compacted_tx } = event {
+                    hot_buffer_clone.evits_compacted_up_to(max_compacted_tx);
+                }
+
+            }
+
+    });
 
     // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
     let mut valut_rx = event_tx.subscribe();
@@ -287,7 +393,6 @@ async fn main() {
         wal.clone(),
         cortex_tx.clone(),
         global_net.clone(),
-        tx_counter.clone(),
         event_tx.clone(),
         master_signing_key.clone(),
         security_flags.allow_time_travel.clone(),
@@ -363,11 +468,16 @@ async fn main() {
                             }
                         };
 
-                        // Compute the Agent ID Hex directly from the valid public key bytes.
+                        // Compute the Agent ID Hex directly from the valid public key bytes
                         let pub_key_bytes = agent_private_key.verifying_key().to_bytes();
-                        let mut hasher = Md5::new();
-                        hasher.update(pub_key_bytes);
-                        let agent_id_byte: [u8; 16] = hasher.finalize().into();
+
+                        // Initialize blake3 key derivation function with Strict Domain Separation
+                        let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
+                        hasher.update(&pub_key_bytes);
+
+                        let mut agent_id_byte = [0u8; 16];
+                        hasher.finalize_xof().fill(&mut agent_id_byte);
+
                         let agent_hex = hex::encode(agent_id_byte);
 
                         println!(
@@ -387,7 +497,6 @@ async fn main() {
                         let w_clone = w_wal.clone();
                         let c_clone = w_cortex_tx.clone();
                         let g_clone = w_global_net.clone();
-                        let t_clone = w_tx_couter.clone();
                         let tx_clone = w_event_tx.clone();
                         let lance_clone = w_lance.clone();
                         let ae_clone = w_aegis.clone();
@@ -401,7 +510,6 @@ async fn main() {
                             shard: shard_clone,
                             cortex_tx: c_clone,
                             global_net: g_clone,
-                            global_tx_counter: t_clone,
                             event_tx: tx_clone,
                             wasi: wasi_ctx,
                             agent_hex: agent_hex.clone(),
@@ -524,13 +632,14 @@ async fn main() {
         global_tx_counter: tx_counter.clone(),
         wal: wal.clone(),
         event_tx: event_tx.clone(),
-        decoding_key,
 
         ui_tx: ui_tx.clone(),
         phantom_ui_tx: phantom_ui_tx.clone(),
         health_tx: health_tx.clone(),
         swarm_registry: registry.clone(),
         master_signing_key: master_signing_key.clone(),
+
+        hot_buffer: hot_buffer.clone(),
     };
 
     let axum_app = build_admin_router(api_state).layer(
@@ -601,6 +710,7 @@ async fn main() {
                 let mut session_established = false;
                 let mut cached_agent_hex = String::new();
                 let mut cached_group_name = String::new();
+                let mut session_pub_key = [0u8; 32];
 
                 loop {
                    //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
@@ -627,7 +737,7 @@ async fn main() {
 
                     // Read the exact payload bytes: Read into the preallocated screatch bufffer.
                     // We slice the scratch buffer to the exact length of the incoming payload complately bypassing the OS memory allocator
-                    let active_payload_slice = &mut payload_scratch_buf[0..payload_len];
+                    let active_payload_slice : &mut [u8] = &mut payload_scratch_buf[0..payload_len];
 
                     if let Err(e) = tokio::io::AsyncReadExt::read_exact(&mut reader, active_payload_slice).await {
                         eprintln!("[TCP EDGE]: Failed to load TCP payload {}", e);
@@ -663,28 +773,33 @@ async fn main() {
                     let mut packet_sig = [0u8; 64];
                     packet_sig.copy_from_slice( archived_ingress.signature.as_slice() );
 
-                    // UNIFIED PERIMETER: Validates lineage, check signature, and checks the namespace instantly
-
-                    // ONLY verify the heavy Master Certificate on the very first packet.
+                    // UNIFIED PERIMETER: Validates lineage, check signature. ONLY verify the heavy Master Certificate on the very first packet.
                     if !session_established {
 
-                            match task_aegis.verify_session_lineage(archived_ingress.capability_cert.as_slice()) {
+                            match task_aegis.verify_session_lineage(archived_ingress.capability_cert.as_slice(), &agent_pub_key) {
                                 Ok((agent_hex, group_name)) => {
                                     session_established = true;
                                     cached_agent_hex = agent_hex;
                                     cached_group_name = group_name;
+                                    session_pub_key = agent_pub_key;
                                 }
 
                                 Err(e) => {
                                     eprintln!("[AEGIS INTERDICTION] Handshake Failed: {} ", e);
                                     break;
-
                                 }
                             }
+                    }   else {
+                        // Enforce Key Consistency: Detect public key swiitching on active session
+                        if agent_pub_key != session_pub_key {
+                            eprintln!("[AEGIS INTERDICTION] Key Drift Attack detected. Dropping Socket. ");
+                            break;
+                        }
                     }
 
                     // Perform ultrafast packet audit for each packet.
-                    if let  Err(e) = task_aegis.authorize_packet_fast(&cached_agent_hex, &cached_group_name, &agent_pub_key, state_slice, &packet_sig, path_intent) {
+                    let packet_timestamp = archived_state.timestamp.as_slice() ;
+                    if let  Err(e) = task_aegis.authorize_packet_fast(&cached_agent_hex, &cached_group_name, &agent_pub_key, state_slice, &packet_sig, path_intent, packet_timestamp) {
 
                         eprintln!("[AEGIS INTERDICTION] Fast Audit failed: {} ", e);
                         break;
@@ -720,7 +835,6 @@ async fn main() {
                         task_brain.clone(),
                         task_cortex_tx.clone(),
                         global_publisher.clone(),
-                        task_tx_couter.clone(),
                         task_event_tx.clone(),
                         Vec::new(),
                         Vec::new(),
@@ -747,7 +861,7 @@ async fn main() {
                     let _ = task_ui_tx.send(UiEvent::ThoughtCommitted {
                         agent_hex: agent_hex.clone(),
                         intent_path: path_intent.to_string(),
-                        tx_id,
+                        tx_id: format!("{:032x}", tx_id),
                         text,
                     });
 

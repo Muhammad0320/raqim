@@ -27,7 +27,7 @@ blake3 =  "1.5"
 zenoh = "1.7.2"
 sysinfo = "0.30"
 hex =  "0.4"
-uuid = { version = "1.8", features = ["v4"] }
+uuid = { version = "1.10", features = ["v7", "serde"] }
 
 lancedb = "0.9"
 arrow-array = "52.2"
@@ -37,6 +37,7 @@ anyhow = "1.0"
 
 datafusion = "35.0"
 
+base64 = "0.23.0"
 
 futures = "0.3"
 clap = { version = "4.5", features = ["derive", "env"] } # For CLI parsing
@@ -66,7 +67,6 @@ toml_edit = "0.25.11"
 tokio-util = "0.7.18"
 postcard = "1.1.3"
 
-md-5 = "0.10" 
 wat = "1.251.0"
-
+ 
 tower-http = { version = "0.5", features = ["cors"] }

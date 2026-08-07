@@ -13,6 +13,7 @@ use lancedb::connection::Connection;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use std::collections::HashMap;
+use std::format;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,6 +24,18 @@ pub struct LanceEngine {
     pub storage_path: String,
     pub dims: i32,
     pub embedder: Box<dyn EmbeddingProvider>, // Polymorphic injection
+}
+
+#[derive(Clone, Debug)]
+pub struct ColdSearchResult {
+    pub tx_id: u128,
+    pub agent_hex: String,
+    pub status: String,
+    pub text: String,
+    pub namespace: String,
+    pub timestamp: i64,
+
+    pub distance: f32,
 }
 
 impl LanceEngine {
@@ -62,6 +75,84 @@ impl LanceEngine {
             embedder,
             dims: 768,
         }
+    }
+
+    /// Executes Cold vector Prosimity search using a pre-computed query vector
+    pub async fn search_cold_vector(
+        &self,
+        query_vector: &[f32],
+        namespace_filter: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<ColdSearchResult>, anyhow::Error> {
+        let table = self.db.open_table(&self.history_table).execute().await?;
+
+        let mut query_builder = table.query().nearest_to(query_vector)?;
+
+        if let Some(ns) = namespace_filter {
+            if !ns.is_empty() {
+                query_builder = query_builder.only_if(format!("namespace = '{}'", ns));
+            }
+        }
+
+        let mut stream = query_builder.limit(limit).execute().await?;
+        let mut results = Vec::new();
+
+        while let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+
+            let tx_col = batch
+                .column_by_name("tx_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let agent_id_col = batch
+                .column_by_name("agent_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let namespace_col = batch
+                .column_by_name("namespace")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let status_col = batch
+                .column_by_name("status")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let text_col = batch
+                .column_by_name("text")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let timestamp_col = batch
+                .column_by_name("timestamp")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+
+            for i in 0..tx_col.len() {
+                let parsed_tx = u128::from_str_radix(tx_col.value(i), 16).unwrap_or(0);
+                results.push(ColdSearchResult {
+                    tx_id: parsed_tx,
+                    agent_hex: agent_id_col.value(i).to_string(),
+                    namespace: namespace_col.value(i).to_string(),
+                    status: status_col.value(i).to_string(),
+                    text: text_col.value(i).to_string(),
+                    timestamp: timestamp_col.value(i),
+
+                    distance: 0.0,
+                });
+            }
+        }
+
+        Ok(results)
     }
 
     /// The Semantic Retriever. Now returns a structured UI data, not a raw string.
@@ -119,7 +210,7 @@ impl LanceEngine {
                 .column_by_name("transaction_id")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<Int64Array>()
+                .downcast_ref::<StringArray>()
                 .unwrap();
             let dist_col = batch
                 .column_by_name("_distance")
@@ -133,7 +224,8 @@ impl LanceEngine {
                 let similatiry = 1.0 - dist_col.value(i);
 
                 results.push(VaultSearchResult {
-                    tx_id: tx_id_col.value(i) as u64,
+                    tx_id: u128::from_str_radix(&tx_id_col.value(i).to_string().as_str(), 16)
+                        .unwrap_or(0),
                     agent_hex: agent_id_col.value(i).to_string(),
                     namespace: ns_col.value(i).to_string(),
                     source: "LANCEDB".to_string(),
@@ -150,7 +242,7 @@ impl LanceEngine {
     /// The exact Apache Arrow Schema mapping for our OpLog
     fn schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
-            Field::new("tx_id", DataType::Int64, false),
+            Field::new("tx_id", DataType::Utf8, false),
             Field::new("agent_id", DataType::Utf8, false),
             Field::new("namespace", DataType::Utf8, false),
             Field::new("timestamp", DataType::Int64, false),
@@ -269,6 +361,17 @@ impl LanceEngine {
                 format!(" {{ \"message\": \"{}\" }} ", "License Key was updated"),
             ),
 
+            SystemEvent::MarkleBatchCrystallized { batch } => {
+                let m = format!(
+                    "{{\"batch_id\": {}, \"namespace\": \"{}\", \"merkle_root\": \"{}\", \"leaves_count\": {}}}",
+                    batch.batch_id,
+                    batch.namespace,
+                    hex::encode(batch.markle_root),
+                    batch.leaves.len()
+                );
+                ("MarkleBatchCrystallized", "SYSTEM".to_string(), m)
+            }
+
             _ => ("default", "default".to_string(), "default".to_string()),
         };
 
@@ -360,7 +463,10 @@ impl LanceEngine {
         }
 
         // 1. Columnar transformation (Tearing struct apart)
-        let tx_ids: Vec<i64> = logs.iter().map(|l| l.state.transaction_id as i64).collect();
+        let tx_ids: Vec<String> = logs
+            .iter()
+            .map(|l| format!("{:032x}", l.state.transaction_id))
+            .collect();
         let agent_ids: Vec<String> = logs.iter().map(|l| hex::encode(l.agent_id)).collect();
         let statuses: Vec<String> = logs
             .iter()
@@ -383,7 +489,7 @@ impl LanceEngine {
         let texts: Vec<String> = logs.iter().map(|l| l.state.text.clone()).collect();
 
         // 2. Build the Zero-Copy Arrow Arrays
-        let tx_id_array = Arc::new(Int64Array::from(tx_ids));
+        let tx_id_array = Arc::new(StringArray::from(tx_ids));
         let agent_id_array = Arc::new(StringArray::from(agent_ids));
         let payload_array = Arc::new(BinaryArray::from(payloads));
         let timestamp_array = Arc::new(Int64Array::from(timestmaps));
@@ -442,6 +548,46 @@ impl LanceEngine {
                 .await
                 .unwrap();
         }
+    }
+
+    /// Return (max_tx_id, total_vector_count)
+    pub async fn get_vault_metrics(&self) -> Result<(u128, u64), anyhow::Error> {
+        let table_res = self.db.open_table(&self.history_table).execute().await;
+
+        let table = match table_res {
+            Ok(t) => t,
+            Err(_) => return Ok((0, 0)),
+        };
+
+        let total_rows = table.count_rows(None).await? as u64;
+
+        if total_rows == 0 {
+            return Ok((0, 0));
+        }
+
+        // Bypass SQL. Stream the raw Apache Arrow batches and use SIMD max aggregation
+        let mut stream = table.query().execute().await?;
+        let mut max_tx: u128 = 0;
+
+        if let Some(batch_result) = stream.next().await {
+            let batch = batch_result?;
+            let tx_col = batch
+                .column_by_name("tx_id")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<arrow_array::StringArray>()
+                .unwrap();
+
+            for i in 0..tx_col.len() {
+                let tx_str = tx_col.value(i);
+                let tx = u128::from_str_radix(tx_str, 16).unwrap_or(0);
+                if tx > max_tx {
+                    max_tx = tx;
+                }
+            }
+        }
+
+        Ok((max_tx, total_rows))
     }
 
     // REAL RAG: Seaches semantic history using methematical vector proximity
@@ -558,8 +704,8 @@ impl LanceEngine {
     pub async fn fetch_closest_snapshot(
         &self,
         agent_hex: &str,
-        target_tx_id: i64,
-    ) -> Result<(u64, u64, Vec<u8>), anyhow::Error> {
+        target_tx_id: u128,
+    ) -> Result<(u128, u64, Vec<u8>), anyhow::Error> {
         let table = self.db.open_table(&self.snapshot_table).execute().await?;
 
         // SQL-Style Filter: Find the highest TxID for this agent that's <= target.
@@ -569,10 +715,6 @@ impl LanceEngine {
                 "agent_id = '{}' AND tx_id <= {} ",
                 agent_hex, target_tx_id
             ))
-            // Ensure we get the absolute closest one
-            // .order_by(vec![
-            //     lancedb::query::ExecutableQuery::order_by("tx_id").desc(),
-            // ])
             .limit(1)
             .execute()
             .await?;
@@ -583,7 +725,7 @@ impl LanceEngine {
                 .column_by_name("tx_id")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<Int64Array>()
+                .downcast_ref::<StringArray>()
                 .unwrap();
 
             let time_col = batch
@@ -601,7 +743,7 @@ impl LanceEngine {
                 .unwrap();
 
             return Ok((
-                tx_col.value(0) as u64,
+                u128::from_str_radix(tx_col.value(0), 16).unwrap_or(0),
                 time_col.value(0) as u64,
                 blob_col.value(0).to_vec(),
             ));
@@ -666,45 +808,6 @@ impl LanceEngine {
         Ok(format!("{} ({:.1})%", top_ns, percent))
     }
 
-    /// Return (max_tx_id, total_vector_count)
-    pub async fn get_vault_metrics(&self) -> Result<(u64, u64), anyhow::Error> {
-        let table_res = self.db.open_table(&self.history_table).execute().await;
-
-        let table = match table_res {
-            Ok(t) => t,
-            Err(_) => return Ok((0, 0)),
-        };
-
-        let total_rows = table.count_rows(None).await? as u64;
-
-        if total_rows == 0 {
-            return Ok((0, 0));
-        }
-
-        // Bypass SQL. Stream the raw Apache Arrow batches and use SIMD max aggregation
-        let mut stream = table.query().execute().await?;
-        let mut max_tx: u64 = 0;
-
-        if let Some(batch_result) = stream.next().await {
-            let batch = batch_result?;
-            let tx_col = batch
-                .column_by_name("tx_id")
-                .unwrap()
-                .as_any()
-                .downcast_ref::<arrow_array::Int64Array>()
-                .unwrap();
-
-            for i in 0..tx_col.len() {
-                let tx = tx_col.value(i) as u64;
-                if tx > max_tx {
-                    max_tx = tx
-                }
-            }
-        }
-
-        Ok((max_tx, total_rows))
-    }
-
     /// Computes the exact size of the LanceDB directory on Disk
     pub async fn get_index_size_mb(&self) -> f64 {
         let table_dir = format!("{}/{}.lance", &self.storage_path, &self.history_table);
@@ -747,7 +850,7 @@ impl LanceEngine {
                 .column_by_name("transaction_id")
                 .unwrap()
                 .as_any()
-                .downcast_ref::<Int64Array>()
+                .downcast_ref::<StringArray>()
                 .unwrap();
             let status_col = batch
                 .column_by_name("status")
@@ -764,7 +867,8 @@ impl LanceEngine {
 
             for i in 0..tx_col.len() {
                 nodes.push(TimelineNode {
-                    tx_id: tx_col.value(i) as u64,
+                    tx_id: u128::from_str_radix(&tx_col.value(i).to_string().as_str(), 16)
+                        .unwrap_or(0),
                     timestamp: timestamp_col.value(i).to_string(),
                     agent_status: status_col.value(i).to_string(),
                     payload_preview: text_col.value(i).to_string(),

@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
     loop {
         while let Ok(event) = rx.try_recv() {
             match event {
-                SystemEvent::ThoughtCommited { agent_id, tx_id } => {
+                SystemEvent::ThoughtCommitted { agent_id, tx_id, .. } => {
                     app.ledger_stream.push(format!(
                         "[TxID: {}] Agent {} commited.",
                         tx_id,
@@ -107,6 +107,7 @@ async fn main() -> Result<()> {
                 } => {}
 
                 SystemEvent::SystemBoot { message } => {}
+                _ => {}
             }
 
             if app.ledger_stream.len() > 100 {

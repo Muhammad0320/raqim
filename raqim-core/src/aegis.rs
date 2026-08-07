@@ -5,6 +5,7 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
+use std::eprintln;
 use std::sync::mpsc::channel;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
@@ -137,6 +138,11 @@ impl AegisGateKeeper {
         }
     }
 
+    #[inline(always)]
+    pub fn is_quarantined(&self, agent_hex: &str) -> bool {
+        self.quarantine_blocklist.contains_key(agent_hex)
+    }
+
     /// Locks down the agent globally across the OS
     pub fn trigger_quarantine(&self, agent_hex: &str, target: &str, v_type: &str, reason: &str) {
         let timestamp = SystemTime::now()
@@ -179,6 +185,37 @@ impl AegisGateKeeper {
         );
     }
 
+    /// Remote Ingestion: Triggered when a foreign node broadcasts a quarantine over Zenoh
+    pub fn assimilate_remote_quarantine(&self, record: QuarantineRecord) {
+        // prevent redundant processing if already blocklisted
+        if self.quarantine_blocklist.contains_key(&record.agent_hex) {
+            return;
+        }
+
+        //  Mutate local firewall blocklist instantly.
+        self.quarantine_blocklist
+            .insert(record.agent_hex.clone(), record.clone());
+
+        // Trigger local security breach alerts
+        let _ = self.tx.send(SystemEvent::SecurityBreach {
+            agent_id: record.agent_hex.clone(),
+            reason: format!(
+                "Global Network Quarantine: {}",
+                record.violation_type.clone()
+            ),
+            culprit_text: record.payload_preview.clone(),
+        });
+
+        let _ = self.ui_tx.send(UiEvent::AegisAlert {
+            record: record.clone(),
+        });
+
+        eprintln!(
+            "[AEGIS MESH INTERDICTION] Remote quarantine assimilated from network for agent {}. Reason: {} ",
+            record.agent_hex, record.violation_type
+        );
+    }
+
     /// Validates the cryptographic token structure and executes signature audit at the gateway.
     // The ultra-fast packet audit (Called once per packet)
     pub fn authorize_packet_fast(
@@ -189,7 +226,27 @@ impl AegisGateKeeper {
         payload: &[u8],
         packet_sig_bytes: &[u8; 64],
         intent_path: &str,
+        packet_timestamp: i64,
     ) -> Result<(), anyhow::Error> {
+        // Freshness Window Check
+        let current_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        if (current_ts - packet_timestamp).abs() > 30 {
+            self.trigger_quarantine(
+                agent_hex,
+                intent_path,
+                "REPLAY_ATTACK",
+                "Packet timestamp expired (drift > 30s)",
+            );
+
+            return Err(anyhow::anyhow!(
+                "Security Violation: State packet rejected (Anti-replay)"
+            ));
+        };
+
         //  AUTHENTICITY VERIFICATION: Verify payload integrity against individual Agent Key.
         let agent_verifying_key = VerifyingKey::from_bytes(agent_pub_bytes)?;
         let packet_sig = Signature::from_bytes(packet_sig_bytes);
@@ -205,7 +262,7 @@ impl AegisGateKeeper {
             ));
         }
 
-        // 6. POLICY ENFORCEMENT: Evaluate namespace directly from the LIVE manifest file
+        // 6. POLICY ENFORCEMENT: Evaluate namespace against LIVE policy rule
         let policies_guard = self.group_policies.read().unwrap();
         let live_policy = policies_guard.get(group_name).ok_or_else(|| {
             anyhow::anyhow!(
@@ -258,14 +315,36 @@ impl AegisGateKeeper {
         ))
     }
 
-    /// The heavy handshake (Called once per connection)
+    /// The heavy handshake: Validates Master Certificate AND binds it to the packet's public key
     pub fn verify_session_lineage(
         &self,
         cert_bytes: &[u8],
+        agent_pub_bytes: &[u8; 32],
     ) -> Result<(String, String), anyhow::Error> {
-        // 1. Unpack the certificate token using postcard
+        // Unpack the certificate token
         let cert: CapabilityCertificate = postcard::from_bytes(cert_bytes)
             .map_err(|_| anyhow::anyhow!("Malformed Cryptographic Certificate Token"))?;
+
+        // Cryptographic binding: derive blake3 agent_hex directly from the incoming packet's pub key
+        let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
+        hasher.update(agent_pub_bytes);
+        let mut derived_bytes = [0u8; 16];
+        hasher.finalize_xof().fill(&mut derived_bytes);
+        let derived_agent_hex = hex::encode(derived_bytes);
+
+        // Assert that the Certificate ID matches the key that actually signed the packet
+        if cert.agent_hex != derived_agent_hex {
+            self.trigger_quarantine(
+                &derived_agent_hex,
+                "Handshake",
+                "CONFUSED_DEPUTY_SPOOF",
+                "Public key does not match CapabilityCertificate identity",
+            );
+
+            return Err(anyhow::anyhow!(
+                "Security Violation: Certificate identity mismatch with signing key "
+            ));
+        }
 
         // 2. Short-circuit check if the agent is actively quarantined
         if self.quarantine_blocklist.contains_key(&cert.agent_hex) {
@@ -274,7 +353,7 @@ impl AegisGateKeeper {
             ));
         }
 
-        // 3. Audit token lifetime bounds.
+        // 3. Audit Certifiicate Expiration
         let current_ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()

@@ -71,6 +71,7 @@ impl RaqimCryptoCore {
             public_key: self.pub_key_bytes,
             signature,
             state_bytes: state_bytes.into_vec(),
+            capability_cert: Vec::new(),
         };
 
         let serialized_envelope = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope).unwrap();

@@ -2,11 +2,11 @@ use crate::{AgentState, AgentStatus};
 use dashmap::DashMap;
 use loro::{ImportStatus, LoroDoc, LoroList, LoroMap};
 use parking_lot::RwLock;
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, println, sync::Arc};
 
-// An Isolated Swarm Domain Document protected by an independent, low-overhead read/write lock which is namespace scoped
+// The isolated CRDT Memory Shard for a Single Swarm namespace
 pub struct SwarmState {
-    // This lock ONLY protects this specific namespace
+    // Thread safe parking_lot RWLock guaranntees zero lock poisoning and .01ms lock times.
     pub doc: RwLock<LoroDoc>,
     pub root_timeline_map: LoroMap,
 }
@@ -22,7 +22,7 @@ impl SwarmState {
 
         // --- THE CRDT EVENT LISTENER ---
         // We attach a deep listener to the Loro Doc. Whenever the math resolves a conflict, this closure fires syncronously
-        let subscriber = doc.subscribe_root(Arc::new(move |event: loro::event::DiffEvent| {
+        doc.subscribe_root(Arc::new(move |event: loro::event::DiffEvent| {
             // event.events contains the precise diffs (what was added, deleted, updated)
             for diff in &event.events {
                 println!(
@@ -38,16 +38,16 @@ impl SwarmState {
         }
     }
 
-    /// Appends a new thought securely to an agent's timeline array without risk of deletion or amnesia
+    /// Appends a new thought securely to an agent's timeline array
     pub fn append_agent_thought(
         &self,
         agent_id_hex: &str,
         state: &AgentState,
     ) -> Result<Vec<u8>, anyhow::Error> {
         // Acquire an exclusive write lock ONLY for this specific swarm document
-        let dock_lock = self.doc.write();
+        let doc_lock = self.doc.write();
 
-        let previous_vv = dock_lock.oplog_vv();
+        let previous_vv = doc_lock.oplog_vv();
 
         // Checks if a timeline array already exists for this agent_id token
         let agent_timeline = match self.root_timeline_map.get(agent_id_hex) {
@@ -59,7 +59,7 @@ impl SwarmState {
                     .insert_container(agent_id_hex, LoroList::new())
                     .map_err(|_| {
                         anyhow::anyhow!(
-                            "CRDT Allocation Error: Filed to generate agent timeine leaf "
+                            "CRDT Allocation Error: Failed to generate agent timeine leaf "
                         )
                     })?
             }
@@ -84,11 +84,11 @@ impl SwarmState {
         // Push the completed leaf node to the end of the agent's historical timeline array
         agent_timeline.insert_container(agent_timeline.len(), record_entry)?;
 
-        // Force an absolute commit block
-        dock_lock.commit();
+        // Force CRDT commit
+        doc_lock.commit();
 
-        // Export only the fresh structure mutatitons generated during gthis specific Operation
-        let delta_bytes = dock_lock.export(loro::ExportMode::Updates {
+        // Export only the fresh structure mutatitons generated this specific Op
+        let delta_bytes = doc_lock.export(loro::ExportMode::Updates {
             from: Cow::Borrowed(&previous_vv),
         })?;
 
@@ -101,13 +101,13 @@ impl SwarmState {
         delta: &[u8],
     ) -> Result<ImportStatus, loro::LoroError> {
         // parses the binary data and merges it into out local graph.
-        self.doc.read().import(delta)
+        self.doc.write().import(delta)
     }
 }
 
 // The Global Enterprise Registry.
 pub struct SwarmStateRegistry {
-    // Threads looking up different namespaces will hit different bucket with zero locking interference.
+    /// Sharded concurrent map mapping namespacestrigs to atomic brain pointers
     pub shards: DashMap<String, Arc<SwarmState>>,
 }
 
@@ -118,14 +118,51 @@ impl SwarmStateRegistry {
         }
     }
 
+    /// TWO-PASS speculative allocation: Guarantees Zero lock starvation
     pub fn get_or_create_brain(&self, namespace: &str) -> Arc<SwarmState> {
+        // Pass 1: Fast read path (Zero write-lock contention)
         if let Some(state) = self.shards.get(namespace) {
             return state.value().clone();
         }
 
+        // Heavy work outside the lock: Dashmap is not locked during this allocation!
+        let new_brain = Arc::new(SwarmState::new(namespace));
+
+        // Pass 2: Atomic Entry (Fast Atomic Swap)
         self.shards
             .entry(namespace.to_string())
-            .or_insert_with(|| Arc::new(SwarmState::new(namespace)))
+            .or_insert(new_brain)
+            .value()
             .clone()
+    }
+
+    /// Explicit Eviction: Evicts a specific namespace shard from RAM hen terminated
+    pub fn evict_brain(&self, namespace: &str) -> bool {
+        self.shards.remove(namespace).is_some()
+    }
+
+    /// Atomic Purge: Scans and purges all dead/completed phantom simulation shard
+    pub fn purge_phantom_shards(&self) -> usize {
+        let mut purge_count = 0;
+
+        // Retain only production shards & Active phantom shards still held by rurnning tasks
+        self.shards.retain(|key, brain| {
+            if key.starts_with("phantom_") {
+                if Arc::strong_count(brain) == 1 {
+                    purge_count += 1;
+                    return false;
+                }
+            }
+            true
+        });
+
+        if purge_count > 0 {
+            println!(
+                "[SWARM REGISTRY] Evicted {} dead phantom simulation shards from RAM. ",
+                purge_count
+            );
+        }
+
+        purge_count
     }
 }

@@ -1,4 +1,5 @@
 use arrow_array::Array;
+use dashmap::DashMap;
 use ed25519_dalek::Signer;
 use ed25519_dalek::SigningKey;
 use futures::StreamExt;
@@ -7,10 +8,12 @@ use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
 use rand_core::OsRng;
 use rkyv::{Archive, Archived};
+use std::collections::HashMap;
+use std::format;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
+use std::println;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
@@ -19,14 +22,18 @@ use std::{fs::File, sync::Arc};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
-use tokio_util::io::simplex::new;
 
+use crate::AgentState;
 use crate::AgentStatus;
+use crate::EffectKey;
+use crate::EffectRecord;
 use crate::aegis::AegisGateKeeper;
 use crate::aegis::CapabilityCertificate;
 use crate::api::ForkConfig;
 use crate::api::UiEvent;
 use crate::axon::AxonGateKeeper;
+use crate::generate_uuidv7_txid;
+use crate::hot_memory::HotVectorBuffer;
 use crate::network::GlobalNetworkBridge;
 use crate::sandbox::SandboxContent;
 use crate::sandbox::WasmEngine;
@@ -52,10 +59,20 @@ pub struct MemoryRouter {
     wal_engine: Arc<WalEngine>,
     cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
-    global_tx_counter: Arc<AtomicU64>,
     event_tx: Sender<SystemEvent>,
     master_signing_key: SigningKey,
     allow_time_travel: Arc<AtomicBool>,
+    effect_index: DashMap<EffectKey, EffectRecord>,
+}
+
+pub struct UnifiedSearchResult {
+    pub tx_id: u128,
+    pub agent_hex: String,
+    pub namespace: String,
+    pub text: String,
+    pub timestamp: i64,
+    pub score: f32,
+    pub source: &'static str,
 }
 
 impl MemoryRouter {
@@ -70,7 +87,6 @@ impl MemoryRouter {
         wal_engine: Arc<WalEngine>,
         cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
         global_net: Arc<GlobalNetworkBridge>,
-        global_tx_counter: Arc<AtomicU64>,
         event_tx: Sender<SystemEvent>,
         master_signing_key: SigningKey,
         allow_time_travel: Arc<AtomicBool>,
@@ -86,10 +102,10 @@ impl MemoryRouter {
             wal_engine,
             cortex_tx,
             global_net,
-            global_tx_counter,
             event_tx,
             master_signing_key,
             allow_time_travel,
+            effect_index: DashMap::new(),
         }
     }
 
@@ -125,8 +141,38 @@ impl MemoryRouter {
         }
     }
 
+    // RAG CONTEXT: Prioritize the hot WAL, fills the rest with semantic lanceDB
+    pub async fn semantic_search_with_context(
+        &self,
+        query: &str,
+        namespace: &str,
+        limit: usize,
+    ) -> Result<Vec<String>, anyhow::Error> {
+        let mut final_context = Vec::new();
+
+        // 1. HOT MEMORY (WAL): Zero-Copy Semantic Filtering
+        self.scan_wal_zero_copy(|archived| {
+            // PHYSICS: We read the name_space as a string slice without allocating mem
+            let log_namespace = archived.state.namespace.as_str();
+
+            if log_namespace.starts_with(namespace) {
+                final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
+            }
+        });
+
+        // 2. Supplement with Deep Semantic search
+        let mut deep_memories = self
+            .lance_engine
+            .search_memory(query, namespace, limit)
+            .await?;
+
+        final_context.append(&mut deep_memories);
+
+        Ok(final_context)
+    }
+
     /// FORENSIC TIME MACHINE
-    pub async fn fetch_by_txid(&self, target_tx_id: u64) -> Result<String, anyhow::Error> {
+    pub async fn fetch_by_txid(&self, target_tx_id: u128) -> Result<String, anyhow::Error> {
         let mut result = None;
 
         // 1. Hot Memory ( Zero-copy WAL scan )
@@ -185,52 +231,22 @@ impl MemoryRouter {
         ))
     }
 
-    // RAG CONTEXT: Prioritize the hot WAL, fills the rest with semantic lanceDB
-    pub async fn semantic_search_with_context(
-        &self,
-        query: &str,
-        namespace: &str,
-        limit: usize,
-    ) -> Result<Vec<String>, anyhow::Error> {
-        let mut final_context = Vec::new();
-
-        // 1. HOT MEMORY (WAL): Zero-Copy Semantic Filtering
-        self.scan_wal_zero_copy(|archived| {
-            // PHYSICS: We read the name_space as a string slice without allocating mem
-            let log_namespace = archived.state.namespace.as_str();
-
-            if log_namespace.starts_with(namespace) {
-                final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
-            }
-        });
-
-        // 2. Supplement with Deep Semantic search
-        let mut deep_memories = self
-            .lance_engine
-            .search_memory(query, namespace, limit)
-            .await?;
-
-        final_context.append(&mut deep_memories);
-
-        Ok(final_context)
-    }
-
     /// THE RESURRECTION ENGINE
     /// Rebuild the LORO CRDT Hive Mind from Cold storage and Hot Memory.
     pub async fn rebuild_agent_timeline(
         &self,
         agent_hex: &str,
-        target_tx_id: u64,
+        target_tx_id: u128,
         wal_engine: Arc<WalEngine>,
-    ) -> Result<(Vec<u8>, Vec<OpLog>, u64, u64), anyhow::Error> {
+    ) -> Result<(Vec<u8>, Vec<OpLog>, u128, u64), anyhow::Error> {
         self.telemetry.record_time_travel();
 
         // RESOLVE THE TARGET INFINITY HACK
         // Find the highest known tx_id for this agent.
-        let actual_target_transaction = if target_tx_id == u64::MAX {
+        let actual_target_transaction = if target_tx_id == u128::MAX {
             // Checking the WAL Index first
             let wal_max = {
-                let idex = wal_engine.index.read().unwrap();
+                let idex = wal_engine.index.read().await;
                 idex.keys().copied().filter(|&k| k > 0).max()
             };
 
@@ -240,7 +256,7 @@ impl MemoryRouter {
                 // If WAL is empty/ compacted, ask lanceDB for the absolute highest recorded tx_id
                 let (max_lance_tx, _, _) = self
                     .lance_engine
-                    .fetch_closest_snapshot(agent_hex, i64::MAX)
+                    .fetch_closest_snapshot(agent_hex, u128::MAX)
                     .await
                     .unwrap_or((0, 0, Vec::new()));
                 max_lance_tx
@@ -252,14 +268,14 @@ impl MemoryRouter {
         // 1. O(1) COLD MEMORY JUMP (LanceDB)
         let (snapshot_txid, snapshot_timestamp, memory_blob) = self
             .lance_engine
-            .fetch_closest_snapshot(agent_hex, target_tx_id as i64)
+            .fetch_closest_snapshot(agent_hex, target_tx_id)
             .await
             .unwrap_or((0, 0, Vec::new()));
 
         // Determine if we need deep discovery (LanceDB) or Hot Recoverey (WAL)
         let oldest_wal_tx = {
-            let idx = wal_engine.index.read().unwrap();
-            idx.keys().next().cloned().unwrap_or(u64::MAX) // Get the current smallest TxID currently in the WAL
+            let idx = wal_engine.index.read().await;
+            idx.keys().next().cloned().unwrap_or(u128::MAX) // Get the current smallest TxID currently in the WAL
         };
 
         println!(
@@ -271,7 +287,7 @@ impl MemoryRouter {
 
         // 2. O(1) WAL INDEX SEEK
         // We calculate the very next TxID we need to read
-        let next_txid = (snapshot_txid as u64) + 1;
+        let next_txid = snapshot_txid;
 
         if actual_target_transaction < oldest_wal_tx {
             // DEEP TIME TRAVEL: The WAL has been compacted. We must read from LanceDB.
@@ -302,7 +318,7 @@ impl MemoryRouter {
                     .column_by_name("transaction_id")
                     .unwrap()
                     .as_any()
-                    .downcast_ref::<arrow_array::Int64Array>()
+                    .downcast_ref::<arrow_array::StringArray>()
                     .expect(" FATAL: trasaction_id column isn't an Int64Array");
                 let text_col = batch
                     .column_by_name("text")
@@ -375,7 +391,11 @@ impl MemoryRouter {
                         state: crate::AgentState {
                             agent_id: Some([0; 16]),
                             namespace: namespace_col.value(i).to_string(),
-                            transaction_id: tx_id_col.value(i) as u64,
+                            transaction_id: u128::from_str_radix(
+                                &tx_id_col.value(i).to_string().as_str(),
+                                16,
+                            )
+                            .unwrap_or(0),
                             timestamp: timestamp_col.value(i),
                             status,
                             text: text_col.value(i).to_string(),
@@ -391,7 +411,7 @@ impl MemoryRouter {
             if next_txid <= target_tx_id {
                 // Ask the mutex protected BTreeMap for the exact byte offset on the SSD
                 let start_byte = {
-                    let idx = wal_engine.index.read().unwrap();
+                    let idx = wal_engine.index.read().await;
                     idx.get(&next_txid).cloned().unwrap_or(0)
                 };
 
@@ -454,7 +474,7 @@ impl MemoryRouter {
     pub async fn boot_historical_agent(
         &self,
         agent_hex: &str,
-        target_tx_id: Option<u64>,
+        target_tx_id: Option<u128>,
         fork_config: Option<ForkConfig>,
         is_isolated_debug: bool,
         phantom_ui_tx: tokio::sync::broadcast::Sender<UiEvent>,
@@ -467,7 +487,7 @@ impl MemoryRouter {
             ));
         }
 
-        let fetch_target = target_tx_id.unwrap_or(u64::MAX);
+        let fetch_target = target_tx_id.unwrap_or(u128::MAX);
 
         let (memory_blob, historical_oplog, snapshot_tx, snapshot_timestamp) = self
             .rebuild_agent_timeline(agent_hex, fetch_target, self.wal_engine.clone())
@@ -651,7 +671,6 @@ impl MemoryRouter {
             shard: self.brain.clone(),
             cortex_tx: self.cortex_tx.clone(),
             global_net: active_net.clone(),
-            global_tx_counter: self.global_tx_counter.clone(),
             event_tx: actual_tx.clone(),
             wasi: wasi_ctx,
             lance: self.lance_engine.clone(),
@@ -684,8 +703,7 @@ impl MemoryRouter {
 
         // If we're time travelling the agent starts from the target_tx_id
         // If Resurrection, we pass in the CURRENT global counter so it resumes at the tip of reality
-        let execution_start_tx =
-            target_tx_id.unwrap_or_else(|| self.global_tx_counter.load(Ordering::SeqCst));
+        let execution_start_tx = target_tx_id.unwrap_or(snapshot_tx);
 
         tokio::spawn(async move {
             // Read the WASM binary from the disk
@@ -709,6 +727,196 @@ impl MemoryRouter {
             }
         });
 
+        self.brain.purge_phantom_shards();
+
         Ok(())
+    }
+
+    /// Unified hybrid search engine: Scatters query to Cold LanceDB and Hot RAM Vector Buffer concurrently performs Receprpcal Rank Fusion (RRF) and Time-Decay Scoring, and formats context strings.
+    pub async fn query_hybrid_memory(
+        &self,
+        query: &str,
+        namespace: Option<&str>,
+        limit: usize,
+        hot_buffer: &HotVectorBuffer,
+    ) -> Result<Vec<String>, anyhow::Error> {
+        // Embed query once
+        let query_vector = self.lance_engine.embedder.embed(query).await?;
+
+        // PARALLEL SCATTER-GATHER (Cold LanceDB + Hot RAM)
+        let cold_future = self
+            .lance_engine
+            .search_cold_vector(&query_vector, namespace, limit * 2);
+
+        let hot_result = hot_buffer.search_hot(&query_vector, namespace, limit * 2);
+
+        let cold_result = cold_future.await.unwrap_or_default();
+
+        // RECIPROCAL RANK FUSION (RRF) & DEDUPLICATION BY UUIDv7 tx_id
+        let mut fused_map: HashMap<u128, UnifiedSearchResult> = HashMap::new();
+        let k = 60.0f32; // std RRF smoothing constant
+        let current_ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // Process Cold Results
+        for (rank, cold) in cold_result.into_iter().enumerate() {
+            let rrf_score = 1.0 / (k + (rank + 1) as f32);
+
+            // Time decay multiplier: e^(-lambda * delta_t_hours)
+            let age_hours = ((current_ts - cold.timestamp).max(0) as f32) / 3600.0;
+            let time_decay = (-0.05 * age_hours).exp();
+            let final_score = rrf_score * time_decay;
+
+            fused_map.insert(
+                cold.tx_id,
+                UnifiedSearchResult {
+                    tx_id: cold.tx_id,
+                    agent_hex: cold.agent_hex,
+                    namespace: cold.namespace,
+                    text: cold.text,
+                    timestamp: cold.timestamp,
+                    score: final_score,
+                    source: "COLD_LANCEDB",
+                },
+            );
+        }
+
+        // Process Hot RAM Results (Boosted by recency)
+        for (rank, (hot, sim_score)) in hot_result.into_iter().enumerate() {
+            let rrf_score = 1.0 / (k + (rank + 1) as f32);
+            let age_hours = ((current_ts - hot.timestamp).max(0) as f32) / 3600.0;
+            let time_decay = (-0.01 * age_hours).exp(); // Slower decay for hot memory
+            let final_score = (rrf_score + sim_score) * time_decay * 1.25; // 25% Hot Recency Boost
+
+            fused_map
+                .entry(hot.tx_id)
+                .and_modify(|existing| {
+                    if final_score > existing.score {
+                        existing.score = final_score;
+                        existing.source = "HOT_RAM_BUFFER";
+                    }
+                })
+                .or_insert(UnifiedSearchResult {
+                    tx_id: hot.tx_id,
+                    agent_hex: hot.agent_hex,
+                    namespace: hot.namespace,
+                    text: hot.text,
+                    timestamp: hot.timestamp,
+                    score: final_score,
+                    source: "HOT_RAM_BUFFER",
+                });
+        }
+
+        // SORT BY HYBRID RRF SCORE
+        let mut final_list: Vec<UnifiedSearchResult> = fused_map.into_values().collect();
+        final_list.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        final_list.truncate(limit);
+
+        // Format Hyper-Rich Context String For LLM Prompt Window
+        let formatted_memories: Vec<String> = final_list
+            .into_iter()
+            .map(|res| {
+                format!(
+                    "[Time: {}] [TxID: {:032x}] [Source: {}] Namespace: '{}' -> {} ",
+                    res.timestamp, res.tx_id, res.source, res.namespace, res.text
+                )
+            })
+            .collect();
+
+        Ok(formatted_memories)
+    }
+
+    /// Record Effect (Record mode) : captures a live side-effect, writes it to the wal & merkle DAG and updates the RAM
+    pub async fn record_effect(
+        &self,
+        agent_id: [u8; 16],
+        step_ordinal: u64,
+        call_signature_hash: [u8; 32],
+        output_payload: Vec<u8>,
+        namespace: &str,
+    ) -> Result<u128, anyhow::Error> {
+        let agent_hex = hex::encode(agent_id);
+        let transaction_id = generate_uuidv7_txid();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        let record = EffectRecord {
+            agent_id,
+            step_ordinal,
+            call_signature_hash,
+            output_payload: output_payload.clone(),
+            transaction_id,
+            timestamp,
+        };
+
+        // Calculate RAM Lookup Key
+        let effect_key = EffectKey::derive(&agent_id, step_ordinal, &call_signature_hash.clone());
+
+        self.effect_index.insert(effect_key, record.clone());
+
+        let state = AgentState {
+            agent_id: Some(agent_id),
+            transaction_id,
+            timestamp,
+            namespace: namespace.to_string(),
+            status: AgentStatus::ToolExecution,
+            text: format!(
+                "[EFFECT_RECORD] Step: {} | Len: {} bytes ",
+                step_ordinal,
+                output_payload.len()
+            ),
+        };
+
+        let raw_oplog = OpLog {
+            agent_id,
+            state,
+            delta: output_payload.clone(),
+            previous_hash: [0u8; 32],
+            current_hash: [0u8; 32],
+            entropy_seeds: Vec::new(),
+            network_responses: Vec::new(),
+        };
+
+        let (sealed_log, optional_batch) = self.axon.seal_thought(raw_oplog);
+
+        if let Some(batch) = optional_batch {
+            let _ = self
+                .event_tx
+                .send(SystemEvent::MarkleBatchCrystallized { batch });
+        }
+
+        self.wal_engine.append(sealed_log).await;
+
+        println!(
+            " [EFFECT ENGINE] Recorded Side-Effect for Agent: {} at Step: {} [TxID: {:032x}] ",
+            agent_hex, step_ordinal, transaction_id
+        );
+
+        Ok(transaction_id)
+    }
+
+    /// Get Effect (Replay mode): Perform 0(1) Ram lookup to fetch recorded payload
+    pub fn get_effect(
+        &self,
+        agent_id: &[u8; 16],
+        step_ordinal: u64,
+        call_signature_hash: &[u8; 32],
+    ) -> Option<EffectRecord> {
+        let record_key = EffectKey::derive(agent_id, step_ordinal, call_signature_hash);
+
+        // O(1) sharded RAM lookup
+        if let Some(record) = self.effect_index.get(&record_key) {
+            return Some(record.value().clone());
+        }
+
+        None
     }
 }

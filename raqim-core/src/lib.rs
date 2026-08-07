@@ -2,6 +2,7 @@ pub mod aegis;
 pub mod api;
 pub mod axon;
 pub mod compactor;
+
 pub mod config;
 pub mod cortex;
 pub mod embedding;
@@ -16,16 +17,19 @@ pub mod state;
 pub mod telemetry;
 pub mod utils;
 
-use jsonwebtoken::{DecodingKey, Validation, decode};
+pub mod hot_memory;
+
+use blake3::Hasher;
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::format;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast::Sender;
 
 use crate::aegis::QuarantineRecord;
-use crate::api::EnterpriseClaim;
+use crate::axon::MarkleBatch;
 use crate::state::SwarmStateRegistry;
 use crate::telemetry::TelemetryEngine;
 use crate::{axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine};
@@ -34,7 +38,7 @@ use crate::{axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngi
 #[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
 pub struct AgentState {
     pub agent_id: Option<[u8; 16]>,
-    pub transaction_id: u64,
+    pub transaction_id: u128,
 
     pub timestamp: i64,
     pub status: AgentStatus,
@@ -81,11 +85,51 @@ pub struct A2AEnvelope {
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 pub struct IngressEnvelope {
-    pub intent_path: String,      // "raqim_finance/ledger" ( Checked by Aegis )
-    pub public_key: [u8; 32],     // The Ed25519 public key of the sender
-    pub signature: [u8; 64],      // The mathematical signauture proving authenticity
-    pub state_bytes: Vec<u8>,     // The actual thought
-    pub capability_cert: Vec<u8>, // The master token signed by the Master Key
+    pub intent_path: String,
+    pub public_key: [u8; 32],
+    pub signature: [u8; 64],
+    pub state_bytes: Vec<u8>,
+    pub capability_cert: Vec<u8>,
+}
+
+/// The Cryptographic Boundary Representation of a Non-Deterministoc Side-Effect
+#[derive(Debug, Clone, Archive, Serialize, Deserialize, serde::Serialize, serde::Deserialize)]
+pub struct EffectRecord {
+    pub agent_id: [u8; 16],
+    pub step_ordinal: u64,
+
+    /// 32-byte Blake3 hash of the input signature (Prompt text + model name + parameters)
+    pub call_signature_hash: [u8; 32],
+
+    pub output_payload: Vec<u8>,
+
+    /// 128-bit transaction ID binding this effect to the Merkle DAG
+    pub transaction_id: u128,
+
+    pub timestamp: i64,
+}
+
+/// The Unique Lookup Key computed fpr in-memory RAM Effect matching
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct EffectKey(pub [u8; 32]);
+
+impl EffectKey {
+    /// Computes a domain-separated BLAKE3 key over (agent_id + step_ordinal + call_signature_hash)
+    pub fn derive(agent_id: &[u8; 16], step_ordinal: u64, call_hash: &[u8; 32]) -> Self {
+        let mut hasher = Hasher::new_derive_key("raqim.effect.v1.key");
+        hasher.update(agent_id);
+        hasher.update(&step_ordinal.to_le_bytes());
+        hasher.update(call_hash);
+
+        let mut key_bytes = [0u8; 32];
+        hasher.finalize_xof().fill(&mut key_bytes);
+        Self(key_bytes)
+    }
+}
+
+#[inline(always)]
+pub fn generate_uuidv7_txid() -> u128 {
+    uuid::Uuid::now_v7().as_u128()
 }
 
 pub async fn execute_raqim_cascade(
@@ -95,12 +139,11 @@ pub async fn execute_raqim_cascade(
     shard_brain: Arc<SwarmStateRegistry>,
     cortex_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
-    global_tx_counter: Arc<AtomicU64>,
     tx: Sender<SystemEvent>,
     seeds: Vec<u64>,
     responses: Vec<String>,
     telemetry: Arc<TelemetryEngine>,
-) -> Result<u64, anyhow::Error> {
+) -> Result<u128, anyhow::Error> {
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];
 
@@ -115,10 +158,13 @@ pub async fn execute_raqim_cascade(
 
     let agent_hex = hex::encode(final_agent_id);
 
+    // Generate globally uniique, time-ordered 128-bit UUIDv7
+    let tx_id = generate_uuidv7_txid();
+
     let enriched_state = AgentState {
         agent_id: Some(final_agent_id),
         namespace: archive_state.namespace.to_string(),
-        transaction_id: global_tx_counter.fetch_add(1, Ordering::SeqCst),
+        transaction_id: tx_id,
 
         timestamp: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -138,7 +184,7 @@ pub async fn execute_raqim_cascade(
         .append_agent_thought(&agent_hex, &enriched_state)
         .unwrap();
 
-    telemetry.record_crdt_merge();
+    // telemetry.record_crdt_merge();
 
     // Contruct the raw log
     let raw_log = OpLog {
@@ -153,7 +199,11 @@ pub async fn execute_raqim_cascade(
     };
 
     // 3. Cryptographically Seal (Markle DAG)
-    let sealed_log = axon.seal_thought(raw_log);
+    let (sealed_log, optional_markle_batch) = axon.seal_thought(raw_log);
+
+    if let Some(batch) = optional_markle_batch {
+        let _ = tx.send(SystemEvent::MarkleBatchCrystallized { batch });
+    }
 
     // 4. Fire to wal (Durability)
     wal.append(sealed_log.clone()).await;
@@ -164,21 +214,24 @@ pub async fn execute_raqim_cascade(
 
     global_net.broadcast_to_world(&sealed_log).await;
 
+    // Convert u128 to hex string for human-readable sse event
+    let tx_id_hex = format!("{:032x}", tx_id);
+
     let _ = tx.send(SystemEvent::ThoughtCommitted {
         agent_id: agent_hex.clone(),
-        tx_id: enriched_state.clone().transaction_id,
+        tx_id: tx_id_hex,
         namespace: enriched_state.clone().namespace,
         text: enriched_state.clone().text,
     });
 
-    Ok(enriched_state.transaction_id)
+    Ok(tx_id)
 }
 
 #[derive(Clone, Debug, Archive, Serialize, Deserialize, SerdeSerialize, SerdeDeserialize)]
 pub enum SystemEvent {
     ThoughtCommitted {
         agent_id: String,
-        tx_id: u64,
+        tx_id: String,
         namespace: String,
         text: String,
     },
@@ -197,6 +250,7 @@ pub enum SystemEvent {
 
     CompactionTriggered {
         archived_count: usize,
+        max_compacted_tx: u128,
     },
     PluginLoaded {
         plugin_name: String,
@@ -212,6 +266,10 @@ pub enum SystemEvent {
     GlobalQuarantineSync {
         record: QuarantineRecord,
     },
+
+    MarkleBatchCrystallized {
+        batch: MarkleBatch,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -224,65 +282,19 @@ pub struct RuntimeSecurityFlags {
 }
 
 impl RuntimeSecurityFlags {
-    // The fallbackk for open_core / unlicensed nodes.
-
-    pub fn new(initial_jwt: &str, decoding_key: &DecodingKey) -> Self {
-        let flags = RuntimeSecurityFlags {
-            allow_global_a2a: Arc::new(AtomicBool::new(false)),
-            allow_global_aegis: Arc::new(AtomicBool::new(false)),
-            allow_global_crdt: Arc::new(AtomicBool::new(false)),
-            allow_time_travel: Arc::new(AtomicBool::new(false)),
-            tenant_id: Arc::new(RwLock::new("local_open_core".to_string())),
-        };
-
-        flags.evaluate_jwt(initial_jwt, decoding_key);
-
-        flags
-    }
-
-    pub fn evaluate_jwt(&self, jwt: &str, decoding_key: &DecodingKey) {
-        let validation = Validation::new(jsonwebtoken::Algorithm::RS256);
-
-        if let Ok(token_data) = decode::<EnterpriseClaim>(jwt, decoding_key, &validation) {
-            let features = &token_data.claims.features;
-
-            self.allow_global_crdt.store(
-                features.contains(&"global_crdt".to_string()),
-                Ordering::SeqCst,
-            );
-            self.allow_global_a2a.store(
-                features.contains(&"global_a2a".to_string()),
-                Ordering::SeqCst,
-            );
-            self.allow_global_aegis.store(
-                features.contains(&"global_aegis".to_string()),
-                Ordering::SeqCst,
-            );
-            self.allow_time_travel.store(
-                features.contains(&"time_travel".to_string()),
-                Ordering::SeqCst,
-            );
-
-            if let Ok(mut t_id) = self.tenant_id.write() {
-                *t_id = token_data.claims.sub.clone();
-            }
-
-            println!(
-                "[SECURITY] Hot-Swap: cryptograhic claims activated for tenant: {} ",
-                token_data.claims.sub
-            );
-        } else {
-            // Fallback to strict open core restricton
-            self.allow_global_a2a.store(false, Ordering::SeqCst);
-            self.allow_global_aegis.store(false, Ordering::SeqCst);
-            self.allow_global_crdt.store(false, Ordering::SeqCst);
-            self.allow_time_travel.store(false, Ordering::SeqCst);
-
-            if let Ok(mut t_id) = self.tenant_id.write() {
-                *t_id = "local_open_core".to_string();
-            }
-
-            println!("[WARNING] Security downgrade: Open Core limits enforced ");
+    pub fn new() -> Self {
+        RuntimeSecurityFlags {
+            allow_global_a2a: Arc::new(AtomicBool::new(true)),
+            allow_global_aegis: Arc::new(AtomicBool::new(true)),
+            allow_global_crdt: Arc::new(AtomicBool::new(true)),
+            allow_time_travel: Arc::new(AtomicBool::new(true)),
+            tenant_id: Arc::new(RwLock::new("local_standalone".to_string())),
         }
+    }
+}
+
+impl Default for RuntimeSecurityFlags {
+    fn default() -> Self {
+        Self::new()
     }
 }

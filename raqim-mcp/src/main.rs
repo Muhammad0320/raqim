@@ -4,11 +4,10 @@ use mcp_rust_sdk::error::ErrorCode;
 use mcp_rust_sdk::server::{Server, ServerHandler};
 use mcp_rust_sdk::transport::stdio::StdioTransport;
 use mcp_rust_sdk::types::{ClientCapabilities, Implementation, ServerCapabilities, Tool};
-use md5::{Digest, Md5};
 use raqim_core::api::WsMessage;
 use serde_json::{Value, json};
-use std::fs;
 use std::sync::Arc;
+use std::{eprintln, fs, println};
 
 use async_trait::async_trait;
 use raqim_core::{AgentState, AgentStatus, IngressEnvelope};
@@ -20,6 +19,7 @@ use tokio::net::TcpStream;
 struct RaqimHandler {
     signing_key: SigningKey,
     pub_key_bytes: [u8; 32],
+    capability_cert_bytes: Vec<u8>,
     daemon_http_url: String,
     license_key: String,
     http_client: reqwest::Client,
@@ -30,20 +30,42 @@ struct RaqimHandler {
 }
 
 impl RaqimHandler {
-    fn new(private_key_path: &str, daemon_http_url: &str, license_key: &str) -> Self {
-        // ENTERPRISE CRYTOGRAPHY: Load from config
+    fn new(
+        private_key_path: &str,
+        cert_path: &str,
+        daemon_http_url: &str,
+        license_key: &str,
+    ) -> Self {
+        println!("[MCP HANDLER] Loading Cryptographic Identity and capability credentials...  ");
+
+        // Load Signing Private Key
         let key_bytes = fs::read(private_key_path)
-            .expect("FATAL: Missing Private Key. Aegis identity is required.");
-        let signing_key = SigningKey::from_bytes(key_bytes.as_slice().try_into().unwrap());
+            .expect(" FATAL: Missing Private Key. Aegis identity key required. ");
+        let key_array: &[u8; 32] = key_bytes
+            .as_slice()
+            .try_into()
+            .expect(" FATAL: Invalid Private Key length (32 bytes required) ");
+
+        let signing_key = SigningKey::from_bytes(key_array);
         let pub_key_bytes = signing_key.verifying_key().to_bytes();
+
+        // Load signed capability cert
+        let capability_cert_bytes = fs::read(cert_path).unwrap_or_else(|_| {
+            eprintln!("[MCP WARNING] Capability certificate not found at '{}'. Handshake will fail if aegis enforces lineage.", cert_path);
+
+            Vec::new()
+
+        } );
+
         let http_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(Duration::from_secs(10))
             .build()
-            .unwrap();
+            .expect("Failed to initialize HTTP client");
 
         Self {
             signing_key,
             pub_key_bytes,
+            capability_cert_bytes,
             license_key: license_key.to_string(),
             http_client,
             daemon_http_url: daemon_http_url.to_string(),
@@ -94,7 +116,6 @@ impl RaqimHandler {
 
 #[async_trait]
 impl ServerHandler for RaqimHandler {
-    // 1. The Boot sequence
     async fn initialize(
         &self,
         _client_info: Implementation,
@@ -131,11 +152,13 @@ impl ServerHandler for RaqimHandler {
                 if name == "commit_thought" {
                     // Mathematical derivation. (The absolute Truth)
                     // The hash the exact public key that was used to initialize this MCP Server instance.
-                    let mut hasher = Md5::new();
-                    hasher.update(self.pub_key_bytes);
-                    let derived_16_bytes: [u8; 16] = hasher.finalize().into();
+                    let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
+                    hasher.update(&self.pub_key_bytes);
 
-                    let agent_hex = hex::encode(derived_16_bytes);
+                    let mut derived_16_bytes = [0u8; 16];
+                    hasher.finalize_xof().fill(&mut derived_16_bytes);
+
+                    // let agent_hex = hex::encode(derived_16_bytes);
 
                     // --- Translation layer ----
                     let intent_path = args
@@ -163,7 +186,7 @@ impl ServerHandler for RaqimHandler {
                     // Translate into Raqim core logic
                     let state = AgentState {
                         agent_id: Some(derived_16_bytes.try_into().unwrap_or([0; 16])),
-                        transaction_id: 0,
+                        transaction_id: uuid::Uuid::now_v7().as_u128(),
                         namespace: intent_path.clone(),
                         timestamp: SystemTime::now()
                             .duration_since(UNIX_EPOCH)
@@ -185,6 +208,7 @@ impl ServerHandler for RaqimHandler {
                         public_key: self.pub_key_bytes,
                         signature,
                         state_bytes: state_bytes.into_vec(),
+                        capability_cert: self.capability_cert_bytes.clone(),
                     };
 
                     // Zero-copy serialize the state
@@ -243,20 +267,27 @@ impl ServerHandler for RaqimHandler {
                         .unwrap()
                         .to_string();
                     let question_text = args.get("question").unwrap().as_str().unwrap().to_string();
-                    let request_id = uuid::Uuid::new_v4().to_string();
+                    let request_id = uuid::Uuid::now_v7().to_string();
+
+                    // Compute true Blake3 sender_hex
+                    let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
+                    hasher.update(&self.pub_key_bytes);
+                    let mut derived_16_bytes = [0u8; 16];
+                    hasher.finalize_xof().fill(&mut derived_16_bytes);
+                    let sender_hex = hex::encode(derived_16_bytes);
 
                     // 1. SIGN THE QUESTION
                     let question_bytes = question_text.into_bytes();
                     let signature = self.signing_key.sign(&question_bytes).to_bytes();
-                    let sender_hex = hex::encode("agent_id");
 
                     let ask_msg = WsMessage::AskQuestion {
                         request_id: request_id.clone(),
                         capability: target_capability,
                         question: question_bytes,
                         sender_hex,
-                        public_key: self.pub_key_bytes.to_vec(),
+                        public_key: hex::encode(self.pub_key_bytes),
                         signature: signature.to_vec(),
+                        capability_cert: hex::encode(&self.capability_cert_bytes),
                     };
 
                     // 2. Connect to RQM Daemon Websocket.
@@ -341,13 +372,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load from environment
     let key_path =
         std::env::var("RQM_MCP_KEY_PATH").unwrap_or_else(|_| "./keys/mcp_private.pem".to_string());
+
+    let cert_path =
+        std::env::var("RQM_MCP_CERT_PATH").unwrap_or_else(|_| "./keys/mcp_cert.pem".to_string());
+
     let daemon_url =
         std::env::var("RQM_DEAMON_URL").unwrap_or_else(|_| "http://127.0.0.1:8081".to_string());
     let license_key = std::env::var("RQM_LICENSE_KEY").unwrap_or_else(|_| "".to_string());
 
     let (transport, _message_sender) = StdioTransport::new();
 
-    let handler = Arc::new(RaqimHandler::new(&key_path, &daemon_url, &license_key));
+    let handler = Arc::new(RaqimHandler::new(
+        &key_path,
+        &cert_path,
+        &daemon_url,
+        &license_key,
+    ));
     let server = Server::new(Arc::new(transport), handler as Arc<dyn ServerHandler>);
 
     server.start().await?;

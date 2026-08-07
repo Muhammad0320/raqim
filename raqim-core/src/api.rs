@@ -3,10 +3,12 @@ use axum::extract::{Multipart, Path, Query};
 use axum::response::Response;
 use axum::{
     Json, async_trait,
-    extract::{FromRef, FromRequestParts, State},
+    extract::{FromRequestParts, State},
     http::{StatusCode, request::Parts},
     routing::{get, post},
 };
+
+use base64::Engine;
 
 use axum::body::Bytes;
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -17,9 +19,9 @@ use futures_util::{SinkExt, stream::StreamExt};
 use serde_json::{Value, json};
 use std::convert::Infallible;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{eprintln, format};
 use tokio_stream::wrappers::BroadcastStream;
 
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use serde::{Deserialize, Serialize};
 use std::result::Result::{Err, Ok};
 use std::sync::atomic::AtomicU64;
@@ -34,6 +36,7 @@ use uuid::Uuid;
 use crate::aegis::{CapabilityCertificate, QuarantineRecord};
 use crate::axon::AxonGateKeeper;
 use crate::health::SystemHealth;
+use crate::hot_memory::HotVectorBuffer;
 use crate::lancedb_store::LanceEngine;
 use crate::nucleus::WalEngine;
 use crate::registry::SwarmRegistry;
@@ -94,7 +97,7 @@ pub enum UiEvent {
     ThoughtCommitted {
         agent_hex: String,
         intent_path: String,
-        tx_id: u64,
+        tx_id: String,
         text: String,
     },
 
@@ -114,7 +117,7 @@ pub enum UiEvent {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct VaultSearchResult {
-    pub tx_id: u64,
+    pub tx_id: u128,
     pub agent_hex: String,
     pub namespace: String,
     pub payload: String,
@@ -145,7 +148,6 @@ pub struct ApiState {
     pub axon: Arc<AxonGateKeeper>,
     pub brain: Arc<SwarmStateRegistry>,
     pub aegis: Arc<AegisGateKeeper>,
-    pub decoding_key: Arc<DecodingKey>,
     pub global_net: Arc<GlobalNetworkBridge>,
     pub telemetry: Arc<TelemetryEngine>,
     pub cortex_tx: UnboundedSender<Vec<u8>>,
@@ -159,6 +161,8 @@ pub struct ApiState {
     pub health_tx: Sender<SystemHealth>,
     pub swarm_registry: Arc<SwarmRegistry>,
     pub master_signing_key: SigningKey,
+
+    pub hot_buffer: Arc<HotVectorBuffer>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -170,36 +174,26 @@ pub struct EnterpriseClaim {
 
 pub struct ValidatedIdentity(pub EnterpriseClaim);
 
-// THE AXUM EXTRACTOR: This automatically protects any route it is attached onto.
+// THE AXUM EXTRACTOR: Always provides active standalone identity
 #[async_trait]
 impl<S> FromRequestParts<S> for ValidatedIdentity
 where
-    ApiState: axum::extract::FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = StatusCode;
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let api_state = ApiState::from_ref(state);
-
-        let auth_header = parts
-            .headers
-            .get("Authorization")
-            .and_then(|h| h.to_str().ok())
-            .filter(|s| s.starts_with("Bearer "))
-            .map(|s| &s[7..])
-            .ok_or(StatusCode::UNAUTHORIZED)?;
-
-        // TRUE CRYPTOGRAPHIC VERIFICATION
-        let validation = Validation::new(Algorithm::RS256);
-        match decode::<EnterpriseClaim>(auth_header, &api_state.decoding_key, &validation) {
-            Ok(token_data) => Ok(ValidatedIdentity(token_data.claims)),
-
-            Err(e) => {
-                eprintln!("[SECURITY] Invalid or Expired License Key: {}", e);
-                Err(StatusCode::UNAUTHORIZED)
-            }
-        }
+    async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(ValidatedIdentity(EnterpriseClaim {
+            sub: "local_standalone".to_string(),
+            features: vec![
+                "global_crdt".to_string(),
+                "global_a2a".to_string(),
+                "global_aegis".to_string(),
+                "time_travel".to_string(),
+                "aegis".to_string(),
+            ],
+            exp: usize::MAX,
+        }))
     }
 }
 
@@ -564,11 +558,44 @@ pub async fn unified_vault_search(
     Ok(Json(unified_results))
 }
 
+// 2. THE RAG SEMANTIC SEARCH ENDPOINT
+#[derive(Deserialize)]
+pub struct RagQuery {
+    namespace: String,
+    query: String,
+    limit: Option<usize>,
+}
+
+pub async fn semantic_search_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+    Query(params): Query<RagQuery>,
+) -> Result<Json<Vec<String>>, StatusCode> {
+    let limit = params.limit.unwrap_or(5);
+
+    match state
+        .mem_router
+        .query_hybrid_memory(
+            &params.query,
+            Some(&params.namespace),
+            limit,
+            &state.hot_buffer,
+        )
+        .await
+    {
+        Ok(memories) => Ok(Json(memories)),
+        Err(e) => {
+            eprintln!("[RAG Hybrid ERROR] {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub async fn vault_telemetry_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
 ) -> Result<Json<VaultTelemetry>, StatusCode> {
-    let wal_pending_count = state.wal.get_pending_count();
+    let wal_pending_count = state.wal.get_pending_count().await;
 
     let total_vectors = state.lance.get_total_vector_count().await.unwrap_or(0);
 
@@ -597,18 +624,10 @@ struct ResurrectPayload {
 }
 
 async fn lift_qurantine_and_resurrect(
-    identity: ValidatedIdentity,
+    _identity: ValidatedIdentity,
     State(state): State<ApiState>,
     Json(payload): Json<ResurrectPayload>,
 ) -> Result<StatusCode, StatusCode> {
-    if !identity.0.features.contains(&"aegis".to_string()) {
-        eprintln!(
-            "[BILLING] Tenant {} attempted to use Aegis without a license.",
-            identity.0.sub
-        );
-        return Err(StatusCode::PAYMENT_REQUIRED);
-    }
-
     // Fire the Out-of-Band Context Eviction Via Zenoh
     println!(
         "[AEGIS] Dispatching Context Eviction to: {}... ",
@@ -668,20 +687,16 @@ pub struct ForkConfig {
 #[derive(Deserialize)]
 struct TimeTravelRequest {
     agent_hex: String,
-    target_tx_id: u64,
+    target_tx_id: u128,
     fork_config: ForkConfig,
 }
 
 // THE ACTIVE DEBUGGING ROUTE HANDLER
 async fn time_travel(
-    identity: ValidatedIdentity,
+    _identity: ValidatedIdentity,
     State(state): State<ApiState>,
     Json(payload): Json<TimeTravelRequest>,
 ) -> Result<StatusCode, StatusCode> {
-    if !identity.0.features.contains(&"time_travel".to_string()) {
-        return Err(StatusCode::PAYMENT_REQUIRED);
-    }
-
     println!(
         "[TIME TRAVEL] Admin requested Reality Forkk for Agent {} at TxID {} ",
         payload.agent_hex, payload.target_tx_id
@@ -849,7 +864,6 @@ pub async fn http_ingress_endpoint(
             task_brain,
             task_cortex,
             task_net,
-            task_counter_tx,
             task_event,
             Vec::new(),
             Vec::new(),
@@ -868,34 +882,6 @@ pub async fn http_ingress_endpoint(
     });
 
     Ok(StatusCode::ACCEPTED)
-}
-
-// 2. THE RAG SEMANTIC SEARCH ENDPOINT
-#[derive(Deserialize)]
-pub struct RagQuery {
-    namespace: String,
-    query: String,
-    limit: Option<usize>,
-}
-
-pub async fn semantic_search_endpoint(
-    identity: ValidatedIdentity,
-    State(state): State<ApiState>,
-    Query(params): Query<RagQuery>,
-) -> Result<Json<Vec<String>>, StatusCode> {
-    let limit = params.limit.unwrap_or(5);
-
-    match state
-        .mem_router
-        .semantic_search_with_context(&params.query, &params.namespace, limit)
-        .await
-    {
-        Ok(memories) => Ok(Json(memories)),
-        Err(e) => {
-            eprintln!("[RAG ERROR] {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
 }
 
 pub async fn sse_health_endpoint(
@@ -937,7 +923,7 @@ pub async fn active_qurantine_endpoint(
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TimelineNode {
-    pub tx_id: u64,
+    pub tx_id: u128,
     pub timestamp: String,
     pub agent_status: String,
     pub payload_preview: String,
@@ -1151,10 +1137,123 @@ pub async fn cluster_topology_endpoint(
     Ok(Json(json!(shards)))
 }
 
+#[derive(Deserialize)]
+pub struct RecordEffectRequest {
+    pub agent_hex: String,
+    pub step_ordinal: u64,
+    pub call_signature_hex: String,
+    pub output_payload_base64: String,
+    pub namespace: String,
+}
+
+#[derive(Serialize)]
+pub struct RecordEffectResponse {
+    pub success: bool,
+    pub tx_id_hex: String,
+}
+
+#[derive(Deserialize)]
+pub struct GetEffectRequest {
+    pub agent_hex: String,
+    pub step_ordinal: u64,
+    pub call_signature_hex: String,
+}
+
+#[derive(Serialize)]
+pub struct GetEffectResponse {
+    pub found: bool,
+    pub output_payload_base64: Option<String>,
+    pub timestamp: Option<i64>,
+}
+
+/// Records live side-effect into WAL + Markle DAG
+pub async fn record_effect_handler(
+    State(state): State<ApiState>,
+    Json(payload): Json<RecordEffectRequest>,
+) -> Result<Json<RecordEffectResponse>, StatusCode> {
+    let agent_id_bytes = hex::decode(payload.agent_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let agent_id: [u8; 16] = agent_id_bytes
+        .try_into()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let call_signature_bytes =
+        hex::decode(payload.call_signature_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let call_signature_hash: [u8; 32] = call_signature_bytes
+        .try_into()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let output_payload = base64::engine::general_purpose::STANDARD
+        .decode(&payload.output_payload_base64)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match state
+        .mem_router
+        .record_effect(
+            agent_id,
+            step_ordinal,
+            call_signature_hash,
+            output_payload,
+            &payload.namespace,
+        )
+        .await
+    {
+        Ok(tx_id) => Ok(Json(RecordEffectResponse {
+            success: true,
+            tx_id_hex: format!("{:032x}", tx_id),
+        })),
+
+        Err(e) => {
+            eprintln!("[API ERROR] Failed to record effect: {} ", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Fetches a recoorded effect for deterministic replay
+pub fn get_effect_handler(
+    State(state): State<ApiState>,
+    Json(payload): Json<GetEffectRequest>,
+) -> Result<Json<GetEffectResponse>, StatusCode> {
+    let agent_id_bytes = hex::decode(payload.agent_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let agent_id: [u8; 16] = agent_id_bytes
+        .try_into()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let call_signature_bytes =
+        hex::decode(payload.call_signature_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let call_signature_hash: [u8; 32] = call_signature_bytes
+        .try_into()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match state
+        .mem_router
+        .get_effect(&agent_id, payload.step_ordinal, &call_signature_hash)
+    {
+        Some(record) => {
+            let b64_payload =
+                base64::engine::general_purpose::STANDARD.encode(&record.output_payload);
+
+            Ok(Json(GetEffectResponse {
+                found: true,
+                output_payload_base64: b64_payload,
+                timestamp: Some(record.timestamp),
+            }))
+        }
+
+        None => Ok(Json(GetEffectResponse {
+            found: false,
+            output_payload_base64: None,
+            timestamp: None,
+        })),
+    }
+}
+
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
         // Admin / Debugging endpoints
+        .route("/v1/effect/record", post(record_effect_handler))
+        .route("v1/effect/get", get(get_effect_handler))
         .route("/v1/aegis/quarantine_list", get(active_qurantine_endpoint))
         .route(
             "/v1/admin/quarantine/lift",

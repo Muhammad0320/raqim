@@ -1,8 +1,10 @@
 use crate::{OpLog, SystemEvent, lancedb_store::LanceEngine, nucleus::WalCommand};
 use rkyv::Archive;
 use std::{
+    eprintln, format,
     fs::{self, File},
     io::Read,
+    println,
     sync::Arc,
 };
 use tokio::{
@@ -72,25 +74,27 @@ impl WalCompactor {
     }
 
     async fn execute_compaction(&self, processing_path: &str) {
-        // 1. Lock and Rename WAL (Nucleus will seamlessly create a new one)
-        if fs::rename(&self.wal_path, &processing_path).is_err() {
-            return;
-        }
-
-        // 2. Read the framed bytes from the processing file
+        // 1. Read the framed bytes from the processing file
         let mut file = match File::open(&processing_path) {
             Ok(f) => f,
-            Err(_) => return,
+            Err(e) => {
+                eprintln!(
+                    "[COMPACTOR ERROR] Could not open segemnt {}: {} ",
+                    processing_path, e
+                );
+                return;
+            }
         };
 
         let mut buffer = Vec::new();
-        if file.read_to_end(&mut buffer).is_err() {
+        if let Err(e) = file.read_to_end(&mut buffer) {
+            eprintln!("[COMPACTOR ERROR] Failed to read segment buffer: {} ", e);
             return;
         }
 
         let mut offset = 0;
-        let mut logs_to_archive = Vec::new();
-        let mut vector = Vec::new();
+        let mut logs_to_archive: Vec<OpLog> = Vec::new();
+        let mut semantic_payloads: Vec<String> = Vec::new();
 
         // 3. Zero-copy Framing Extraction
         while offset < buffer.len() {
@@ -104,56 +108,85 @@ impl WalCompactor {
             offset += 4;
 
             let entry_slice = &buffer[offset..offset + entry_len];
-            let archived_log =
-                unsafe { rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice) };
 
-            if let Ok(log) = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log) {
-                // Construct the dense semantic string
-                let semantic_payload = format!(
-                    "[{:?}] Agent in {} stated {}",
-                    log.state.status, log.state.namespace, log.state.text
-                );
+            match rkyv::access::<<OpLog as Archive>::Archived, rkyv::rancor::Error>(entry_slice) {
+                Ok(archived_log) => {
+                    if let Ok(log) = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log) {
+                        let payload = format!(
+                            "[{:?}] Agent in {} stated {}",
+                            log.state.status, log.state.namespace, log.state.text
+                        );
 
-                // Call the Pluggable Embedder ( This is CPU bound, but we're off the TCP path )
-                // PATH A
-                #[cfg(feature = "native-embedding")]
-                {
-                    match self.lance_engine.embedder.embed(&semantic_payload).await {
-                        Ok(vec_data) => {
-                            logs_to_archive.push(log.clone());
-                            vector.push(vec_data);
-                        }
-                        Err(e) => eprintln!(
-                            "[COMPACTOR WARNING] Failed to embed TxID {}: {} ",
-                            log.state.transaction_id, e
-                        ),
+                        logs_to_archive.push(log);
+                        semantic_payloads.push(payload);
                     }
                 }
 
-                // Path B:
-                #[cfg(feature = "mock-embedding")]
-                {
-                    let vec_data = vec![0.0f32; 768];
-                    logs_to_archive.push(log);
-                    vector.push(vec_data);
+                Err(e) => {
+                    eprintln!(
+                        "[COMPACTOR ERROR] Corrupted log frame at offset {}: {} ",
+                        offset, e
+                    );
                 }
             }
 
             offset += entry_len;
         }
 
-        if !logs_to_archive.is_empty() {
-            self.lance_engine
-                .archive_batch(&logs_to_archive, &vector)
-                .await;
-            println!("Archived {} thoughts to lanceDB", logs_to_archive.len());
+        if logs_to_archive.is_empty() {
+            println!(
+                "[COMPACTOR] SEGMENT {} contained zero valid logs. Removing. ",
+                processing_path
+            );
+            let _ = fs::remove_file(processing_path);
+            return;
         }
 
-        // 5. Delete the processed file to reclaim disk space
-        let _ = fs::remove_file(processing_path);
+        // High throughput batch embedding
+        let vectors = match self
+            .lance_engine
+            .embedder
+            .embed_batch(&semantic_payloads)
+            .await
+        {
+            Ok(vecs) => vecs,
+            Err(e) => {
+                // Prevent amnesia: If embedding fails, the wal file is not deleted
+                eprintln!(
+                    "[COMPACTOR CRITICAL ERROR] Batch embedding failed for segment {}: {}. Segment preserved for retry.",
+                    processing_path, e
+                );
+                return;
+            }
+        };
+
+        // extract max tx_id
+        let max_compacted_tx = logs_to_archive
+            .iter()
+            .map(|l| l.state.transaction_id)
+            .max()
+            .unwrap_or(0);
+
+        self.lance_engine
+            .archive_batch(&logs_to_archive, &vectors)
+            .await;
+
+        println!(
+            "[COMPACTOR] Successfully archived {} thoughts from {} to lanceDB.",
+            logs_to_archive.len(),
+            processing_path
+        );
+
+        if let Err(e) = fs::remove_file(processing_path) {
+            eprintln!(
+                "[COMPACTOR WARRNING] Failed to remove processed WAL segment {}: {} ",
+                processing_path, e
+            );
+        }
 
         let _ = self.tx.send(SystemEvent::CompactionTriggered {
             archived_count: logs_to_archive.len(),
+            max_compacted_tx,
         });
     }
 
