@@ -37,6 +37,7 @@ anyhow = "1.0"
 
 datafusion = "35.0"
 
+base64 = "0.23.0"
 
 futures = "0.3"
 clap = { version = "4.5", features = ["derive", "env"] } # For CLI parsing

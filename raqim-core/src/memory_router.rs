@@ -885,7 +885,7 @@ impl MemoryRouter {
             network_responses: Vec::new(),
         };
 
-        let (sealed_log, optional_batch) = self.axon.seal_thought(oplog);
+        let (sealed_log, optional_batch) = self.axon.seal_thought(raw_oplog);
 
         if let Some(batch) = optional_batch {
             let _ = self

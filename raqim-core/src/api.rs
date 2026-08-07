@@ -8,6 +8,8 @@ use axum::{
     routing::{get, post},
 };
 
+use base64::Engine;
+
 use axum::body::Bytes;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use dashmap::DashMap;
@@ -17,6 +19,7 @@ use futures_util::{SinkExt, stream::StreamExt};
 use serde_json::{Value, json};
 use std::convert::Infallible;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{eprintln, format};
 use tokio_stream::wrappers::BroadcastStream;
 
 use serde::{Deserialize, Serialize};
@@ -1134,10 +1137,124 @@ pub async fn cluster_topology_endpoint(
     Ok(Json(json!(shards)))
 }
 
+#[derive(Deserialize)]
+pub struct RecordEffectRequest {
+    pub agent_hex: String,
+    pub step_ordinal: u64,
+    pub call_signature_hex: String,
+    pub output_payload_base64: String,
+    pub namespace: String,
+}
+
+#[derive(Serialize)]
+pub struct RecordEffectResponse {
+    pub success: bool,
+    pub tx_id_hex: String,
+}
+
+#[derive(Deserialize)]
+pub struct GetEffectRequest {
+    pub agent_hex: String,
+    pub step_ordinal: u64,
+    pub call_signature_hex: String,
+}
+
+#[derive(Serialize)]
+pub struct GetEffectResponse {
+    pub found: bool,
+    pub output_payload_base64: Option<String>,
+    pub timestamp: Option<i64>,
+}
+
+/// Records live side-effect into WAL + Markle DAG
+pub async fn record_effect_handler(
+    State(state): State<ApiState>,
+    Json(payload): Json<RecordEffectRequest>,
+) -> Result<Json<RecordEffectResponse>, StatusCode> {
+    let agent_id_bytes = hex::decode(payload.agent_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let agent_id: [u8; 16] = agent_id_bytes
+        .try_into()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let call_signature_bytes =
+        hex::decode(payload.call_signature_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let call_signature_hash: [u8; 32] = call_signature_bytes
+        .try_into()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let output_payload = base64::engine::general_purpose::STANDARD
+        .decode(&payload.output_payload_base64)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match state
+        .mem_router
+        .record_effect(
+            agent_id,
+            step_ordinal,
+            call_signature_hash,
+            output_payload,
+            &payload.namespace,
+        )
+        .await
+    {
+        Ok(tx_id) => Ok(Json(RecordEffectResponse {
+            success: true,
+            tx_id_hex: format!("{:032x}", tx_id),
+        })),
+
+        Err(e) => {
+            eprintln!("[API ERROR] Failed to record effect: {} ", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Fetches a recoorded effect for deterministic replay
+pub async fn get_effect_handler(
+    State(state): State<ApiState>,
+    Json(payload): Json<GetEffectRequest>,
+) -> Result<Json<GetEffectResponse>, StatusCode> {
+    let agent_id_bytes = hex::decode(payload.agent_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let agent_id: [u8; 16] = agent_id_bytes
+        .try_into()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let call_signature_bytes =
+        hex::decode(payload.call_signature_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let call_signature_hash: [u8; 32] = call_signature_bytes
+        .try_into()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    match state
+        .mem_router
+        .get_effect(&agent_id, payload.step_ordinal, &call_signature_hash)
+        .await
+    {
+        Some(record) => {
+            let b64_payload =
+                base64::engine::general_purpose::STANDARD.encode(&record.output_payload);
+
+            Ok(Json(GetEffectResponse {
+                found: true,
+                output_payload_base64: b64_payload,
+                timestamp: Some(record.timestamp),
+            }))
+        }
+
+        None => Ok(Json(GetEffectResponse {
+            found: false,
+            output_payload_base64: None,
+            timestamp: None,
+        })),
+    }
+}
+
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
         // Admin / Debugging endpoints
+        .route("/v1/effect/record", post(record_effect_handler))
+        .route("v1/effect/get", get(get_effect_handler))
         .route("/v1/aegis/quarantine_list", get(active_qurantine_endpoint))
         .route(
             "/v1/admin/quarantine/lift",
