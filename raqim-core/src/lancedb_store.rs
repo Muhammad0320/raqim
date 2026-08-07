@@ -324,7 +324,7 @@ impl LanceEngine {
                 ("AegisInterdiction", agent_id.clone(), m)
             }
 
-            SystemEvent::CompactionTriggered { archived_count } => (
+            SystemEvent::CompactionTriggered { archived_count, .. } => (
                 "CompactionTriggered",
                 "SYSTEM".to_string(),
                 format!(" {{ \"archived\": {} }} ", archived_count),

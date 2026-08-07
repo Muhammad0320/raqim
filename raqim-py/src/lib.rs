@@ -1,4 +1,4 @@
-use ::raqim_core::{AgentState, AgentStatus, IngressEnvelope};
+use ::raqim_core::{AgentState, AgentStatus, IngressEnvelope, generate_uuidv7_txid};
 use ed25519_dalek::{Signer, SigningKey};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -53,7 +53,7 @@ impl RaqimCryptoCore {
         let state = AgentState {
             agent_id: Some(agent_id_array),
             namespace: intent_path.to_string(),
-            transaction_id: 0,
+            transaction_id: generate_uuidv7_txid(),
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -80,6 +80,19 @@ impl RaqimCryptoCore {
         final_payload.extend_from_slice(&serialized_envelope);
 
         Ok(PyBytes::new(py, &final_payload))
+    }
+
+    /// Computes Blake3 32-byte call signature hash over string parameters
+    fn hash_call_signatures<'py>(
+        &self,
+        py: Python<'py>,
+        call_inputs: &str,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let mut hasher = blake3::Hasher::new_derive_key("raqim.effect.v1.signature");
+        hasher.update(call_inputs.as_bytes());
+        let hash_bytes = hasher.finalize();
+
+        Ok(PyBytes::new(py, hash_bytes.as_bytes()))
     }
 }
 
