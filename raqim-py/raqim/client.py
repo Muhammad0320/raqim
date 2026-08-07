@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from typing import Dict, Callable, Awaitable
+from typing import Callable, Any, Optional, Dict, Awaitable
 import websockets
 import zenoh
 import httpx
@@ -15,7 +15,10 @@ class ReplayDivergedError(Exception):
     pass
 
 class RaqimClient:
-    def __init__(self, alias: str, tenant: str, private_key_path: str, daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081, mode: str = "record"):
+    def __init__(
+        self, alias: str, tenant: str, private_key_path: str, cert_path: Optional[str] = None, daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081, mode: str = "record", on_divergence: str = "fork"
+        
+        ):
         self.alias = alias 
         self.tenant = tenant 
         self.crypto_core = RaqimCryptoCore(private_key_path)
@@ -26,11 +29,14 @@ class RaqimClient:
        
         # The 32-character hex string representing the 16-bytes
         self.agent_hex = derived_16_bytes.hex()
-
         self.tcp_addr = (daemon_host, tcp_port)
         self.http_url = f"http://{daemon_host}:{http_port}"
         self.ws_url = f"ws://{daemon_host}:{http_port}/v1/mcp/ws"
-        self.mode = mode  
+      
+        self.mode = mode
+        self.on_divergence = on_divergence
+        self.is_forked = False
+        self.active_step = 0   
         
         # THE ASYNC MULTIPLEXER (Python's equivalent to DashMap + oneshot)
         self._pending_requests: Dict[str, asyncio.Future] = {}
@@ -40,14 +46,25 @@ class RaqimClient:
         # The callback function provided by the developer
         self._reality_fork_hook: Callable[[str], None] = None 
 
-    async def record_effect(self, step_ordinal: int, call_signature: str, fn: Callable[[], Any], namespace: str = "/default") -> Any:
+    async def record_effect(self, call_signature: str, fn: Callable[[], Any], step_ordinal: Optional[int] = None, namespace: str = "/default") -> Any:
         """
-        THE INTERCEPTOR: 
+        THE EFFECT INTERCEPTOR: 
         In 'record' mode: Runs fn(), persists output to WAL + Merkle DAG, rreturns result.
         In 'replay' mode: Bypass fn(), fetches recorded payload from WAL
         """
-        call_sig_hash = blake3.blake3(call_signature.encode("utf-8"), derive_key="raqim.effect.v1.signature").digest(length=32)
+
+        # Auto Increment Step ordinal if not explicitly passed
+        if step_ordinal is None: 
+            step_ordinal = self.active_step
+            self.active_step +=1
+            
+        target_namespace = namespace 
+        if self.is_forked: 
+            target_namespace = f"phantom_{self.agent_hex}_step{step_ordinal}"
         
+        
+        call_sig_hash = blake3.blake3(call_signature.encode("utf-8"), derive_key="raqim.effect.v1.signature").digest(length=32)
+         
         call_sig_hex = call_sig_hash.hex()
         
         async with httpx.AsyncClient() as http: 
@@ -55,15 +72,29 @@ class RaqimClient:
                 resp = await http.post(f"{self.http_url}/v1/effect/get", json={ "agent_id_hex": self.agent_hex, "step_ordinal": step_ordinal, "call_signature_hex": call_sig_hex })
                 data = resp.json()
                 
-                if not data.get("found"): 
+                if data.get("found"):
+                    
+                    # Step matched recorded trace exactly! Decode and return Verbatim ($0 cost)
+                    raw_byte = base64.b64decode( data["output_payload_base64"] )
+                    print(f"[RAQIM REPLAY] Step {step_ordinal} replayed from WAL ($0 API cost). ")
+                    return json.loads(raw_byte.decode(raw_byte)) 
+
+              # ------ DIVERGENCE DETECTED ----------
+              
+                if self.on_divergence == "raise":
                     raise ReplayDivergedError(f"[RAQIM REPLAY DIVERGED] Code modified at Step {step_ordinal} "
                                             f"(Signature: {call_sig_hex[:8]}...). No recorded trace matches."
                                             )
-                
-                # Decode recorded output payload verbatim 
-                raw_byte = base64.b64decode( data["output_payload_base64"] )
-                print(f"[RAQIM REPLAY] Step {step_ordinal} replayed from WAL ($0 API cost). ")
-                return json.loads(raw_byte.decode(raw_byte))
+                    
+                # ON_DIVERGENCE = "FORK": reality form transition!
+                print(
+                    f"\n ⚡ [RAQIM PARALLEL UNIVERSE FORK] Code divergennce at step {step_ordinal}!"
+                    f"Auto-switching REPLAY --> LIVE mode on namespace: phantom_{self.agent_hex}_step{step_ordinal}"
+
+                    )
+                self.is_forked = True 
+                target_namespace = f"phantom_{self.agent_hex}_step{step_ordinal}"
+    
             else: 
                 if asyncio.iscoroutinefunction(fn): 
                     result = await fn()
@@ -72,10 +103,11 @@ class RaqimClient:
                 output_bytes = json.dump(result).encode("utf-8")
                 b64_output = base64.b64decode(output_bytes).decode("utf-8")
                 
-                await http.post(f"{self.http_url}/v1/effect/record", json={"agent_id_hex": self.agent_hex, "step_ordinal": step_ordinal, "call_signature_hex": call_sig_hex, "output_payload_base64": b64_output, "namespace": namespace }) 
+                await http.post(f"{self.http_url}/v1/effect/record", json={"agent_id_hex": self.agent_hex, "step_ordinal": step_ordinal, "call_signature_hex": call_sig_hex, "output_payload_base64": b64_output, "namespace": target_namespace }) 
+                if self.is_forked: 
+                    print(f"[RAQIM FORK RECORD] Recorded step {step_ordinal} to parallel universe branch: {target_namespace} ")
+
                 return result
-            
-        
 
     async def boot(self): 
         """The Enterprise Ignition Sequence: Handshake + Zenoh Control Plane"""
@@ -91,7 +123,6 @@ class RaqimClient:
         self._zenoh_session = zenoh.open(zenoh.Config())
         control_topic = f"raqim/{self.tenant}/control/{self.agent_hex}"
         self._zenoh_session.declare_subscriber(control_topic, self._handle_os_control_override)
-
 
 
     def register_eviction_hook(self, callback: Callable[[str], None]): 
