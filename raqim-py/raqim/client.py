@@ -5,16 +5,21 @@ from typing import Dict, Callable, Awaitable
 import websockets
 import zenoh
 import httpx
+import base64
 import blake3
 
 from raqim_core import RaqimCryptoCore  # Our compiled PyO3 Rust extension!
 
+class ReplayDivergedError(Exception): 
+    """Raised when replay Python code diverges from recorded WAL history."""
+    pass
+
 class RaqimClient:
-    def __init__(self, alias: str, tenant: str, private_key_path: str, daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081):
+    def __init__(self, alias: str, tenant: str, private_key_path: str, daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081, mode: str = "record"):
         self.alias = alias 
         self.tenant = tenant 
         self.crypto_core = RaqimCryptoCore(private_key_path)
-       
+
        # Mathematically bind the 16-bytes routing ID to the 32-byte public key
         public_key_bytes = bytes(self.crypto_core.public_key_bytes)
         derived_16_bytes = blake3.blake3(public_key_bytes, derive_key="raqim.agent.v1.identity").digest(len=16)
@@ -25,6 +30,7 @@ class RaqimClient:
         self.tcp_addr = (daemon_host, tcp_port)
         self.http_url = f"http://{daemon_host}:{http_port}"
         self.ws_url = f"ws://{daemon_host}:{http_port}/v1/mcp/ws"
+        self.mode = mode  
         
         # THE ASYNC MULTIPLEXER (Python's equivalent to DashMap + oneshot)
         self._pending_requests: Dict[str, asyncio.Future] = {}
@@ -33,6 +39,43 @@ class RaqimClient:
         self._zenoh_session = None
         # The callback function provided by the developer
         self._reality_fork_hook: Callable[[str], None] = None 
+
+    async def record_effect(self, step_ordinal: int, call_signature: str, fn: Callable[[], Any], namespace: str = "/default") -> Any:
+        """
+        THE INTERCEPTOR: 
+        In 'record' mode: Runs fn(), persists output to WAL + Merkle DAG, rreturns result.
+        In 'replay' mode: Bypass fn(), fetches recorded payload from WAL
+        """
+        call_sig_hash = blake3.blake3(call_signature.encode("utf-8"), derive_key="raqim.effect.v1.signature").digest(length=32)
+        
+        call_sig_hex = call_sig_hash.hex()
+        
+        async with httpx.AsyncClient() as http: 
+            if self.mode == "replay": 
+                resp = await http.post(f"{self.http_url}/v1/effect/get", json={ "agent_id_hex": self.agent_hex, "step_ordinal": step_ordinal, "call_signature_hex": call_sig_hex })
+                data = resp.json()
+                
+                if not data.get("found"): 
+                    raise ReplayDivergedError(f"[RAQIM REPLAY DIVERGED] Code modified at Step {step_ordinal} "
+                                            f"(Signature: {call_sig_hex[:8]}...). No recorded trace matches."
+                                            )
+                
+                # Decode recorded output payload verbatim 
+                raw_byte = base64.b64decode( data["output_payload_base64"] )
+                print(f"[RAQIM REPLAY] Step {step_ordinal} replayed from WAL ($0 API cost). ")
+                return json.loads(raw_byte.decode(raw_byte))
+            else: 
+                if asyncio.iscoroutinefunction(fn): 
+                    result = await fn()
+                else: 
+                    result = fn()
+                output_bytes = json.dump(result).encode("utf-8")
+                b64_output = base64.b64decode(output_bytes).decode("utf-8")
+                
+                await http.post(f"{self.http_url}/v1/effect/record", json={"agent_id_hex": self.agent_hex, "step_ordinal": step_ordinal, "call_signature_hex": call_sig_hex, "output_payload_base64": b64_output, "namespace": namespace }) 
+                return result
+            
+        
 
     async def boot(self): 
         """The Enterprise Ignition Sequence: Handshake + Zenoh Control Plane"""
@@ -48,6 +91,8 @@ class RaqimClient:
         self._zenoh_session = zenoh.open(zenoh.Config())
         control_topic = f"raqim/{self.tenant}/control/{self.agent_hex}"
         self._zenoh_session.declare_subscriber(control_topic, self._handle_os_control_override)
+
+
 
     def register_eviction_hook(self, callback: Callable[[str], None]): 
         """
