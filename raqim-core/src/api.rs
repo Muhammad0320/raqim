@@ -1210,7 +1210,7 @@ pub async fn record_effect_handler(
 }
 
 /// Fetches a recoorded effect for deterministic replay
-pub async fn get_effect_handler(
+pub fn get_effect_handler(
     State(state): State<ApiState>,
     Json(payload): Json<GetEffectRequest>,
 ) -> Result<Json<GetEffectResponse>, StatusCode> {
@@ -1228,7 +1228,6 @@ pub async fn get_effect_handler(
     match state
         .mem_router
         .get_effect(&agent_id, payload.step_ordinal, &call_signature_hash)
-        .await
     {
         Some(record) => {
             let b64_payload =
