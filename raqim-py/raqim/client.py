@@ -60,7 +60,7 @@ class RaqimClient:
             
         target_namespace = namespace 
         if self.is_forked: 
-            target_namespace = f"phantom_{self.agent_hex}_step{step_ordinal}"
+            target_namespace = f"phantom_{namespace}_{self.agent_hex}_step{step_ordinal}"
         
         
         call_sig_hash = blake3.blake3(call_signature.encode("utf-8"), derive_key="raqim.effect.v1.signature").digest(length=32)
@@ -89,11 +89,11 @@ class RaqimClient:
                 # ON_DIVERGENCE = "FORK": reality form transition!
                 print(
                     f"\n ⚡ [RAQIM PARALLEL UNIVERSE FORK] Code divergennce at step {step_ordinal}!"
-                    f"Auto-switching REPLAY --> LIVE mode on namespace: phantom_{self.agent_hex}_step{step_ordinal}"
+                    f"Auto-switching REPLAY --> LIVE mode on namespace: phantom_{namespace}_{self.agent_hex}_step{step_ordinal}"
 
                     )
                 self.is_forked = True 
-                target_namespace = f"phantom_{self.agent_hex}_step{step_ordinal}"
+                target_namespace = f"phantom_{namespace}_{self.agent_hex}_step{step_ordinal}"
     
             else: 
                 if asyncio.iscoroutinefunction(fn): 

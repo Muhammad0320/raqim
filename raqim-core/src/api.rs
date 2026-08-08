@@ -1180,7 +1180,8 @@ pub async fn record_effect_handler(
     State(state): State<ApiState>,
     Json(payload): Json<RecordEffectRequest>,
 ) -> Result<Json<RecordEffectResponse>, StatusCode> {
-    let agent_id_bytes = hex::decode(payload.agent_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let agent_id_bytes =
+        hex::decode(payload.agent_hex.clone()).map_err(|_| StatusCode::BAD_REQUEST)?;
     let agent_id: [u8; 16] = agent_id_bytes
         .try_into()
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -1209,7 +1210,44 @@ pub async fn record_effect_handler(
         .await
     {
         Ok(tx_id) => {
-            if is_forked {}
+            if is_forked {
+                let tx_id = format!("{:032x}", tx_id);
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+
+                // Audit Trail: Emitted to System Event Bus -> Persisted to lanceDB System event table
+                let _ = state.event_tx.send(SystemEvent::RealityForked {
+                    agent_id: payload.agent_hex.clone(),
+                    parent_namespace: payload
+                        .namespace
+                        .replace("phantom_", "")
+                        .split('_')
+                        .next()
+                        .unwrap_or("/default")
+                        .to_string(),
+                    fork_namespace: payload.namespace.clone(),
+                    step_ordinal: payload.step_ordinal,
+                    tx_id,
+                    timestamp,
+                });
+
+                // Real-time Glass: Streamed to active SSE Firehose
+                let _ = state.ui_tx.send(UiEvent::RealityForked {
+                    agent_id: payload.agent_hex.clone(),
+                    parent_namespace: payload
+                        .namespace
+                        .replace("phantom_", "")
+                        .split('_')
+                        .next()
+                        .unwrap_or("/default")
+                        .to_string(),
+                    fork_namespace: payload.namespace.clone(),
+                    step_ordinal: payload.step_ordinal,
+                    tx_id,
+                });
+            }
 
             Ok(Json(RecordEffectResponse {
                 success: true,
