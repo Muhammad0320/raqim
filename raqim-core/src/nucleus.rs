@@ -32,6 +32,19 @@ pub enum WalCommand {
 }
 
 impl WalEngine {
+    pub async fn start_dummy() -> Arc<Self> {
+        let (tx, _) = mpsc::channel::<OpLog>(100);
+        let (cmd_tx, _) = mpsc::channel::<WalCommand>(10);
+
+        let index = Arc::new(RwLock::new(BTreeMap::new()));
+
+        Arc::new(Self {
+            sender: tx,
+            cmd_sender: cmd_tx,
+            index,
+        })
+    }
+
     /// Bootstraps the enterprise WAL with automatic env detection
     pub async fn start(file_path: String) -> (Arc<Self>, tokio::task::JoinHandle<()>) {
         println!("Bismillah. Booting Portable Nucleus WAL Engine...");
@@ -155,19 +168,6 @@ impl WalEngine {
             }),
             handle,
         )
-    }
-
-    pub async fn start_dummy() -> Arc<Self> {
-        let (tx, _) = mpsc::channel::<OpLog>(100);
-        let (cmd_tx, _) = mpsc::channel::<WalCommand>(10);
-
-        let index = Arc::new(RwLock::new(BTreeMap::new()));
-
-        Arc::new(Self {
-            sender: tx,
-            cmd_sender: cmd_tx,
-            index,
-        })
     }
 
     /// Internal Helper: Zero-copy serialization and non-blocking write.
