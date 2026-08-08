@@ -241,6 +241,15 @@ pub enum SystemEvent {
         culprit_text: String,
     },
 
+    RealityForked {
+        agent_id: String,
+        parent_namespace: String,
+        fork_namespace: String,
+        step_ordinal: u64,
+        tx_id: String,
+        timestamp: i64,
+    },
+
     AegisInterdiction {
         agent_id: String,
         attempted_path: String,

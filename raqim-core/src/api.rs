@@ -101,6 +101,14 @@ pub enum UiEvent {
         text: String,
     },
 
+    RealityForked {
+        agent_id: String,
+        parent_namespace: String,
+        fork_namespace: String,
+        step_ordinal: u64,
+        tx_id: String,
+    },
+
     A2aMessageRouted {
         source_hex: String,
         target_hex: String,
@@ -1150,6 +1158,7 @@ pub struct RecordEffectRequest {
 pub struct RecordEffectResponse {
     pub success: bool,
     pub tx_id_hex: String,
+    pub is_forked_branch: bool,
 }
 
 #[derive(Deserialize)]
@@ -1186,21 +1195,28 @@ pub async fn record_effect_handler(
         .decode(&payload.output_payload_base64)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
 
+    let is_forked = payload.namespace.starts_with("phantom_");
+
     match state
         .mem_router
         .record_effect(
             agent_id,
-            step_ordinal,
+            payload.step_ordinal,
             call_signature_hash,
             output_payload,
             &payload.namespace,
         )
         .await
     {
-        Ok(tx_id) => Ok(Json(RecordEffectResponse {
-            success: true,
-            tx_id_hex: format!("{:032x}", tx_id),
-        })),
+        Ok(tx_id) => {
+            if is_forked {}
+
+            Ok(Json(RecordEffectResponse {
+                success: true,
+                tx_id_hex: format!("{:032x}", tx_id),
+                is_forked_branch: is_forked,
+            }))
+        }
 
         Err(e) => {
             eprintln!("[API ERROR] Failed to record effect: {} ", e);
@@ -1210,7 +1226,7 @@ pub async fn record_effect_handler(
 }
 
 /// Fetches a recoorded effect for deterministic replay
-pub fn get_effect_handler(
+pub async fn get_effect_handler(
     State(state): State<ApiState>,
     Json(payload): Json<GetEffectRequest>,
 ) -> Result<Json<GetEffectResponse>, StatusCode> {
@@ -1235,7 +1251,7 @@ pub fn get_effect_handler(
 
             Ok(Json(GetEffectResponse {
                 found: true,
-                output_payload_base64: b64_payload,
+                output_payload_base64: Some(b64_payload),
                 timestamp: Some(record.timestamp),
             }))
         }
