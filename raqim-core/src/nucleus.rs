@@ -11,8 +11,10 @@ use std::{
     eprintln,
     fs::File,
     io::Read,
+    println,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
+    vec,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::{
@@ -23,6 +25,7 @@ use tokio::{
 pub struct WalEngine {
     sender: mpsc::Sender<OpLog>,
     pub cmd_sender: mpsc::Sender<WalCommand>,
+
     // The O(1) INDEX: Maps TxID -> Physical byte offset in the WAL.
     pub index: Arc<RwLock<BTreeMap<u128, u64>>>,
 }
@@ -45,15 +48,18 @@ impl WalEngine {
         })
     }
 
-    /// Bootstraps the enterprise WAL with automatic env detection
+    /// Bootstraps the enterprise crash-safe WAL with automatic torn-frame recovery
     pub async fn start(file_path: String) -> (Arc<Self>, tokio::task::JoinHandle<()>) {
-        println!("Bismillah. Booting Portable Nucleus WAL Engine...");
+        println!("Bismillah. Booting Portable Nucleus Crash-Safe WAL Engine...");
+
+        // Pre-Flight Forensic Scan - Detect and trunate torn frames from prior crashes.
+        let (clean_offset, recovered_index) = Self::recover_and_truncate_torn_frames(&file_path);
 
         // Bounded channel to prevent OOM crashes
         let (tx, mut rx) = mpsc::channel::<OpLog>(100_000);
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<WalCommand>(10);
 
-        let index = Arc::new(RwLock::new(BTreeMap::new()));
+        let index = Arc::new(RwLock::new(recovered_index));
         let index_clone = index.clone();
         let fp_clone = file_path.clone();
 
@@ -65,14 +71,9 @@ impl WalEngine {
                 .write(true)
                 .open(&file_path)
                 .await
-                .expect("Failed to open io_uring WAL file");
+                .expect("Failed to open  WAL file");
 
-            // Query initial file offset asychronously
-            let metadata = active_file
-                .metadata()
-                .await
-                .expect("Failed to stat WAL file");
-            let mut current_offset = metadata.len();
+            let mut current_offset = clean_offset;
             let mut batch: Vec<OpLog> = Vec::with_capacity(6_000);
 
             // Group commit timer (flushes the disk cache every 2ms if data is pending)
@@ -108,7 +109,7 @@ impl WalEngine {
 
                     }
 
-                    // Path B: Group Commit Flush (Forces fsync every 2ms)
+                    // Path B: Group Commit Flush (Enforces hardware NVMe cache sync)
                     _ = flush_interval.tick() => {
                         let _ = active_file.sync_data().await;
                     }
@@ -170,7 +171,7 @@ impl WalEngine {
         )
     }
 
-    /// Internal Helper: Zero-copy serialization and non-blocking write.
+    /// Internal Helper: Checksummed Serialization, Non-blocking Write, and Hardware Sync Barrier
     async fn write_batch_to_disk(
         file: &mut tokio::fs::File,
         current_offset: &mut u64,
@@ -183,17 +184,16 @@ impl WalEngine {
         let first_txid = batch[0].state.transaction_id;
 
         // zero-copy serialize the entire batch
-        let bytes = to_bytes::<rkyv::rancor::Error>(&batch.to_vec())
+        let payload_bytes = to_bytes::<rkyv::rancor::Error>(&batch.to_vec())
             .expect("Failed to serialize batch")
             .into_vec();
 
-        let len_prefix = (bytes.len() as u32).to_le_bytes();
+        // Compute CRC32 checksums over payload bytes
+        let payload_len = payload_bytes.len() as u32;
+        let checksum = crc32fast::hash(&payload_bytes);
 
-        // Update in-memory index using async RWLock
-        {
-            let mut idx = index.write().await;
-            idx.insert(first_txid, *current_offset);
-        }
+        let len_prefix = payload_len.to_le_bytes();
+        let crc_bytes = checksum.to_le_bytes();
 
         // Sequential write using tokio async I/O
         if let Err(e) = file.write_all(&len_prefix).await {
@@ -201,15 +201,132 @@ impl WalEngine {
             return;
         }
 
-        if let Err(e) = file.write_all(&bytes).await {
+        if let Err(e) = file.write_all(&crc_bytes).await {
+            eprintln!("[WAL_ENGINE FATAL] CRC32 checksum write failed: {} ", e);
+            return;
+        }
+
+        if let Err(e) = file.write_all(&payload_bytes).await {
             eprintln!(" [WAL_ENGINE FATAL] Payload write failed: {}", e);
             return;
         }
 
-        *current_offset += 4 + bytes.len() as u64;
+        // Hardware sync Sync Barrier: Issue fdatasync hardware flush NVMe controller DRAM cache
+        if let Err(e) = file.sync_all().await {
+            eprintln!(
+                "[WAL_ENGIME CRITICAL] fdatasync hardware flush failed: {}",
+                e
+            );
+            return;
+        }
+
+        // Update in-memory index after hardware persisten is confirmed
+        {
+            let mut idx = index.write().await;
+            idx.insert(first_txid, *current_offset);
+        }
+
+        *current_offset += 4 + 4 + payload_bytes.len() as u64;
     }
 
-    /// Returns the exact number of uncompacted thoughts currently in the Hot WAL. O(1) operation utilizing the BTreeMap index
+    /// Pre-flight recovery: Scans WAL on boot, validates crc32 checksums and truncates torn tail frames
+    pub fn recover_and_truncate_torn_frames(file_path: &str) -> (u64, BTreeMap<u128, u64>) {
+        let mut file = match File::options().read(true).write(true).open(file_path) {
+            Ok(f) => f,
+            Err(_) => {
+                println!(
+                    "[WAL] No existing WAL file at {}. Initializing fresh 0-byte log. ",
+                    file_path
+                );
+                return (0, BTreeMap::new());
+            }
+        };
+
+        let mut offset: u64 = 0;
+        let mut index = BTreeMap::new();
+        let mut len_buf = [0u8; 4];
+        let mut crc_buf = [0u8; 4];
+
+        println!(
+            "[WAL RECOVERY] Validating frame checksums on {}...",
+            file_path
+        );
+
+        loop {
+            // Read 4-byte length prefix
+            if file.read_exact(&mut len_buf).is_err() {
+                break;
+            }
+
+            let payload_len = u32::from_le_bytes(len_buf) as usize;
+
+            // Read 4-byte CRC32 checksums
+            if file.read_exact(&mut crc_buf).is_err() {
+                eprintln!(
+                    "[WAL RECOVERY WARN] Truncated CRC header at offset {}. Truncating tail. ",
+                    offset
+                );
+                break;
+            }
+            let expected_crc = u32::from_le_bytes(crc_buf);
+
+            // Read payload bytes
+            let mut payload = vec![0u8; payload_len];
+            if file.read_exact(&mut payload).is_err() {
+                eprintln!(
+                    "[WAL RECOVERY WARN] Truncated payload at offset {}. Power failure detected. Truncating tail.",
+                    offset
+                );
+                break;
+            }
+
+            // Validate CRC32 Checksum
+            let computed_crc = crc32fast::hash(&payload);
+            if computed_crc != expected_crc {
+                eprintln!(
+                    "[WAL RECOVERY CORRUPTION] CRC mismatch at offset {}! Expected {:x}, computed {:x}. Truncating torn write.",
+                    offset, expected_crc, computed_crc
+                );
+
+                break;
+            }
+
+            // Zero-copy rkyv exraction to build memory index
+            if let Ok(archived_batch) = rkyv::access::<
+                <Vec<OpLog> as rkyv::Archive>::Archived,
+                rkyv::rancor::Error,
+            >(&payload)
+            {
+                if let Ok(batch) =
+                    rkyv::deserialize::<Vec<OpLog>, rkyv::rancor::Error>(archived_batch)
+                {
+                    if !batch.is_empty() {
+                        index.insert(batch[0].state.transaction_id, offset);
+                    }
+                }
+            }
+
+            offset += 4 + 4 + payload_len as u64;
+        }
+
+        // Truncate file back to the last 100% valid checksum-verified boundary
+        if let Err(e) = file.set_len(offset) {
+            eprintln!(
+                "[WAL RECOVERY ERROR] Failed to set file length during truncation: {}",
+                e
+            );
+        } else {
+            println!(
+                "[WAL RECOVERY COMPLETE] Clean WAL tail established at offset {} bytes. {} valid batches indexed",
+                offset,
+                index.len()
+            );
+        }
+
+        (offset, index)
+    }
+
+    /// Returns the number of uncompacted logs currently in the Hot WAL. O(1) operation utilizing the BTreeMap index
     pub async fn get_pending_count(&self) -> usize {
         self.index.read().await.len()
     }
