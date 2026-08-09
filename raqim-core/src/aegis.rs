@@ -2,13 +2,11 @@ use crate::SystemEvent;
 use crate::api::UiEvent;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use notify::{EventKind, RecursiveMode, Watcher};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::eprintln;
-use std::sync::mpsc::channel;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, sync::Arc};
+use std::{eprintln, println};
 use tokio::sync::broadcast::Sender;
 
 /// The Internal Token packed inside every agent's SDK bundle
@@ -21,14 +19,14 @@ pub struct CapabilityCertificate {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct AegisGroupPolicy {
+pub struct GroupPolicy {
     pub allowed_namespaces: Vec<String>,
     pub blocked_namespaces: Vec<String>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct AegisGroupManifest {
-    pub groups: HashMap<String, AegisGroupPolicy>,
+    pub groups: HashMap<String, GroupPolicy>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize)]
@@ -41,7 +39,7 @@ pub struct QuarantineRecord {
 }
 
 pub struct AegisGateKeeper {
-    pub group_policies: Arc<RwLock<HashMap<String, AegisGroupPolicy>>>,
+    pub group_policies: Arc<RwLock<HashMap<String, GroupPolicy>>>,
     pub quarantine_blocklist: DashMap<String, QuarantineRecord>,
     pub master_public_key: VerifyingKey,
     pub tx: Sender<SystemEvent>,
@@ -50,71 +48,34 @@ pub struct AegisGateKeeper {
 
 impl AegisGateKeeper {
     pub fn new(
-        aegis_path: &str,
-        master_pub_hex: &str,
+        initial_policies: HashMap<String, GroupPolicy>,
+        master_pub_bytes: &[u8; 32],
         tx: Sender<SystemEvent>,
         ui_tx: Sender<UiEvent>,
-    ) -> Arc<Self> {
-        let group_config = Self::parse_group_toml(aegis_path);
-
-        let pub_bytes = hex::decode(master_pub_hex).expect("Invalid Master Public Key Hex");
-        let master_public_key = VerifyingKey::from_bytes(&pub_bytes.try_into().unwrap())
+    ) -> Self {
+        let master_public_key = VerifyingKey::from_bytes(master_pub_bytes)
             .expect("FATAL: Failed to parse master public key");
 
-        let gatekeeper = Arc::new(AegisGateKeeper {
-            group_policies: Arc::new(RwLock::new(group_config)),
+        Self {
             quarantine_blocklist: DashMap::new(),
+            group_policies: Arc::new(RwLock::new(initial_policies)),
             master_public_key,
             tx,
             ui_tx,
-        });
-
-        // Spawn a dedicated bg thread for the C-level fs watcher
-        let path_string = aegis_path.to_string();
-        let gk_clone = gatekeeper.clone();
-
-        // 3. The Async Tokio task that actually swaps the memory.
-        std::thread::spawn(move || {
-            let (tx, rx) = channel();
-            let mut watcher =
-                notify::recommended_watcher(tx).expect("Failed to bind os file to watcher");
-            watcher
-                .watch(
-                    std::path::Path::new(&path_string),
-                    RecursiveMode::NonRecursive,
-                )
-                .unwrap();
-
-            // This thread blocks efficiently until the OS sends a file modifiication event.
-            for res in rx {
-                match res {
-                    Ok(event) => {
-                        // We only care if the file content were actually modified
-                        if let EventKind::Modify(_) = event.kind {
-                            println!("[AEGIS] Modification detected. Hot reloadidng ACL...");
-
-                            // Parse the updated file
-                            let new_policies = Self::parse_group_toml(&path_string);
-
-                            //  FAIL-SAFE: Only apply if the new file actually parsed correctly
-                            if !new_policies.is_empty() {
-                                // Obtain write lock, swap the mappig, instantly release the lock
-                                let mut write_lock = gk_clone.group_policies.write().unwrap();
-                                *write_lock = new_policies;
-                                println!("[AEGIS] ACL Hot-Reloaded Successfully.")
-                            }
-                        }
-                    }
-
-                    Err(e) => eprintln!("[AEGIS] Watcher Error: {:?}", e),
-                }
-            }
-        });
-
-        gatekeeper
+        }
     }
 
-    fn parse_group_toml(path: &str) -> HashMap<String, AegisGroupPolicy> {
+    /// Hot-reloaded API: Override memory policy maps when file changes occur on disk
+    pub fn reloaded_policies(&self, new_policies: HashMap<String, GroupPolicy>) {
+        let mut guard = self.group_policies.write();
+        *guard = new_policies;
+
+        println!(
+            "[AEGIS FIREWALL] Successfully hot-reloaded policy updates from disk kernel watchers."
+        );
+    }
+
+    fn parse_group_toml(path: &str) -> HashMap<String, GroupPolicy> {
         match std::fs::read_to_string(path) {
             Ok(content) => match toml::from_str::<AegisGroupManifest>(&content) {
                 Ok(manifest) => manifest.groups,
@@ -135,7 +96,6 @@ impl AegisGateKeeper {
         }
     }
 
-    #[inline(always)]
     pub fn is_quarantined(&self, agent_hex: &str) -> bool {
         self.quarantine_blocklist.contains_key(agent_hex)
     }
@@ -344,7 +304,7 @@ impl AegisGateKeeper {
         }
 
         // 2. Short-circuit check if the agent is actively quarantined
-        if self.quarantine_blocklist.contains_key(&cert.agent_hex) {
+        if self.is_quarantined(&cert.agent_hex) {
             return Err(anyhow::anyhow!(
                 " Agent is expicitely locked down by firewall "
             ));
@@ -364,13 +324,13 @@ impl AegisGateKeeper {
         cert_unsigned_payload.master_signature = Vec::new();
         let serialized_raw = postcard::to_allocvec(&cert_unsigned_payload)?;
 
-        let master_sig_array: &[u8; 64] = cert
+        let master_sig_bytes: &[u8; 64] = cert
             .master_signature
             .as_slice()
             .try_into()
             .map_err(|_| anyhow::anyhow!("Invalid Master Signature block lengnth"))?;
 
-        let master_sig = Signature::from_bytes(master_sig_array);
+        let master_sig = Signature::from_bytes(master_sig_bytes);
         if self
             .master_public_key
             .verify(&serialized_raw, &master_sig)
