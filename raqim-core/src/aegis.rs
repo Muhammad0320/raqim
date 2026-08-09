@@ -19,74 +19,77 @@ pub struct CapabilityCertificate {
     pub master_signature: Vec<u8>, // Signed by Swarm Master Key
 }
 
+/// Atomic Token Bucket Rate Limiter
+#[derive(Serialize, Deserialize, Debug)]
 
-/// Atomic Token Bucket Rate Limiter 
 pub struct AtomicTokenBucket {
-    max_tps: u64, 
-    burst_capacity: u64, 
-    tokens: AtomicU64, 
-    last_refill_nanos: AtomicU64 
+    max_tps: u64,
+    burst_capacity: u64,
+    tokens: AtomicU64,
+    last_refill_nanos: AtomicU64,
 }
 
 impl AtomicTokenBucket {
-
     pub fn new(max_tps: u64, burst_capacity: u64) -> Self {
-
-        let now_nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64; 
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
 
         Self {
-            max_tps, 
-            burst_capacity, 
-            tokens: AtomicU64::new(burst_capacity), 
-            last_refill_nanos: AtomicU64::new(now_nanos)   
+            max_tps,
+            burst_capacity,
+            tokens: AtomicU64::new(burst_capacity),
+            last_refill_nanos: AtomicU64::new(now_nanos),
         }
-
     }
 
-    /// Checks if a request is allowed. Returns true if permiitted asnd false if limit is exceeded. 
+    /// Checks if a request is allowed. Returns true if permiitted asnd false if limit is exceeded.
     pub fn check_and_consume(&self) -> bool {
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
 
-        let now_nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64; 
-
-        let last_refill = self.last_refill_nanos.load(std::sync::atomic::Ordering::Relaxed);
+        let last_refill = self
+            .last_refill_nanos
+            .load(std::sync::atomic::Ordering::Relaxed);
         let elapsed_nanos = now_nanos.saturating_sub(last_refill);
 
-        // Refill tokens based on elapsed nanoseconds: (elapsed_secs * max_tps) 
-        let new_tokens = (elapsed_nanos as u128 * self.max_tps as u128 / 1_000_000_000) as u64; 
+        // Refill tokens based on elapsed nanoseconds: (elapsed_secs * max_tps)
+        let new_tokens = (elapsed_nanos as u128 * self.max_tps as u128 / 1_000_000_000) as u64;
 
         if new_tokens > 0 {
+            // Update last refill time
+            self.last_refill_nanos
+                .store(now_nanos, std::sync::atomic::Ordering::Relaxed);
 
-            // Update last refill time 
-            self.last_refill_nanos.store(now_nanos, std::sync::atomic::Ordering::Relaxed);
-
-            // Refill bucket but do not exceed burst_capacity 
-            let current = self.tokens.load(std::sync::atomic::Ordering::Relaxed); 
+            // Refill bucket but do not exceed burst_capacity
+            let current = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
             let refilled = (current + new_tokens).min(self.burst_capacity);
-            self.tokens.store(refilled, std::sync::atomic::Ordering::Relaxed);
+            self.tokens
+                .store(refilled, std::sync::atomic::Ordering::Relaxed);
         }
 
         // Try to take 1 token from the bucket
         let current_tokens = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
         if current_tokens > 0 {
-            self.tokens.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-            true 
+            self.tokens
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            true
         } else {
             // Rate limit exceeded
-            false 
+            false
         }
-
     }
-
-
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct GroupPolicy {
     pub allowed_namespaces: Vec<String>,
     pub blocked_namespaces: Vec<String>,
-    pub rate_limiter: Arc<AtomicTokenBucket>
+    pub rate_limiter: Arc<AtomicTokenBucket>,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize)]
 pub struct QuarantineRecord {
@@ -97,6 +100,13 @@ pub struct QuarantineRecord {
     pub timestamp: u64,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GroupPolicyConfig {
+    pub allowed_namespace: Vec<String>,
+    pub blocked_namespace: Vec<String>,
+    pub max_tps: u64,
+    pub burst_capacity: u64,
+}
 
 /// Deserialization schema for aegis.toml
 #[derive(Deserialize, Debug, Clone, Serialize)]
@@ -104,20 +114,22 @@ pub struct AegisConfigFile {
     pub groups: HashMap<String, GroupPolicyConfig>,
 }
 
-
 impl AegisConfigFile {
-
     pub fn to_group_policies(&self) -> HashMap<String, GroupPolicy> {
-
         let mut map = HashMap::new();
         for (group_name, cfg) in &self.groups {
-
-            map.insert(group_name.clone(), GroupPolicy { allowed_namespaces: cfg. })
-
+            map.insert(
+                group_name.clone(),
+                GroupPolicy {
+                    allowed_namespaces: cfg.allowed_namespace.clone(),
+                    blocked_namespaces: cfg.blocked_namespace.clone(),
+                    rate_limiter: Arc::new(AtomicTokenBucket::new(cfg.max_tps, cfg.burst_capacity)),
+                },
+            );
         }
 
+        map
     }
-
 }
 
 pub struct AegisGateKeeper {
@@ -155,27 +167,6 @@ impl AegisGateKeeper {
         println!(
             "[AEGIS FIREWALL] Successfully hot-reloaded policy updates from disk kernel watchers."
         );
-    }
-
-    fn parse_group_toml(path: &str) -> HashMap<String, GroupPolicy> {
-        match std::fs::read_to_string(path) {
-            Ok(content) => match toml::from_str::<AegisGroupManifest>(&content) {
-                Ok(manifest) => manifest.groups,
-                Err(e) => {
-                    eprintln!(
-                        "[AEGIS FATAL] Group Configuration parsing error: {}. Defaulting to lockdown. ",
-                        e
-                    );
-                    HashMap::new()
-                }
-            },
-
-            Err(_) => {
-                eprintln!("[AEGIS WARNING] Group policy definition not found. Access denied.");
-
-                HashMap::new()
-            }
-        }
     }
 
     pub fn is_quarantined(&self, agent_hex: &str) -> bool {
@@ -301,14 +292,27 @@ impl AegisGateKeeper {
             ));
         }
 
-        // 6. POLICY ENFORCEMENT: Evaluate namespace against LIVE policy rule
-        let policies_guard = self.group_policies.read().unwrap();
+        // Rate limiting & Dos interdiction (Atomic bucket token)
+        let policies_guard = self.group_policies.read();
         let live_policy = policies_guard.get(group_name).ok_or_else(|| {
             anyhow::anyhow!(
                 "Group Policy mapping '{}' not defined inside active aegis.toml ",
                 group_name
             )
         })?;
+
+        if !live_policy.rate_limiter.check_and_consume() {
+            self.trigger_quarantine(
+                agent_hex,
+                intent_path,
+                "RATE_LIMIT_EXCEDED",
+                &format!("Agent exceeded group '{}' max TPS quota", group_name),
+            );
+
+            return Err(anyhow::anyhow!(
+                "Acess Denied: Group Rate Limit Exceeded (DoS Interdiction)"
+            ));
+        }
 
         for blocked in &live_policy.blocked_namespaces {
             let match_found = if blocked.ends_with("*") {
