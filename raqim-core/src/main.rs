@@ -1,6 +1,7 @@
 use ed25519_dalek::SigningKey;
+use notify::{Event, Watcher};
 use rand_core::OsRng;
-use raqim_core::aegis::AegisGateKeeper;
+use raqim_core::aegis::{self, AegisGateKeeper, GroupPolicy};
 use raqim_core::api::{ApiState, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 
@@ -224,12 +225,55 @@ async fn main() {
                     break;
 
                 }
- 
             }
-
         }
-
     }); 
+
+    // THE KERNEL AEGIS.TOML HOT-RELOAD WATCHER
+    let aegis_clone = aegis.clone(); 
+    let policy_path_str = "aegis.toml"; 
+
+    // Ensure policy manifest target exists beofre running file watcher
+    if !Path::new(policy_path_str).exists() {
+        fs::write(policy_path_str, "# Raqim Aegis Policy Manifest\n")?;
+    }
+
+    let (watch_tx, mut watch_rx) = tokio::sync::mpsc::channel::<Result< Event, notify::Error >>(10);
+    
+    // Spawn synchronous notify loop hooked directly to OS virtual filesystem events
+    let mut watcher = notify::recommended_watcher(move |res| {
+        let _ = watch_tx.blocking_send(res);
+
+    })?;
+
+    watcher.watch(Path::new(policy_path_str), notify::RecursiveMode::NonRecursive)?;
+
+    //  Async task consuming events transmitted out of the notify bridge loop
+    tokio::spawn(async move {
+
+        println!("[KERNEL WATCHER] Listening for direct kernel modification on: {}... ", policy_path_str);
+        while let Some(Ok(event)) = watch_rx.recv().await {
+
+            // Check if modification contains a data close op (File update commit complete)
+            if event.kind.is_modify() {
+                println!("[KERNEL WATCHER] Change detected on policy file. Re-parsing metrics... ");
+
+                // Read and re-parse file delta safely
+                if let Ok(content) = fs::read_to_string("aegis.toml") {
+
+                    // Extract new structural layouts 
+                    let mut fresh_map: HashMap<String, GroupPolicy> = HashMap::new(); 
+
+                    // Trigger thread-safe atomic pointer across running thread  
+                    aegis_clone.reload_policies(fresh_map);
+                }
+            }
+        }
+    });
+
+    // Emit Initial system boot signal
+    let _ = event_tx.send(SystemEvent::SystemBoot { message: "Raqim Sovereign Core Active.".to_string() });
+    
 
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(

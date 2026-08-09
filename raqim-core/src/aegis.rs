@@ -66,7 +66,7 @@ impl AegisGateKeeper {
     }
 
     /// Hot-reloaded API: Override memory policy maps when file changes occur on disk
-    pub fn reloaded_policies(&self, new_policies: HashMap<String, GroupPolicy>) {
+    pub fn reload_policies(&self, new_policies: HashMap<String, GroupPolicy>) {
         let mut guard = self.group_policies.write();
         *guard = new_policies;
 
