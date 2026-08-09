@@ -1,7 +1,7 @@
 use ed25519_dalek::SigningKey;
 use notify::{Event, Watcher};
 use rand_core::OsRng;
-use raqim_core::aegis::{self, AegisGateKeeper, GroupPolicy};
+use raqim_core::aegis::{self, AegisConfigFile, AegisGateKeeper, GroupPolicy};
 use raqim_core::api::{ApiState, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 
@@ -186,16 +186,7 @@ async fn main() {
 
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain_shard = Arc::new(SwarmStateRegistry::new());
-
-    let initial_map: HashMap<String, GroupPolicy> = HashMap::new();
-
     let axon = Arc::new(AxonGateKeeper::new());
-    let aegis = AegisGateKeeper::new(
-        initial_map,
-        &master_public_key,
-        event_tx.clone(),
-        ui_tx.clone(),
-    );
 
     // LEAK-PROOF BROADCAST RECEIVER LOOP: Spawn consumer loop to detect lagging and evict slow readers automatically
     let mut system_event_subscriber = event_tx.subscribe();
@@ -230,14 +221,41 @@ async fn main() {
     }); 
 
     // THE KERNEL AEGIS.TOML HOT-RELOAD WATCHER
-    let aegis_clone = aegis.clone(); 
     let policy_path_str = "aegis.toml"; 
 
     // Ensure policy manifest target exists beofre running file watcher
     if !Path::new(policy_path_str).exists() {
-        fs::write(policy_path_str, "# Raqim Aegis Policy Manifest\n")?;
+        let default_toml = r#"
+        # Default Raqim Aegis Policy Manifest (Auto-Generated)
+        [groups.admin_group]
+        allowed_namespaces = ["*"]
+        blocked_namespaces = []
+        max_tps = 10000
+        burst_capacity = 1000
+
+        [groups.default_group]
+        allowed_namespaces = ["/default/*"]
+        blocked_namespaces = ["/admin/*", "/system/*"]
+        max_tps = 100
+        burst_capacity = 20
+        "#;
+        fs::write(policy_path_str, default_toml)?;
+        println!("[AEGIS] Auto-generated default aegis.toml configuration file.");
     }
 
+    let initial_content = fs::read_to_string(policy_path_str)?;
+    let parsed_cfg = toml::from_str::<AegisConfigFile>(&initial_content).expect("FATAL: Failed to parse initial aegis.toml configuration file"); 
+
+    let initial_policies = parsed_cfg.to_group_policies();
+
+    let aegis = AegisGateKeeper::new(
+        initial_policies,
+        &master_public_key,
+        event_tx.clone(),
+        ui_tx.clone(),
+    );
+
+    let aegis_clone = aegis.clone(); 
     let (watch_tx, mut watch_rx) = tokio::sync::mpsc::channel::<Result< Event, notify::Error >>(10);
     
     // Spawn synchronous notify loop hooked directly to OS virtual filesystem events
@@ -245,15 +263,14 @@ async fn main() {
         let _ = watch_tx.blocking_send(res);
 
     })?;
-
     watcher.watch(Path::new(policy_path_str), notify::RecursiveMode::NonRecursive)?;
 
     //  Async task consuming events transmitted out of the notify bridge loop
     tokio::spawn(async move {
 
         println!("[KERNEL WATCHER] Listening for direct kernel modification on: {}... ", policy_path_str);
+        
         while let Some(Ok(event)) = watch_rx.recv().await {
-
             // Check if modification contains a data close op (File update commit complete)
             if event.kind.is_modify() {
                 println!("[KERNEL WATCHER] Change detected on policy file. Re-parsing metrics... ");
@@ -261,11 +278,19 @@ async fn main() {
                 // Read and re-parse file delta safely
                 if let Ok(content) = fs::read_to_string("aegis.toml") {
 
-                    // Extract new structural layouts 
-                    let mut fresh_map: HashMap<String, GroupPolicy> = HashMap::new(); 
+                        match toml::from_str::<AegisConfigFile>(&content) {
 
-                    // Trigger thread-safe atomic pointer across running thread  
-                    aegis_clone.reload_policies(fresh_map);
+                            Ok(parsed_cfg) => {
+
+                                let fresh_policies = parsed_cfg.to_group_policies();
+                                aegis_clone.reload_policies(fresh_policies);
+
+                            }
+                            Err(e) => {
+                                // FAIL-SAFE 
+                                eprintln!("[AEGIS CONFIG ERROR] Invalid aegis.toml syntax: {}. Retaining previous security policies in RAM.", e);
+                            }
+                        }
                 }
             }
         }
