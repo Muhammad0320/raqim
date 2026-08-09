@@ -3,15 +3,12 @@ use crate::api::UiEvent;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use notify::{EventKind, RecursiveMode, Watcher};
-use rkyv::Archive;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::eprintln;
 use std::sync::mpsc::channel;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::broadcast::Sender;
 
 /// The Internal Token packed inside every agent's SDK bundle
@@ -44,11 +41,11 @@ pub struct QuarantineRecord {
 }
 
 pub struct AegisGateKeeper {
-    pub group_policies: RwLock<HashMap<String, AegisGroupPolicy>>,
+    pub group_policies: Arc<RwLock<HashMap<String, AegisGroupPolicy>>>,
     pub quarantine_blocklist: DashMap<String, QuarantineRecord>,
-    master_public_key: VerifyingKey,
-    tx: Sender<SystemEvent>,
-    ui_tx: Sender<UiEvent>,
+    pub master_public_key: VerifyingKey,
+    pub tx: Sender<SystemEvent>,
+    pub ui_tx: Sender<UiEvent>,
 }
 
 impl AegisGateKeeper {
@@ -65,7 +62,7 @@ impl AegisGateKeeper {
             .expect("FATAL: Failed to parse master public key");
 
         let gatekeeper = Arc::new(AegisGateKeeper {
-            group_policies: RwLock::new(group_config),
+            group_policies: Arc::new(RwLock::new(group_config)),
             quarantine_blocklist: DashMap::new(),
             master_public_key,
             tx,
