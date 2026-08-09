@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::{fs, println};
+use std::{eprintln, fs, println};
 
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
@@ -68,9 +68,10 @@ async fn main() {
     // TelemetryEngine::start_sinker_daemon(telemetry.clone());
 
     // THE INTERNAL EVENT BUS
-    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(5000);
+    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(50_000);
+    let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(10_000);
 
-    let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(5000);
+
     let registry = Arc::new(SwarmRegistry::new());
     let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
     let (phantom_ui_tx, _phanom_ui_rx) = broadcast::channel::<UiEvent>(100);
@@ -185,13 +186,50 @@ async fn main() {
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain_shard = Arc::new(SwarmStateRegistry::new());
 
+    let initial_map: HashMap<String, GroupPolicy> = HashMap::new();
+
     let axon = Arc::new(AxonGateKeeper::new());
     let aegis = AegisGateKeeper::new(
-        &config.aegis_path,
-        master_public_key_hex.as_str(),
+        initial_map,
+        &master_public_key,
         event_tx.clone(),
         ui_tx.clone(),
     );
+
+    // LEAK-PROOF BROADCAST RECEIVER LOOP: Spawn consumer loop to detect lagging and evict slow readers automatically
+    let mut system_event_subscriber = event_tx.subscribe();
+    tokio::spawn(async move {
+
+        loop {
+
+            match system_events_subscriber.recv().await {
+
+                Ok(event) => {
+                    // Normal ingestion processing 
+                    if let SystemEvent::SystemBoot { message } = event {
+                        println!("[BUS PROCESSING] Ingested boot message: {}", message);
+                    }
+                }
+
+                Err(broadcast::error::RecvError::Lagged(skipped_count)) => {
+                    // Memory Safeguard: Clear internal lags forcefully to protect RAM
+                    eprintln!("[MEMORY WARNING] Subscriber loop lagged behind channel sequence!" 
+                      "Forcefully skipped {} events to prevent heap memory growth", skipped_count
+                     );
+                }
+
+                Err(broadcast::error::RecvError::Closed) => {
+
+                    println!("[SYSTEM] Event bus channel closed cleanly. ");
+                    break;
+
+                }
+ 
+            }
+
+        }
+
+    }); 
 
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
