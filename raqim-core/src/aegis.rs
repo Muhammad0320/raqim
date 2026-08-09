@@ -4,6 +4,7 @@ use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::AtomicU64;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::HashMap, sync::Arc};
 use std::{eprintln, println};
@@ -18,16 +19,74 @@ pub struct CapabilityCertificate {
     pub master_signature: Vec<u8>, // Signed by Swarm Master Key
 }
 
+
+/// Atomic Token Bucket Rate Limiter 
+pub struct AtomicTokenBucket {
+    max_tps: u64, 
+    burst_capacity: u64, 
+    tokens: AtomicU64, 
+    last_refill_nanos: AtomicU64 
+}
+
+impl AtomicTokenBucket {
+
+    pub fn new(max_tps: u64, burst_capacity: u64) -> Self {
+
+        let now_nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64; 
+
+        Self {
+            max_tps, 
+            burst_capacity, 
+            tokens: AtomicU64::new(burst_capacity), 
+            last_refill_nanos: AtomicU64::new(now_nanos)   
+        }
+
+    }
+
+    /// Checks if a request is allowed. Returns true if permiitted asnd false if limit is exceeded. 
+    pub fn check_and_consume(&self) -> bool {
+
+        let now_nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64; 
+
+        let last_refill = self.last_refill_nanos.load(std::sync::atomic::Ordering::Relaxed);
+        let elapsed_nanos = now_nanos.saturating_sub(last_refill);
+
+        // Refill tokens based on elapsed nanoseconds: (elapsed_secs * max_tps) 
+        let new_tokens = (elapsed_nanos as u128 * self.max_tps as u128 / 1_000_000_000) as u64; 
+
+        if new_tokens > 0 {
+
+            // Update last refill time 
+            self.last_refill_nanos.store(now_nanos, std::sync::atomic::Ordering::Relaxed);
+
+            // Refill bucket but do not exceed burst_capacity 
+            let current = self.tokens.load(std::sync::atomic::Ordering::Relaxed); 
+            let refilled = (current + new_tokens).min(self.burst_capacity);
+            self.tokens.store(refilled, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        // Try to take 1 token from the bucket
+        let current_tokens = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
+        if current_tokens > 0 {
+            self.tokens.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            true 
+        } else {
+            // Rate limit exceeded
+            false 
+        }
+
+    }
+
+
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct GroupPolicy {
     pub allowed_namespaces: Vec<String>,
     pub blocked_namespaces: Vec<String>,
+    pub rate_limiter: Arc<AtomicTokenBucket>
 }
 
-#[derive(Deserialize, Debug)]
-pub struct AegisGroupManifest {
-    pub groups: HashMap<String, GroupPolicy>,
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize)]
 pub struct QuarantineRecord {
@@ -36,6 +95,29 @@ pub struct QuarantineRecord {
     pub attemped_path: String,
     pub payload_preview: String,
     pub timestamp: u64,
+}
+
+
+/// Deserialization schema for aegis.toml
+#[derive(Deserialize, Debug, Clone, Serialize)]
+pub struct AegisConfigFile {
+    pub groups: HashMap<String, GroupPolicyConfig>,
+}
+
+
+impl AegisConfigFile {
+
+    pub fn to_group_policies(&self) -> HashMap<String, GroupPolicy> {
+
+        let mut map = HashMap::new();
+        for (group_name, cfg) in &self.groups {
+
+            map.insert(group_name.clone(), GroupPolicy { allowed_namespaces: cfg. })
+
+        }
+
+    }
+
 }
 
 pub struct AegisGateKeeper {
