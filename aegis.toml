@@ -1,7 +1,19 @@
-[groups.finance_worker]
-allowed_namespaces = ["/finance/*"]
-blocked_namespaces = ["/admin/*"]
+# Raqim Aegis Cryptographic Firewall & Governance Policy Manifest
 
-[groups.siege_tester]
-allowed_namespaces = ["/siege/*"]
+[groups.admin_group]
+allowed_namespaces = ["*"]
 blocked_namespaces = []
+max_tps = 10000
+burst_capacity = 1000
+
+[groups.finance_worker]
+allowed_namespaces = ["/rqm_finance/*", "/audit/*"]
+blocked_namespaces = ["/admin/*", "/system/*"]
+max_tps = 1000
+burst_capacity = 100
+
+[groups.untrusted_agent]
+allowed_namespaces = ["/sandbox/temp/*"]
+blocked_namespaces = ["*"]
+max_tps = 10
+burst_capacity = 5
