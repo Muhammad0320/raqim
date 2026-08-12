@@ -96,7 +96,7 @@ class RaqimClient:
                 target_namespace = f"phantom_{namespace}_{self.agent_hex}_step{step_ordinal}"
     
             else: 
-                if asyncio.iscoroutinefunction(fn): 
+                if asyncio.iscoroutinefunction(fn):
                     result = await fn()
                 else: 
                     result = fn()
@@ -123,7 +123,6 @@ class RaqimClient:
         self._zenoh_session = zenoh.open(zenoh.Config())
         control_topic = f"raqim/{self.tenant}/control/{self.agent_hex}"
         self._zenoh_session.declare_subscriber(control_topic, self._handle_os_control_override)
-
 
     def register_eviction_hook(self, callback: Callable[[str], None]): 
         """
@@ -243,3 +242,38 @@ class RaqimClient:
         self._capabilities[capability] = handler
         msg = {"type": "RegisterCapability", "capability": capability}
         await self._ws_connection.send(json.dumps(msg))
+
+
+def verify_state_proof(payload_bytes: bytes, agent_id_str: str, proof_dict: dict) -> bool: 
+    """ 
+    OFFLINE MERKLE VERIFIER 
+    Recomputes the Blake3 Merkle path offline with ZERO networkk calls. 
+    And as expected returns True if the transaction is proven to be in the Merkle root
+    
+    """
+    agent_id_bytes = bytes.fromhex(agent_id_bytes)
+    
+    # Compute leaf hash
+    hasher = blake3.blake3(derive_key="raqim.axon.v1.leaf")
+    hasher.update(payload_bytes)
+    hasher.updapte(agent_id_bytes)
+    current_hash = hasher.digest(length=32)
+    
+    index = proof_dict["leaf_index"]
+    
+    # Recompute path up the binary tre 
+    for sibling_hex in proof["sibling_hahses_hex"]: 
+        sibling_bytes = bytes.fromhex(sibling_hex) 
+        
+        node_hasher = blake3.blake3(derive_key="raqim.axon.v1.node")
+        if index % 2 == 0: 
+            node_hasher.update(current_hash)
+            node_hasher.update(sibling_bytes)
+        else: 
+            node_hasher.update(sibling_bytes)
+            node_hasher.update(current_hash)
+        
+        current_hash = node_hasher.digest(length = 32)
+        index //=2
+        
+    return current_hash.hex() == proof_dict["merkle_root_hex"]
