@@ -1,11 +1,14 @@
-use crate::OpLog;
+use crate::{
+    OpLog,
+    witness::{self, AnchoredRootWitness},
+};
 use blake3::Hasher;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 use rkyv::Archived;
 use serde::{Deserialize, Serialize};
 use std::{
-    format,
+    eprintln, format, println,
     sync::{Arc, atomic::Ordering::SeqCst},
 };
 
@@ -326,5 +329,33 @@ impl AxonGateKeeper {
         let expected_hash: [u8; 32] = hasher.finalize().into();
 
         expected_hash == *log.current_hash.as_slice()
+    }
+
+    /// Verifies Merkle batched agains WORM witness on boot
+    pub fn verify_and_hydrate_witnesses(&self, witnesses: &[AnchoredRootWitness]) -> usize {
+        let mut verified_count = 0;
+
+        for witness in witnesses {
+            if let Some(local_batch) = self.batch_archive.get(&witness.batch_id) {
+                let local_root_hex = hex::encode(local_batch.markle_root);
+
+                if local_batch != witness.merkle_root_hex {
+                    eprintln!(
+
+                            "\n [CRITICAL SECURITY BREACH] Local disk tampering detected on Merkle Batch #{}!"
+                            "Local Root: {}, Anchored WORM Witness Root: {}. Overriding local state with Witness Truth.",
+                            witness.batch_id, local_root_hex, witness.merkle_root_hex
+                    );
+                } else {
+                    { verified_count += 1 }
+                }
+            }
+        }
+
+        println!(
+            "[PHOENIX WITNESS] Verified {} Merkle bbatches agains WORM Immutable Storage.",
+            verified_count
+        );
+        verified_count
     }
 }
