@@ -34,7 +34,7 @@ use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 use crate::aegis::{CapabilityCertificate, QuarantineRecord};
-use crate::axon::AxonGateKeeper;
+use crate::axon::{AxonGateKeeper, InclusionProof};
 use crate::health::SystemHealth;
 use crate::hot_memory::HotVectorBuffer;
 use crate::lancedb_store::LanceEngine;
@@ -1302,10 +1302,62 @@ pub async fn get_effect_handler(
     }
 }
 
+#[derive(Deserialize)]
+pub struct StateProofParams {
+    pub tx_id: String,
+}
+
+#[derive(Serialize)]
+pub struct StateProofResponse {
+    pub success: bool,
+    pub proof: Option<InclusionProof>,
+    pub message: String,
+}
+
+/// Generate an 0(log N) Merkle Inclusion Proof for any tx_id
+pub async fn get_state_proof_handler(
+    State(state): State<ApiState>,
+    Query(params): Query<StateProofParams>,
+) -> Result<Json<StateProofResponse>, StatusCode> {
+    // Parse u128 UUIDv7
+    let tx_id = match u128::from_str_radix(&params.tx_id, 16) {
+        Ok(id) => id,
+        Err(_) => {
+            return Ok(Json(StateProofResponse {
+                success: false,
+                proof: None,
+                message: "Invalid tx_id format: Must be a 32-character Hex string".to_string(),
+            }));
+        }
+    };
+
+    // Query Axon Gatekeeper for 0(log N) Inclusion proof
+    match state.axon.generate_proof_for_tx(tx_id) {
+        Some(proof) => Ok(Json(StateProofResponse {
+            success: true,
+            proof: Some(proof.clone()),
+            message: if proof.is_active_buffer {
+                "Proof generated against active workspace buffer (un-crystallines)".to_string()
+            } else {
+                "proof generated against immutable Markle Batch archive.".to_string()
+            },
+        })),
+        None => Ok(Json(StateProofResponse {
+            success: false,
+            proof: None,
+            message: format!(
+                "Transaction ID {:032x} not found in active memory batch archives.",
+                tx_id
+            ),
+        })),
+    }
+}
+
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
         // Admin / Debugging endpoints
+        .route("/v1/state/proof", get(get_state_proof_handler))
         .route("/v1/effect/record", post(record_effect_handler))
         .route("v1/effect/get", get(get_effect_handler))
         .route("/v1/aegis/quarantine_list", get(active_qurantine_endpoint))
