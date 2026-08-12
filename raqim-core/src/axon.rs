@@ -26,7 +26,7 @@ pub struct MarkleBatch {
 pub struct InclusionProof {
     pub tx_id_hex: String,
     pub leaf_index: usize,
-    pub sibling_hashes: Vec<[u8; 32]>,
+    pub sibling_hashes_hex: String,
 
     pub merkle_root_hex: String,
     pub parent_batch_root_hex: String,
@@ -259,7 +259,7 @@ impl AxonGateKeeper {
                 return Some(InclusionProof {
                     tx_id_hex,
                     leaf_index,
-                    sibling_hashes: proof_nodes.iter().map(|h| hex::encode(h)).collect(),
+                    sibling_hashes_hex: proof_nodes.iter().map(|h| hex::encode(h)).collect(),
                     merkle_root_hex: (hex::encode(batch.markle_root)),
                     parent_batch_root_hex: hex::encode(batch.parent_batch_root),
                     batch_id,
@@ -278,7 +278,7 @@ impl AxonGateKeeper {
                 return Some(InclusionProof {
                     tx_id_hex,
                     leaf_index,
-                    sibling_hashes: proof_nodes.iter.map(|h| hex::encode(h)).collect(),
+                    sibling_hashes_hex: proof_nodes.iter().map(|h| hex::encode(h)).collect(),
                     merkle_root_hex: hex::encode(active_root),
                     parent_batch_root_hex: hex::encode(buffer.parent_batch_root),
                     batch_id: buffer.current_batch_id,
@@ -335,22 +335,33 @@ impl AxonGateKeeper {
         let _ = self.ingest_leaf_internal(&namespace, log.current_hash, log.clone());
     }
 
-    /// Verifies a localizes audit record using inclusion proof with zero db dependencies
-    pub fn verify_inclusion(log: &OpLog, proof: &InclusionProof) -> bool {
+    /// Validates inclusion proof using raw payload + proof data
+    pub fn verify_inclusion(
+        payload_bytes: &[u8],
+        agent_id: &[u8; 16],
+        proof: &InclusionProof,
+    ) -> bool {
         let mut leaf_hasher = Hasher::new_derive_key("raqim.axon.v1.leaf");
-        leaf_hasher.update(&log.delta);
-        leaf_hasher.update(&log.agent_id);
+        leaf_hasher.update(payload_bytes);
+        leaf_hasher.update(agent_id);
         let mut current_hash: [u8; 32] = leaf_hasher.finalize().into();
 
         let mut index = proof.leaf_index;
 
-        for sibling in &proof.sibling_hashes {
+        for sibling in &proof.sibling_hashes_hex {
+            let Ok(sibling_bytes) = hex::decode(sibling_hex) else {
+                return false;
+            };
+            if sibling_bytes.len() != 32 {
+                return false;
+            }
+
             let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
             if index % 2 == 0 {
                 hasher.update(&current_hash);
-                hasher.update(sibling);
+                hasher.update(&sibling);
             } else {
-                hasher.update(sibling);
+                hasher.update(&sibling);
                 hasher.update(&current_hash);
             }
 
@@ -358,7 +369,7 @@ impl AxonGateKeeper {
             index /= 2;
         }
 
-        current_hash == proof.markle_root
+        hex::encode(current_hash) == proof.merkle_root_hex
     }
 
     /// Network p2p Verification Anchor: Validates signatures over raw FFI slices safely
