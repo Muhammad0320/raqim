@@ -26,7 +26,7 @@ pub struct MarkleBatch {
 pub struct InclusionProof {
     pub tx_id_hex: String,
     pub leaf_index: usize,
-    pub sibling_hashes_hex: String,
+    pub sibling_hashes_hex: Vec<String>,
 
     pub merkle_root_hex: String,
     pub parent_batch_root_hex: String,
@@ -189,62 +189,6 @@ impl AxonGateKeeper {
         current_level[0]
     }
 
-    /// Compiles an O(log N) verification math track for targeted historical batch block
-    pub fn generate_inclusion_proof(
-        &self,
-        batch_id: u64,
-        leaf_index: usize,
-    ) -> Option<InclusionProof> {
-        let batch = self.batch_archive.get(&batch_id)?;
-
-        if leaf_index >= batch.leaves.len() {
-            return None;
-        }
-
-        let mut sibling_hashes = Vec::new();
-        let mut current_level = batch.leaves.clone();
-        let mut index = leaf_index;
-
-        while current_level.len() > 1 {
-            let mut next_level = Vec::new();
-
-            for chunk in current_level.chunks(2) {
-                if chunk.len() == 2 {
-                    let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
-                    hasher.update(&chunk[0]);
-                    hasher.update(&chunk[1]);
-                    next_level.push(hasher.finalize().into());
-                } else {
-                    let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
-                    hasher.update(&chunk[0]);
-                    hasher.update(&chunk[0]);
-                    next_level.push(hasher.finalize().into());
-                }
-            }
-
-            // Extract the immediate sibling index parameter
-            let sibling_idx = if index % 2 == 0 {
-                if index + 1 < current_level.len() {
-                    index + 1
-                } else {
-                    index
-                }
-            } else {
-                index - 1
-            };
-
-            sibling_hashes.push(current_level[sibling_idx]);
-            current_level = next_level;
-            index /= 2;
-        }
-
-        Some(InclusionProof {
-            leaf_index,
-            sibling_hashes,
-            markle_root: batch.markle_root,
-        })
-    }
-
     /// Proof generator: 0(log N) proof extraction for any tx_id (Archiived or Active buffer)
     pub fn generate_proof_for_tx(&self, tx_id: u128) -> Option<InclusionProof> {
         let tx_id_hex = format!("{:032x}", tx_id);
@@ -348,7 +292,7 @@ impl AxonGateKeeper {
 
         let mut index = proof.leaf_index;
 
-        for sibling in &proof.sibling_hashes_hex {
+        for sibling_hex in &proof.sibling_hashes_hex {
             let Ok(sibling_bytes) = hex::decode(sibling_hex) else {
                 return false;
             };
@@ -359,9 +303,9 @@ impl AxonGateKeeper {
             let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
             if index % 2 == 0 {
                 hasher.update(&current_hash);
-                hasher.update(&sibling);
+                hasher.update(&sibling_bytes);
             } else {
-                hasher.update(&sibling);
+                hasher.update(&sibling_bytes);
                 hasher.update(&current_hash);
             }
 
