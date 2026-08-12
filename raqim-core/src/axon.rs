@@ -21,9 +21,14 @@ pub struct MarkleBatch {
 /// A verifiable inclusion path mapping a specific transaction leaf to the root
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InclusionProof {
+    pub tx_id_hex: String,
     pub leaf_index: usize,
     pub sibling_hashes: Vec<[u8; 32]>,
-    pub markle_root: [u8; 32],
+
+    pub merkle_root_hex: String,
+    pub parent_batch_root_hex: String,
+    pub batch_id: u64,
+    pub is_active_buffer: bool,
 }
 
 /// Thread-safe active workspace buffer for a single namespace
@@ -32,6 +37,7 @@ pub struct ActiveTreeBuffer {
     pub parent_batch_root: [u8; 32],
     pub accumulated_leaves: Vec<[u8; 32]>,
     pub accumulated_logs: Vec<OpLog>,
+    pub accumulated_tx_ids: Vec<u128>,
 }
 
 /// The active Governance GateKeeper.
@@ -42,6 +48,9 @@ pub struct AxonGateKeeper {
     /// The global completed block ledger for historical lookups
     pub batch_archive: DashMap<u64, MarkleBatch>,
     pub global_batch_counter: std::sync::atomic::AtomicU64,
+
+    // Fast-path map: tx_id(u128) -> (batch_id, leaf_index)
+    pub tx_to_location: DashMap<u128, (u64, usize)>,
 }
 
 impl AxonGateKeeper {
@@ -49,6 +58,7 @@ impl AxonGateKeeper {
         Self {
             active_buffers: DashMap::new(),
             batch_archive: DashMap::new(),
+            tx_to_location: DashMap::new(),
             global_batch_counter: std::sync::atomic::AtomicU64::new(0),
         }
     }
@@ -60,6 +70,8 @@ impl AxonGateKeeper {
         leaf_hash: [u8; 32],
         log: OpLog,
     ) -> Option<MarkleBatch> {
+        let tx_id = log.state.transaction_id;
+
         // Pass 1: Acquire reference to the namespace buffer
         let buffer_arc = self
             .active_buffers
@@ -70,6 +82,7 @@ impl AxonGateKeeper {
                     parent_batch_root: [0u8; 32],
                     accumulated_leaves: Vec::with_capacity(1024),
                     accumulated_logs: Vec::with_capacity(1024),
+                    accumulated_tx_ids: Vec::with_capacity(1024),
                 }))
             })
             .value()
