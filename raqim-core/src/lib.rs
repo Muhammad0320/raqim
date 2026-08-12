@@ -18,6 +18,7 @@ pub mod telemetry;
 pub mod utils;
 
 pub mod hot_memory;
+pub mod witness;
 
 use blake3::Hasher;
 use rkyv::{Archive, Deserialize, Serialize};

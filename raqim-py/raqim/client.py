@@ -244,14 +244,14 @@ class RaqimClient:
         await self._ws_connection.send(json.dumps(msg))
 
 
-def verify_state_proof(payload_bytes: bytes, agent_id_str: str, proof_dict: dict) -> bool: 
+def verify_state_proof_offline(payload_bytes: bytes, agent_id_str: str, proof_dict: dict) -> bool: 
     """ 
     OFFLINE MERKLE VERIFIER 
     Recomputes the Blake3 Merkle path offline with ZERO networkk calls. 
     And as expected returns True if the transaction is proven to be in the Merkle root
     
     """
-    agent_id_bytes = bytes.fromhex(agent_id_bytes)
+    agent_id_bytes = bytes.fromhex(agent_id_str)
     
     # Compute leaf hash
     hasher = blake3.blake3(derive_key="raqim.axon.v1.leaf")
@@ -262,7 +262,7 @@ def verify_state_proof(payload_bytes: bytes, agent_id_str: str, proof_dict: dict
     index = proof_dict["leaf_index"]
     
     # Recompute path up the binary tre 
-    for sibling_hex in proof["sibling_hahses_hex"]: 
+    for sibling_hex in proof_dict["sibling_hahses_hex"]: 
         sibling_bytes = bytes.fromhex(sibling_hex) 
         
         node_hasher = blake3.blake3(derive_key="raqim.axon.v1.node")
