@@ -4,7 +4,10 @@ use dashmap::DashMap;
 use parking_lot::RwLock;
 use rkyv::Archived;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, atomic::Ordering::SeqCst};
+use std::{
+    format,
+    sync::{Arc, atomic::Ordering::SeqCst},
+};
 
 /// A completed cryptographic audit checkpoint batch ready for ledger immutability
 #[derive(
@@ -89,8 +92,16 @@ impl AxonGateKeeper {
             .clone();
 
         let mut buffer = buffer_arc.write();
+
+        // Track 0(1) TxID location map
+        self.tx_to_location.insert(
+            tx_id,
+            (buffer.current_batch_id, buffer.accumulated_leaves.len()),
+        );
+
         buffer.accumulated_leaves.push(leaf_hash);
         buffer.accumulated_logs.push(log);
+        buffer.accumulated_tx_ids.push(tx_id);
 
         // Cap Checkpoint: If capacity hits 1,024 leaves, crystallize the Markle Tree
         if buffer.accumulated_leaves.len() >= 1024 {
@@ -113,6 +124,7 @@ impl AxonGateKeeper {
             buffer.current_batch_id = self.global_batch_counter.fetch_add(1, SeqCst);
             buffer.accumulated_leaves.clear();
             buffer.accumulated_logs.clear();
+            buffer.accumulated_tx_ids.clear();
 
             return Some(completed_batch);
         }
@@ -231,6 +243,90 @@ impl AxonGateKeeper {
             sibling_hashes,
             markle_root: batch.markle_root,
         })
+    }
+
+    /// Proof generator: 0(log N) proof extraction for any tx_id (Archiived or Active buffer)
+    pub fn generate_proof_for_tx(&self, tx_id: u128) -> Option<InclusionProof> {
+        let tx_id_hex = format!("{:032x}", tx_id);
+
+        // Check Location  Index
+        if let Some(location) = self.tx_to_location.get(&tx_id) {
+            let (batch_id, leaf_index) = *location.value();
+
+            // Path A: Query Completed batch archive
+            if let Some(batch) = self.batch_archive.get(&batch_id) {
+                let proof_nodes = Self::exract_sibling_path(&batch.leaves, leaf_index);
+                return Some(InclusionProof {
+                    tx_id_hex,
+                    leaf_index,
+                    sibling_hashes: proof_nodes.iter().map(|h| hex::encode(h)).collect(),
+                    merkle_root_hex: (hex::encode(batch.markle_root)),
+                    parent_batch_root_hex: hex::encode(batch.parent_batch_root),
+                    batch_id,
+                    is_active_buffer: false,
+                });
+            }
+        }
+
+        // Path B: Un-crystallized Active Workspace Buffer search
+        for entry in self.active_buffers.iter() {
+            let buffer = entry.value().read();
+            if let Some(leaf_index) = buffer.accumulated_tx_ids.iter().position(|&id| id == tx_id) {
+                let active_root = Self::compute_markle_root(&buffer.accumulated_leaves);
+                let proof_nodes = Self::exract_sibling_path(&buffer.accumulated_leaves, leaf_index);
+
+                return Some(InclusionProof {
+                    tx_id_hex,
+                    leaf_index,
+                    sibling_hashes: proof_nodes.iter.map(|h| hex::encode(h)).collect(),
+                    merkle_root_hex: hex::encode(active_root),
+                    parent_batch_root_hex: hex::encode(buffer.parent_batch_root),
+                    batch_id: buffer.current_batch_id,
+                    is_active_buffer: true,
+                });
+            }
+        }
+
+        None
+    }
+
+    fn exract_sibling_path(leaves: &[[u8; 32]], leaf_index: usize) -> Vec<[u8; 32]> {
+        let mut sibling_hashes = Vec::new();
+        let mut current_level = leaves.to_vec();
+        let mut index = leaf_index;
+
+        while current_level.len() > 1 {
+            let mut next_level = Vec::with_capacity((current_level.len() + 1) / 2);
+
+            for chunk in current_level.chunks(2) {
+                let mut hasher = Hasher::new_derive_key("raqim.axon.v1.node");
+                if chunk.len() == 2 {
+                    hasher.update(&chunk[0]);
+                    hasher.update(&chunk[1]);
+                } else {
+                    hasher.update(&chunk[0]);
+                    hasher.update(&chunk[0]);
+                }
+
+                next_level.push(hasher.finalize().into());
+            }
+
+            let sibling_idx = if index % 2 == 0 {
+                if index + 1 < current_level.len() {
+                    index + 1
+                } else {
+                    index
+                }
+            } else {
+                index - 1
+            };
+
+            sibling_hashes.push(current_level[sibling_hashes]);
+            current_level = next_level;
+            index /= 2;
+        }
+
+        sibling_hashes
     }
 
     /// THE PHOENIX CRASH RECOVERY COMPONENT
