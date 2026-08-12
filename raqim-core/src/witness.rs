@@ -8,6 +8,7 @@ use std::{
 };
 
 use ed25519_dalek::{Signer, SigningKey};
+use serde::{Deserialize, Serialize};
 
 use crate::axon::MarkleBatch;
 
@@ -112,5 +113,25 @@ impl WormWitnessEngine {
         }
 
         Ok(witness)
+    }
+
+    /// Read all anchored witness on boot to verify local db integrity
+    pub fn load_anchored_witness(&self) -> Vec<AnchoredRootWitness> {
+        let mut witnesses = Vec::new();
+
+        if let Ok(entries) = fs::read_dir(&self.witness_dir) {
+            for entry in entries.flatten() {
+                if entry.path().extension().and_then(|s| s.to_str()) == Some(".json") {
+                    if let Ok(content) = fs::read_to_string(entry.path()) {
+                        if let Ok(witness) = serde_json::from_str::<AnchoredRootWitness>(&content) {
+                            witnesses.push(witness);
+                        }
+                    }
+                }
+            }
+        }
+
+        witnesses.sort_by_key(|w| w.batch_id);
+        witnesses
     }
 }
