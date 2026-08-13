@@ -20,6 +20,7 @@ use raqim_core::registry::SwarmRegistry;
 use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
 use raqim_core::telemetry::TelemetryEngine;
+use raqim_core::witness::WormWitnessEngine;
 use raqim_core::{
     AgentState, IngressEnvelope, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
 };
@@ -350,11 +351,14 @@ async fn main() {
     // ============================
     // THE PHOENIX HYDRATION PROTOCOL: Reconstructs in-memory Axon Merkle trees from uncompacted WAL frames on boot.
     // ============================
-    println!("[INITIALIIZATION] Phoenix protocol: Hydrating Axon state from active WAL...");
+    let witness_engine = Arc::new(WormWitnessEngine::new( &config.witness_path, master_signing_key.clone(), None ));
+
+    println!("[INITIALIIZATION] Phoenix protocol: Commencing state rehydration scanning from active WAL frame sequences..."); 
+    let mut recovered_logs: Vec<OpLog> = Vec::new();
+    let mut upcompacted_count = 0; 
     if Path::new(&config.wal_path).exists() {
         if let Ok(wal_bytes) = fs::read(&config.wal_path) {
             let mut offset = 0;
-            let mut recovered_count = 0;
 
             while offset < wal_bytes.len() {
                 if offset + 4 > wal_bytes.len() {
@@ -365,6 +369,12 @@ async fn main() {
                 len_bytes.copy_from_slice(&wal_bytes[offset..offset + 4]);
                 let entry_len = u32::from_le_bytes(len_bytes) as usize;
                 offset += 4;
+
+                // Check for 4-byte CRC header boundary
+                if offset + 4 > wal_bytes.len() {break;} 
+                offset += 4;
+
+                
 
                 if offset + entry_len > len_bytes.len() {
                     break;
@@ -379,21 +389,27 @@ async fn main() {
                         rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
                     {
                         axon.hydrate_from_recoverey(&recovered_log);
-                        recovered_count += 1;
+                        recovered_logs.push(recovered_log);
+                        uncompacted_count +=1
                     }
                 }
 
                 offset += entry_len;
             }
 
+            println!("[PHOENIX] Rehydrated {} un-crystallized log frames into Axon buffer ", uncompacted_count);
 
             if !recovered_logs.is_empty() {
                 // Batch embed all recovered WAL texts to restore hot vector memory
-                // Batch-embed all recovered WAL texts to restore hot vector memory
                 let texts: Vec<String> = recovered_logs
                     .iter()
                     .map(|l| format!("[{:?}] Agent in {} stated {}", l.state.status, l.state.namespace, l.state.text))
                     .collect();
+
+                // Recompute the vector space asynchronouly to bypass short-term amnesia gaps
+                // Simulated blocks, maps out directly to fastembed / OpenAI endpoints
+                let mock_embed_vectors = vec![vec![0.0f32; 768]; recovered_logs.len() ];
+                
 
                 if let Ok(vectors) = embedder.embed_batch(&texts).await {
                     let mut hot_entries = Vec::with_capacity(recovered_logs.len());
@@ -411,6 +427,12 @@ async fn main() {
                     println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_buffer.len());
                 }                
 
+            }
+
+            // Load un-tamperable chronological WORM roots and assert execution matrix match 
+            let anchored_witness = witness_engine.load_local_witness();
+            if !anchored_witness.is_empty() {
+                axon.execute_forensic_boot_audit(witnesses, &witness_engine.clone()).await?;
             }
 
             println!(
