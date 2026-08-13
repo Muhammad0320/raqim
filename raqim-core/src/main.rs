@@ -347,20 +347,6 @@ async fn main() {
         }
     });
 
-    // THE BOOTSTRAP PROTOCOL
-    // let (lance_highest_tx, _valut_capacity) =
-    //     lance_engine.get_vault_metrics().await.unwrap_or((0, 0));
-    // let wal_highest_tx = wal.get_highest_tx_id(&config.wal_path);
-
-    // // The abs truth is the highest number found in either store.
-    // let starting_tx_id = std::cmp::max(lance_highest_tx, wal_highest_tx);
-    // let tx_counter = Arc::new(AtomicU64::new(starting_tx_id + 1));
-
-    // println!(
-    //     "[SYSTEM] Bootstrapped Tx Counter at TxID: {} ",
-    //     starting_tx_id + 1
-    // );
-
     // ============================
     // THE PHOENIX HYDRATION PROTOCOL: Reconstructs in-memory Axon Merkle trees from uncompacted WAL frames on boot.
     // ============================
