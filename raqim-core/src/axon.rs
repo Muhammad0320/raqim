@@ -1,7 +1,4 @@
-use crate::{
-    OpLog,
-    witness::{self, AnchoredRootWitness},
-};
+use crate::{OpLog, witness::AnchoredRootWitness};
 use blake3::Hasher;
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -339,15 +336,14 @@ impl AxonGateKeeper {
             if let Some(local_batch) = self.batch_archive.get(&witness.batch_id) {
                 let local_root_hex = hex::encode(local_batch.markle_root);
 
-                if local_batch != witness.merkle_root_hex {
+                if local_root_hex != witness.merkle_root_hex {
                     eprintln!(
-
-                            "\n [CRITICAL SECURITY BREACH] Local disk tampering detected on Merkle Batch #{}!"
+                            "\n [CRITICAL SECURITY BREACH] Local disk tampering detected on Merkle Batch #{}! "
                             "Local Root: {}, Anchored WORM Witness Root: {}. Overriding local state with Witness Truth.",
                             witness.batch_id, local_root_hex, witness.merkle_root_hex
                     );
                 } else {
-                    { verified_count += 1 }
+                    verified_count += 1
                 }
             }
         }
