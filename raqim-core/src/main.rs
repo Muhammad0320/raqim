@@ -389,6 +389,13 @@ async fn main() {
                         rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
                     {
                         axon.hydrate_from_recoverey(&recovered_log);
+
+                        // Fetch crdt shard for this namespace and apply historical delta
+                        let brain = brain_shard.get_or_create_brain(&recovered_log.namespace);
+                        if let Err(e) = brain.assimilate_foreign_thought(&recovered_log.delta) {
+                            eprintln!("[PHOENIX WARN] Failed to assimilate CRDT delta during recovery: {},", e);
+                        }
+
                         recovered_logs.push(recovered_log);
                         uncompacted_count +=1
                     }
@@ -811,6 +818,7 @@ async fn main() {
                 let task_ui_tx = ui_tx.clone();
                 let task_registry = registry.clone();
                 let task_brain = brain_shard.clone();
+                let task_mem_router = mem_router.clone();
 
                 // Spawn into the joinset
                  tcp_workers.spawn(async move {
@@ -913,12 +921,10 @@ async fn main() {
                     }
 
                     // Perform ultrafast packet audit for each packet.
-                    let packet_timestamp = archived_state.timestamp.as_slice() ;
+                    let packet_timestamp = archived_state.timestamp.as_slice();
                     if let  Err(e) = task_aegis.authorize_packet_fast(&cached_agent_hex, &cached_group_name, &agent_pub_key, state_slice, &packet_sig, path_intent, packet_timestamp) {
-
                         eprintln!("[AEGIS INTERDICTION] Fast Audit failed: {} ", e);
                         break;
-
                     }
 
                     let agent_hex = cached_agent_hex.clone();
@@ -931,6 +937,27 @@ async fn main() {
                             let alias = text.replace("ALIAS=", "").trim().to_string();
                             // We do not execute a cascade for handshake. We just register and drop
                             task_registry.touch_agent(&agent_hex, &path_intent, "Connected", &alias);
+
+                            // ==============================
+                            // JIT COLD-START HYDRATION
+                            // ==============================
+                            let agent_hex_clone = agent_hex.clone(); 
+                            let wal_clone = task_wal.clone(); 
+                            let router_clone = task_mem_router.clone();
+
+                            // spawn the heave lancedb/wal lookup in the bg os thread 
+                            tokio::spawn(async move {
+
+                                println!("[JIT HYDRATION] Waking up agent {} from cold storage.", agent_hex_clone);
+
+                                if let Err(e) = router_clone.rebuild_agent_timeline(&agent_hex_clone, u128::MAX, wal_clone).await {
+
+                                        eprintln!(" [JIT HYDRATION ERROR] Failed to wake up agent {}: {} ", agent_hex_clone, e);
+
+                                } else {
+                                    println!("[JIT HYDRATION] Agent {} fully synchronized with historical reality.", agent_hex_clone);
+                                }
+                            });
 
                             continue;
                         }
