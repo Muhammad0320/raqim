@@ -15,7 +15,6 @@ use crate::{OpLog, axon::MarkleBatch};
 #[derive(
     Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
 )]
-#[rkyv(derive(Debug))]
 pub struct AnchoredRootWitness {
     pub batch_id: u64,
     pub namespace: String,
@@ -29,7 +28,6 @@ pub struct AnchoredRootWitness {
 #[derive(
     Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
 )]
-#[rkyv(derive(Debug))]
 pub struct CertifiedBundleBlock {
     pub witness: AnchoredRootWitness,
     pub raw_logs: Vec<OpLog>,
@@ -127,7 +125,7 @@ impl WormWitnessEngine {
         if let Some(bucket_url) = &self.gcp_worm_bucket_url {
             let client = reqwest::Client::new();
             let url = format!("{}/batch_{:08}.json", bucket_url, batch.batch_id);
-            let _ = client.put(&url).body(json_bytes).send().await;
+            let _ = client.put(&url).body(bundle_bytes).send().await;
         }
 
         Ok(witness)
