@@ -69,72 +69,6 @@ impl AxonGateKeeper {
         }
     }
 
-    /// Single Core Ingestion Engine: Appends leaf hash, checks batch capacity, and crystallizes Merkle Root if full
-    fn ingest_leaf_internal(
-        &self,
-        namespace: &str,
-        leaf_hash: [u8; 32],
-        log: OpLog,
-    ) -> Option<MarkleBatch> {
-        let tx_id = log.state.transaction_id;
-
-        // Pass 1: Acquire reference to the namespace buffer
-        let buffer_arc = self
-            .active_buffers
-            .entry(namespace.to_string())
-            .or_insert_with(|| {
-                Arc::new(RwLock::new(ActiveTreeBuffer {
-                    current_batch_id: self.global_batch_counter.fetch_add(1, SeqCst),
-                    parent_batch_root: [0u8; 32],
-                    accumulated_leaves: Vec::with_capacity(1024),
-                    accumulated_logs: Vec::with_capacity(1024),
-                    accumulated_tx_ids: Vec::with_capacity(1024),
-                }))
-            })
-            .value()
-            .clone();
-
-        let mut buffer = buffer_arc.write();
-
-        // Track 0(1) TxID location map
-        self.tx_to_location.insert(
-            tx_id,
-            (buffer.current_batch_id, buffer.accumulated_leaves.len()),
-        );
-
-        buffer.accumulated_leaves.push(leaf_hash);
-        buffer.accumulated_logs.push(log);
-        buffer.accumulated_tx_ids.push(tx_id);
-
-        // Cap Checkpoint: If capacity hits 1,024 leaves, crystallize the Markle Tree
-        if buffer.accumulated_leaves.len() >= 1024 {
-            let root = Self::compute_markle_root(&buffer.accumulated_leaves);
-
-            let completed_batch = MarkleBatch {
-                batch_id: buffer.current_batch_id,
-                namespace: namespace.to_string(),
-                markle_root: root,
-                parent_batch_root: buffer.parent_batch_root,
-                leaves: buffer.accumulated_leaves.clone(),
-            };
-
-            //  Archive completed block for historical query proofs
-            self.batch_archive
-                .insert(completed_batch.batch_id, completed_batch.clone());
-
-            // Advace the StatePipeline cleanly
-            buffer.parent_batch_root = root;
-            buffer.current_batch_id = self.global_batch_counter.fetch_add(1, SeqCst);
-            buffer.accumulated_leaves.clear();
-            buffer.accumulated_logs.clear();
-            buffer.accumulated_tx_ids.clear();
-
-            return Some(completed_batch);
-        }
-
-        None
-    }
-
     /// Ingest a raw thought, cryptographically seals its position ans triggers automatic Markle Tree crystallization when chunk capacity hits 1,024
     pub fn seal_thought(&self, mut log: OpLog) -> (OpLog, Option<MarkleBatch>) {
         let namespace = log.state.namespace.clone();
@@ -274,6 +208,72 @@ impl AxonGateKeeper {
         }
 
         sibling_hashes
+    }
+
+    /// Single Core Ingestion Engine: Appends leaf hash, checks batch capacity, and crystallizes Merkle Root if full
+    fn ingest_leaf_internal(
+        &self,
+        namespace: &str,
+        leaf_hash: [u8; 32],
+        log: OpLog,
+    ) -> Option<MarkleBatch> {
+        let tx_id = log.state.transaction_id;
+
+        // Pass 1: Acquire reference to the namespace buffer
+        let buffer_arc = self
+            .active_buffers
+            .entry(namespace.to_string())
+            .or_insert_with(|| {
+                Arc::new(RwLock::new(ActiveTreeBuffer {
+                    current_batch_id: self.global_batch_counter.fetch_add(1, SeqCst),
+                    parent_batch_root: [0u8; 32],
+                    accumulated_leaves: Vec::with_capacity(1024),
+                    accumulated_logs: Vec::with_capacity(1024),
+                    accumulated_tx_ids: Vec::with_capacity(1024),
+                }))
+            })
+            .value()
+            .clone();
+
+        let mut buffer = buffer_arc.write();
+
+        // Track 0(1) TxID location map
+        self.tx_to_location.insert(
+            tx_id,
+            (buffer.current_batch_id, buffer.accumulated_leaves.len()),
+        );
+
+        buffer.accumulated_leaves.push(leaf_hash);
+        buffer.accumulated_logs.push(log);
+        buffer.accumulated_tx_ids.push(tx_id);
+
+        // Cap Checkpoint: If capacity hits 1,024 leaves, crystallize the Markle Tree
+        if buffer.accumulated_leaves.len() >= 1024 {
+            let root = Self::compute_markle_root(&buffer.accumulated_leaves);
+
+            let completed_batch = MarkleBatch {
+                batch_id: buffer.current_batch_id,
+                namespace: namespace.to_string(),
+                markle_root: root,
+                parent_batch_root: buffer.parent_batch_root,
+                leaves: buffer.accumulated_leaves.clone(),
+            };
+
+            //  Archive completed block for historical query proofs
+            self.batch_archive
+                .insert(completed_batch.batch_id, completed_batch.clone());
+
+            // Advace the StatePipeline cleanly
+            buffer.parent_batch_root = root;
+            buffer.current_batch_id = self.global_batch_counter.fetch_add(1, SeqCst);
+            buffer.accumulated_leaves.clear();
+            buffer.accumulated_logs.clear();
+            buffer.accumulated_tx_ids.clear();
+
+            return Some(completed_batch);
+        }
+
+        None
     }
 
     /// THE PHOENIX CRASH RECOVERY COMPONENT
