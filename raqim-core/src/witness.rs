@@ -26,7 +26,7 @@ pub struct AnchoredRootWitness {
 }
 
 #[derive(
-    Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize,
+    Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Serialize, Deserialize,
 )]
 pub struct CertifiedBundleBlock {
     pub witness: AnchoredRootWitness,

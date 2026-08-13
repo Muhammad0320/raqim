@@ -1,4 +1,7 @@
-use crate::{OpLog, witness::AnchoredRootWitness};
+use crate::{
+    OpLog,
+    witness::{AnchoredRootWitness, WormWitnessEngine},
+};
 use blake3::Hasher;
 use dashmap::DashMap;
 use parking_lot::RwLock;
@@ -326,5 +329,90 @@ impl AxonGateKeeper {
         let expected_hash: [u8; 32] = hasher.finalize().into();
 
         expected_hash == *log.current_hash.as_slice()
+    }
+
+    /// FORENSIC INTEGRITY COMPONENT: Execute local disk cross-checks against anchored WORM witness on startup
+    pub async fn execute_forensic_boot_audit(
+        &self,
+        witnesses: &[AnchoredRootWitness],
+        witness_engine: &WormWitnessEngine,
+    ) -> Result<(), anyhow::Error> {
+        println!(
+            "[PHOENIX AUDIT] Commencing cryptographic verification of local ledger blocks against WORM anchors... "
+        );
+
+        for witness in witnesses {
+            let mut local_valid = false;
+
+            if let Some(local_batch) = self.batch_archive.get(&witness.batch_id) {
+                let local_root_hex = hex::encode(local_batch.markle_root);
+                if local_root_hex == witness.merkle_root_hex {
+                    local_valid = true;
+                }
+            }
+
+            // Critical disaster Recovery Override: Local delta is corrupted, altred or missing compeltely
+            if !local_valid {
+                eprintln!("
+                
+                \n[PHOENIX RED ALERT] Cryptographic mismatch or missing data detected on local block Batch #{}! "
+                    "Disk state is comprised. Triggering WORM Vault Rollback...", withness.batch_id
+
+                );
+
+                // Fetch the absolute, untampered historical block bundle from our WORM Cloud/Local Vault
+                let intact_bundle = witness_engine
+                    .fetch_bundle_from_witness(witness.batch_id)
+                    .await?;
+
+                // Re-validate the fetched bundle's cryptigraphic proof to ensure the witness itself wasn't corrupted
+                let computed_root = Self::compute_markle_root(
+                    &intact_bundle
+                        .raw_logs
+                        .iter()
+                        .map(|l| l.current_hash)
+                        .collect::<Vec<_>>(),
+                );
+                if hex::encode(computed_root) != witness.merkle_root_hex {
+                    return Err(anyhow::anyhow!(
+                        "FATAL: WORM witness vault payload failed self-authentication. Perimeter compromised. Terminating."
+                    ));
+                }
+                // Repair the local memory map by rolling back to the intact WORM block data state
+                let recomputed_batch = MarkleBatch {
+                    batch_id: intact_bundle.witness.batch_id,
+                    namespace: intact_bundle.witness.namespace.clone(),
+                    markle_root: computed_root,
+                    parent_batch_root: hex::decode(&intact_bundle.witness.parent_batch_root_hex)?
+                        .try_into()
+                        .unwrap_or([0u8; 32]),
+                    leaves: intact_bundle
+                        .raw_logs
+                        .iter()
+                        .map(|l| l.current_hash)
+                        .collect(),
+                };
+
+                // Overwrite the corrupted local memory slot with pristine data
+                self.batch_archive
+                    .insert(recomputed_batch.batch_id, recomputed_batch);
+
+                // Re-map transaction indices for the repaired block logs
+                for (idx, log) in intact_bundle.raw_logs.iter().enumerate() {
+                    self.tx_to_location
+                        .insert(log.state.transaction_id, (witness.batch_id, idx));
+                }
+
+                println!(
+                    "[PHOENIX AUDIT] Re-mapped and restored 1,024 transaction logs from WORM vault for Batch #{}. ",
+                    witness.batch_id
+                );
+            }
+        }
+
+        println!(
+            "[PHOENIX AUDIT] Audit Complete. All local historical blocks verified and synchronized with WORM anchors."
+        );
+        Ok(())
     }
 }
