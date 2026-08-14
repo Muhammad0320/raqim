@@ -351,13 +351,62 @@ async fn main() {
     // ============================
     // THE PHOENIX HYDRATION PROTOCOL: Reconstructs in-memory Axon Merkle trees from uncompacted WAL frames on boot.
     // ============================
-    let witness_engine = Arc::new(WormWitnessEngine::new( &config.witness_path, master_signing_key.clone(), None ));
 
     println!("[INITIALIIZATION] Phoenix protocol: Commencing state rehydration scanning from active WAL frame sequences..."); 
+    let manifest_path = "compaction.manifest.json";
+    let mut files_to_scan = Vec::new();
+
+    // 2PC MANIFEST CHECK
+    if Path::new(&manifest_path).exists() {
+
+        if let Ok(content) = fs::read_to_string(manifest_path) {
+
+            if let Ok(json_manifest) = serde_json::from_str::<serde_json::Value>(&content) {
+
+                let state = json_manifest["state"].as_str().unwrap_or("");
+                let target_file = json_manifest["target_file"].as_str().unwrap_or("");
+
+                if state == "Committed" {
+
+                    // Prevent Schizophrenia (Duplication): Data is in LanceDB, but WAL wasn't deleted. 
+                    println!("[PHONIX] Ghost WAL '{}' detected in COMMITTED state. Erasing to prevent Duplicate RAG Ingestion ", &target_file);
+                    let _ = fs::remove_file(target_file);
+                    let _ = fs::remove_file(manifest_path);
+
+                } else if state == "PENDING" {
+
+                    // Prevent Amnesia (Data Loss): File was rotated but never made it to lancedb 
+                    println!("[PHOENIX] Orphaned WAL '{}' detected in PENDING state. Queuing for RAM Hydration", &target_file);
+                    if Path::new(&target_path).exists {
+
+                        files_to_scan.push(target_file.to_string());
+
+                    }
+                }
+            }
+        }
+    }
+
+
+    // Scans the active WAL last so temporal order is preserved
+    if Path::new(&config.wal_path).exists() {
+        file_to_scan.push(config.wal_path.clone())
+    }
+
+
+
+    let witness_engine = Arc::new(WormWitnessEngine::new( &config.witness_path, master_signing_key.clone(), None ));
+
     let mut recovered_logs: Vec<OpLog> = Vec::new();
     let mut upcompacted_count = 0; 
-    if Path::new(&config.wal_path).exists() {
-        if let Ok(wal_bytes) = fs::read(&config.wal_path) {
+
+
+    // Execute assembled scanning over the assembled timeline array
+    for file_path in files_to_scan {
+
+        println!("[PHOENIX] Scanning {} ...", file_path);
+
+        if let Ok(wal_bytes) = fs::read(&file_path) {
             let mut offset = 0;
 
             while offset < wal_bytes.len() {
@@ -373,8 +422,6 @@ async fn main() {
                 // Check for 4-byte CRC header boundary
                 if offset + 4 > wal_bytes.len() {break;} 
                 offset += 4;
-
-                
 
                 if offset + entry_len > len_bytes.len() {
                     break;
@@ -403,8 +450,10 @@ async fn main() {
 
                 offset += entry_len;
             }
+        }
+    }
 
-            println!("[PHOENIX] Rehydrated {} un-crystallized log frames into Axon buffer ", uncompacted_count);
+                println!("[PHOENIX] Rehydrated {} un-crystallized log frames into Axon buffer ", uncompacted_count);
 
             if !recovered_logs.is_empty() {
                 // Batch embed all recovered WAL texts to restore hot vector memory
@@ -433,7 +482,6 @@ async fn main() {
                     hot_buffer.push_batch(hot_entries);
                     println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_buffer.len());
                 }                
-
             }
 
             // Load un-tamperable chronological WORM roots and assert execution matrix match 
@@ -446,9 +494,6 @@ async fn main() {
                 "[INITIALIIZATION] Phoenix protocol Complete. Hydrated {} log frames into Axon DAG memory. ",
                 recovered_count
             );
-        }
-    }
-
 
     // ---  COMPACTION EVENT LISTENENR  (Watermark eviction) ---- 
     let mut system_rx = event_tx.subscribe();
