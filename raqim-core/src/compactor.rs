@@ -106,7 +106,7 @@ impl WalCompactor {
 
     /// Internal Helper: Guarants the manifest write is immune to torn page corruption
     fn write_manifest_atomically(path: &str, manifest: &CompactionManifest) {
-        let tmp_path = format!("{}.tmp", path);
+        let temp_path = format!("{}.tmp", path);
         let json_data = serde_json::to_string_pretty(manifest).unwrap();
         if fs::write(&temp_path, json_data).is_ok() {
             let _ = fs::rename(&tmp_path, path);
@@ -193,7 +193,7 @@ impl WalCompactor {
         if logs_to_archive.is_empty() {
             println!(
                 "[COMPACTOR] SEGMENT {} contained zero valid logs. Removing. ",
-                &processing_path, "and", &manifest_path
+                &processing_path,
             );
             let _ = fs::remove_file(processing_path);
             let _ = fs::remove_file(manifest_path);

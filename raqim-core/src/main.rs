@@ -452,48 +452,48 @@ async fn main() {
             }
         }
     }
+                    
+        println!("[PHOENIX] Rehydrated {} un-crystallized log frames into Axon buffer ", uncompacted_count);
 
-                println!("[PHOENIX] Rehydrated {} un-crystallized log frames into Axon buffer ", uncompacted_count);
+        if !recovered_logs.is_empty() {
+            // Batch embed all recovered WAL texts to restore hot vector memory
+            let texts: Vec<String> = recovered_logs
+                .iter()
+                .map(|l| format!("[{:?}] Agent in {} stated {}", l.state.status, l.state.namespace, l.state.text))
+                .collect();
 
-            if !recovered_logs.is_empty() {
-                // Batch embed all recovered WAL texts to restore hot vector memory
-                let texts: Vec<String> = recovered_logs
-                    .iter()
-                    .map(|l| format!("[{:?}] Agent in {} stated {}", l.state.status, l.state.namespace, l.state.text))
-                    .collect();
+            // Recompute the vector space asynchronouly to bypass short-term amnesia gaps
+            // Simulated blocks, maps out directly to fastembed / OpenAI endpoints
+            let mock_embed_vectors = vec![vec![0.0f32; 768]; recovered_logs.len() ];
+            
 
-                // Recompute the vector space asynchronouly to bypass short-term amnesia gaps
-                // Simulated blocks, maps out directly to fastembed / OpenAI endpoints
-                let mock_embed_vectors = vec![vec![0.0f32; 768]; recovered_logs.len() ];
-                
+            if let Ok(vectors) = embedder.embed_batch(&texts).await {
+                let mut hot_entries = Vec::with_capacity(recovered_logs.len());
+                for (i, log) in recovered_logs.into_iter().enumerate() {
+                    hot_entries.push(HotVectorEntry {
+                        tx_id: log.state.transaction_id,
+                        agent_hex: hex::encode(log.agent_id),
+                        namespace: log.state.namespace,
+                        text: log.state.text,
+                        timestamp: log.state.timestamp,
+                        vector: vectors[i].clone(),
+                    });
+                }
+                hot_buffer.push_batch(hot_entries);
+                println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_buffer.len());
+            }                
+        }
 
-                if let Ok(vectors) = embedder.embed_batch(&texts).await {
-                    let mut hot_entries = Vec::with_capacity(recovered_logs.len());
-                    for (i, log) in recovered_logs.into_iter().enumerate() {
-                        hot_entries.push(HotVectorEntry {
-                            tx_id: log.state.transaction_id,
-                            agent_hex: hex::encode(log.agent_id),
-                            namespace: log.state.namespace,
-                            text: log.state.text,
-                            timestamp: log.state.timestamp,
-                            vector: vectors[i].clone(),
-                        });
-                    }
-                    hot_buffer.push_batch(hot_entries);
-                    println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_buffer.len());
-                }                
-            }
+        // Load un-tamperable chronological WORM roots and assert execution matrix match 
+        let anchored_witness = witness_engine.load_local_witness();
+        if !anchored_witness.is_empty() {
+            axon.execute_forensic_boot_audit(witnesses, &witness_engine.clone()).await?;
+        }
 
-            // Load un-tamperable chronological WORM roots and assert execution matrix match 
-            let anchored_witness = witness_engine.load_local_witness();
-            if !anchored_witness.is_empty() {
-                axon.execute_forensic_boot_audit(witnesses, &witness_engine.clone()).await?;
-            }
-
-            println!(
-                "[INITIALIIZATION] Phoenix protocol Complete. Hydrated {} log frames into Axon DAG memory. ",
-                recovered_count
-            );
+        println!(
+            "[INITIALIIZATION] Phoenix protocol Complete. Hydrated {} log frames into Axon DAG memory. ",
+            recovered_count
+        );
 
     // ---  COMPACTION EVENT LISTENENR  (Watermark eviction) ---- 
     let mut system_rx = event_tx.subscribe();
