@@ -104,7 +104,27 @@ impl WalCompactor {
         }
     }
 
+    /// Internal Helper: Guarants the manifest write is immune to torn page corruption
+    fn write_manifest_atomically(path: &str, manifest: &CompactionManifest) {
+        let tmp_path = format!("{}.tmp", path);
+        let json_data = serde_json::to_string_pretty(manifest).unwrap();
+        if fs::write(&temp_path, json_data).is_ok() {
+            let _ = fs::rename(&tmp_path, path);
+        }
+    }
+
     async fn execute_compaction(&self, processing_path: &str) {
+        let manifest_path = "compaction.manifest.json";
+
+        // 2PC State 1: PENDING
+        let pending_manifest = CompactionManifest {
+            target_file: processing_path.to_string(),
+            state: CompactionState::Pending,
+        };
+
+        // Atomic write via tmp file rename
+        Self::write_manifest_atomically(&manifest_path, &pending_manifest);
+
         // 1. Read the framed bytes from the processing file
         let mut file = match File::open(&processing_path) {
             Ok(f) => f,
@@ -138,6 +158,12 @@ impl WalCompactor {
             let entry_len = u32::from_le_bytes(len_bytes) as usize;
             offset += 4;
 
+            // Skip Over the 4-byte CRC32 header
+            if offset + 4 > buffer.len() {
+                break;
+            }
+            offset += 4;
+
             let entry_slice = &buffer[offset..offset + entry_len];
 
             match rkyv::access::<<OpLog as Archive>::Archived, rkyv::rancor::Error>(entry_slice) {
@@ -167,13 +193,14 @@ impl WalCompactor {
         if logs_to_archive.is_empty() {
             println!(
                 "[COMPACTOR] SEGMENT {} contained zero valid logs. Removing. ",
-                processing_path
+                &processing_path, "and", &manifest_path
             );
             let _ = fs::remove_file(processing_path);
+            let _ = fs::remove_file(manifest_path);
             return;
         }
 
-        // High throughput batch embedding
+        // High throughput batch vector embedding
         let vectors = match self
             .lance_engine
             .embedder
@@ -202,6 +229,13 @@ impl WalCompactor {
             .archive_batch(&logs_to_archive, &vectors)
             .await;
 
+        // 2PC State 2: COMMITTED
+        let commited_manifest = CompactionManifest {
+            target_file: processing_path.to_string(),
+            state: CompactionState::Committed,
+        };
+        Self::write_manifest_atomically(&manifest_path, &commited_manifest);
+
         println!(
             "[COMPACTOR] Successfully archived {} thoughts from {} to lanceDB.",
             logs_to_archive.len(),
@@ -214,6 +248,7 @@ impl WalCompactor {
                 processing_path, e
             );
         }
+        let _ = fs::remove_file(manifest_path);
 
         let _ = self.tx.send(SystemEvent::CompactionTriggered {
             archived_count: logs_to_archive.len(),
