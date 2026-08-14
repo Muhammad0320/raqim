@@ -12,6 +12,19 @@ use tokio::{
     time::{Duration, Instant, interval_at},
 };
 
+// The 2pc state machine defining the boundary btw Hot WAL and cold lance db
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum CompactionState {
+    Pending,
+    Committed,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CompactionManifest {
+    pub target_file: String,
+    pub state: CompactionState,
+}
+
 pub struct WalCompactor {
     wal_path: String,
     lance_engine: Arc<LanceEngine>,
@@ -71,6 +84,24 @@ impl WalCompactor {
                 }
             }
         });
+    }
+
+    /// Recover and finishes any compaction that failed
+    async fn resume_pending_compactions(&self) {
+        let manifest_path = "compaction.manifest.json";
+
+        if let Ok(content) = fs::read_to_string(manifest_path) {
+            if let Ok(manifest) = serde_json::from_str::<CompactionManifest>(&content) {
+                if manifest.state == CompactionState::Pending {
+                    println!(
+                        "\n[COMPACTOR RECOVERY] Interrupted compaction detected for {}. Resuming LanceDB ingestion...",
+                        &manifest.target_file
+                    );
+
+                    self.execute_compaction(&manifest.target_file).await;
+                }
+            }
+        }
     }
 
     async fn execute_compaction(&self, processing_path: &str) {
