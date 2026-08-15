@@ -483,17 +483,6 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 }
 
 #[derive(Serialize, Clone, Debug)]
-pub struct VaultSearchResult {
-    pub tx_id: u128,
-    pub agent_hex: String,
-    pub namespace: String,
-    pub payload: String,
-    pub timestamp: String,
-    pub source: String,
-    pub similarity_score: f32,
-}
-
-#[derive(Serialize, Clone, Debug)]
 pub struct VaultTelemetry {
     pub total_vectors: usize,
     pub index_size_mb: f64,
@@ -515,6 +504,8 @@ pub struct UiThought {
     pub tx_id: u64,
 }
 
+// 5. Rest & SSE route handlers.
+
 // The Firehose Route Handler
 pub async fn sse_firehose_endpoint(
     _auth: ValidatedIdentity,
@@ -526,10 +517,10 @@ pub async fn sse_firehose_endpoint(
     // Convert the Tokio Receiver into a standard async Stream.
     let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
         match msg {
-            Ok(ui_event) => {
-                let json_string = serde_json::to_string(&ui_event).unwrap();
-                Some(Ok::<Event, Infallible>(Event::default().data(json_string)))
-            }
+            Ok(ui_event) => serde_json::to_string(&ui_event)
+                .ok()
+                .map(|json| Ok(Event::default().data(json))),
+
             Err(_) => {
                 // Lagging subscribers are skipped automatically by tokio broadcast
                 None
@@ -538,7 +529,7 @@ pub async fn sse_firehose_endpoint(
     });
 
     // Return the SSE stream to the browser.
-    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new())
+    Sse::new(stream).keep_alive(KeepAlive::new())
 }
 
 // The Observatiton deck ( Only used by the time machine UI )
@@ -550,10 +541,28 @@ pub async fn sse_phantom_endpoint(
 
     let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
         match msg {
-            Ok(p_event) => {
-                let json_string = serde_json::to_string(&p_event).unwrap();
-                Some(Ok::<Event, Infallible>(Event::default().data(json_string)))
-            }
+            Ok(p_event) => serde_json::to_string(&p_event)
+                .ok()
+                .map(|json| Ok(Event::default().data(json))),
+
+            Err(_) => None,
+        }
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::new())
+}
+
+pub async fn sse_health_endpoint(
+    _auth: crate::api::ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    let receiver = state.health_tx.subscribe();
+
+    let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
+        match msg {
+            Ok(health_payload) => serde_json::to_string(&health_payload)
+                .ok()
+                .map(|json| Ok(Event::default().data(json))),
 
             Err(_) => None,
         }
@@ -573,6 +582,17 @@ pub async fn agent_alias_endpoint(
     axum::Json(map)
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct VaultSearchResult {
+    pub tx_id: u128,
+    pub agent_hex: String,
+    pub namespace: String,
+    pub payload: String,
+    pub timestamp: String,
+    pub source: String,
+    pub similarity_score: f32,
+}
+
 #[derive(Deserialize)]
 pub struct UnifiedSearchQuery {
     pub query: String,
@@ -589,6 +609,7 @@ pub async fn unified_vault_search(
     let lance_future = state
         .lance
         .semantic_search(&params.query, params.namespace.as_deref(), 50);
+
     let wal_future = async {
         // Only hit the disk if the user explicitely requested the WAL inclusion
         if params.include_wal.unwrap_or(true) {
@@ -637,7 +658,7 @@ pub async fn semantic_search_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
     Query(params): Query<RagQuery>,
-) -> Result<Json<Vec<String>>, StatusCode> {
+) -> Result<Json<Vec<String>>, ApiError> {
     let limit = params.limit.unwrap_or(5);
 
     match state
@@ -653,7 +674,9 @@ pub async fn semantic_search_endpoint(
         Ok(memories) => Ok(Json(memories)),
         Err(e) => {
             eprintln!("[RAG Hybrid ERROR] {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiError::InternalServerError(
+                format!("RAG search failed: {}", e).to_string(),
+            ))
         }
     }
 }
@@ -949,26 +972,6 @@ pub async fn http_ingress_endpoint(
     });
 
     Ok(StatusCode::ACCEPTED)
-}
-
-pub async fn sse_health_endpoint(
-    _auth: crate::api::ValidatedIdentity,
-    State(state): State<ApiState>,
-) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
-    let receiver = state.health_tx.subscribe();
-
-    let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
-        match msg {
-            Ok(health_payload) => {
-                let json_string = serde_json::to_string(&health_payload).unwrap();
-
-                Some(Ok(Event::default().data(json_string)))
-            }
-            Err(_) => None,
-        }
-    });
-
-    Sse::new(stream).keep_alive(KeepAlive::new())
 }
 
 pub async fn active_qurantine_endpoint(
