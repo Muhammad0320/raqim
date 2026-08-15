@@ -483,14 +483,6 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 }
 
 #[derive(Serialize, Clone, Debug)]
-pub struct VaultTelemetry {
-    pub total_vectors: usize,
-    pub index_size_mb: f64,
-    pub wal_pending_count: usize,
-    pub densest_namespace: String,
-}
-
-#[derive(Serialize, Clone, Debug)]
 pub struct ActiveAgentNode {
     pub namespace: String,
     pub status: String, // Active, Quarantined, Idle
@@ -582,17 +574,6 @@ pub async fn agent_alias_endpoint(
     axum::Json(map)
 }
 
-#[derive(Serialize, Clone, Debug)]
-pub struct VaultSearchResult {
-    pub tx_id: u128,
-    pub agent_hex: String,
-    pub namespace: String,
-    pub payload: String,
-    pub timestamp: String,
-    pub source: String,
-    pub similarity_score: f32,
-}
-
 #[derive(Deserialize)]
 pub struct UnifiedSearchQuery {
     pub query: String,
@@ -604,7 +585,7 @@ pub async fn unified_vault_search(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
     Query(params): Query<UnifiedSearchQuery>,
-) -> Result<Json<Vec<VaultSearchResult>>, StatusCode> {
+) -> Result<Json<Vec<VaultSearchResult>>, ApiError> {
     // The Scatter: Launch both searches concurrently on different OS threads
     let lance_future = state
         .lance
@@ -681,10 +662,29 @@ pub async fn semantic_search_endpoint(
     }
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct VaultSearchResult {
+    pub tx_id: u128,
+    pub agent_hex: String,
+    pub namespace: String,
+    pub payload: String,
+    pub timestamp: String,
+    pub source: String,
+    pub similarity_score: f32,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct VaultTelemetry {
+    pub total_vectors: usize,
+    pub index_size_mb: f64,
+    pub wal_pending_count: usize,
+    pub densest_namespace: String,
+}
+
 pub async fn vault_telemetry_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
-) -> Result<Json<VaultTelemetry>, StatusCode> {
+) -> Result<Json<VaultTelemetry>, ApiError> {
     let wal_pending_count = state.wal.get_pending_count().await;
 
     let total_vectors = state.lance.get_total_vector_count().await.unwrap_or(0);
