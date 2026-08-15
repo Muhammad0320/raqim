@@ -1,6 +1,6 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Path, Query};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::{
     Json, async_trait,
     extract::{FromRequestParts, State},
@@ -47,8 +47,49 @@ use crate::{
 };
 use crate::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
 
+// Strongly typed api error system (Zero-Panic Guarantee)
+#[derive(Debug)]
+pub enum ApiError {
+    BadRequest(String),
+    Unauthorized(String),
+    Forbidden(String),
+
+    NotFound(String),
+    RateLimitExceeded(String),
+    InternalServerError(String),
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let (status, error_code, message) = match self {
+            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg),
+            ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", msg),
+            ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, "FORBIDDEN", msg),
+            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg),
+            ApiError::RateLimitExceeded(msg) => {
+                (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMIT_EXCEEDED", msg)
+            }
+            ApiError::InternalServerError(msg) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", msg)
+            }
+        };
+
+        let body = Json(json!({
+
+            "success": false,
+            "error_code": error_code,
+            "message": message
+
+        }));
+
+        (status, body).into_response()
+    }
+}
+
+// Websocket Message Types & UI Event Schemas
+
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")] // Enables brilliant json parsing {"type": "AskQuestion", }
+#[serde(tag = "type")] // Enables json parsing {"type": "AskQuestion", }
 pub enum WsMessage {
     // Python -> Daemon: "I want to listen here"
     RegisterCapability {
@@ -121,31 +162,6 @@ pub enum UiEvent {
     AegisAlert {
         record: QuarantineRecord,
     },
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct VaultSearchResult {
-    pub tx_id: u128,
-    pub agent_hex: String,
-    pub namespace: String,
-    pub payload: String,
-    pub timestamp: String,
-    pub source: String,
-    pub similarity_score: f32,
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct VaultTelemetry {
-    pub total_vectors: usize,
-    pub index_size_mb: f64,
-    pub wal_pending_count: usize,
-    pub densest_namespace: String,
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct ActiveAgentNode {
-    pub namespace: String,
-    pub status: String, // Active, Quarantined, Idle
 }
 
 #[derive(Clone)]
@@ -446,6 +462,31 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
         _ => {}
     }
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct VaultSearchResult {
+    pub tx_id: u128,
+    pub agent_hex: String,
+    pub namespace: String,
+    pub payload: String,
+    pub timestamp: String,
+    pub source: String,
+    pub similarity_score: f32,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct VaultTelemetry {
+    pub total_vectors: usize,
+    pub index_size_mb: f64,
+    pub wal_pending_count: usize,
+    pub densest_namespace: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ActiveAgentNode {
+    pub namespace: String,
+    pub status: String, // Active, Quarantined, Idle
 }
 
 #[derive(Serialize, Clone)]
