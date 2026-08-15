@@ -1359,7 +1359,8 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         // Admin / Debugging endpoints
         .route("/v1/state/proof", get(get_state_proof_handler))
         .route("/v1/effect/record", post(record_effect_handler))
-        .route("v1/effect/get", get(get_effect_handler))
+        // Yiu sure say na post?
+        .route("/v1/effect/get", get(get_effect_handler))
         .route("/v1/aegis/quarantine_list", get(active_qurantine_endpoint))
         .route(
             "/v1/admin/quarantine/lift",
@@ -1379,15 +1380,15 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/system/health/live", get(sse_health_endpoint))
         .route("/v1/system/agents/aliases", get(agent_alias_endpoint))
         // Agent Swarm endpoints
-        .route("/v1/mcp/ws", post(mcp_ws_handler))
+        .route("/v1/mcp/ws", get(mcp_ws_handler))
         .route("/v1/swarm/ingress", post(http_ingress_endpoint))
         .route("/v1/swarm/memory", get(semantic_search_endpoint))
         // UI endpoints
         .route("/v1/dashboard/cards", get(dashboard_cards_endpoint))
         .route("/v1/system/firehose", get(sse_firehose_endpoint))
         .route("/v1/time-travel/stream", get(sse_phantom_endpoint))
-        .route("/v1/vault/search", post(unified_vault_search))
-        .route("/v1/vault/tellemetry", get(vault_telemetry_endpoint))
+        .route("/v1/vault/search", get(unified_vault_search))
+        .route("/v1/vault/telemetry", get(vault_telemetry_endpoint))
         .route("/v1/aegis/metrics", get(aegis_metics_endpoint))
         .with_state(state)
 }
