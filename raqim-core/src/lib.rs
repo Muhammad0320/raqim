@@ -244,8 +244,8 @@ pub enum SystemEvent {
 
     RealityForked {
         agent_id: String,
-        parent_namespace: String,
-        fork_namespace: String,
+        original_namespace: String,
+        phantom_namespace: String,
         step_ordinal: u64,
         tx_id: String,
         timestamp: i64,
