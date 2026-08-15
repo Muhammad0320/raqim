@@ -302,8 +302,12 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                         };
 
                         // Send down to python
-                        let json = serde_json::to_string(&incoming_msg).unwrap();
-                        let _ = conn_clone.downstream_tx.blocking_send(Message::Text(json));
+                        if let Ok(json_str) = serde_json::to_string(&incoming_msg) {
+                            let tx = conn_clone.downstream_tx.clone();
+                            tokio::spawn(async move {
+                                let _ = tx.send(Message::Text(json_str)).await;
+                            });
+                        }
 
                         // ZERO CPU WAIT: Yield OS thread until Python replies. 15 seconds max wait time.
                         match tokio::runtime::Handle::current()
@@ -346,7 +350,6 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
             tokio::spawn(async move {
                 // Decode Raw bytes from Hex Containers
-
                 let cert_bytes = match hex::decode(&capability_cert) {
                     Ok(b) => b,
                     Err(_) => return,
@@ -371,31 +374,47 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     sig_bytes.copy_from_slice(&signature)
                 }
 
-                let (agent_hex, group_name) =
-                    match os_state_clone.aegis.verify_session_lineage(&cert_bytes) {
-                        Ok((agent, group)) => (agent, group),
-                        Err(_) => return (),
-                    };
+                let (agent_hex, group_name) = match os_state_clone
+                    .aegis
+                    .verify_session_lineage(&cert_bytes, &public_key_bytes)
+                {
+                    Ok((agent, group)) => (agent, group),
+                    Err(e) => {
+                        let err = WsMessage::Error {
+                            message: format!("[AEGIS LINEAGE FAILURE]: {}", e),
+                        };
 
-                let _agent_hex = match os_state_clone.aegis.authorize_packet_fast(
+                        if let Ok(json_str) = serde_json::to_string(&err) {
+                            let _ = conn_clone.downstream_tx.send(Message::Text(json_str)).await;
+                        }
+
+                        return;
+                    }
+                };
+
+                let current_ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+
+                if let Err(e) = os_state_clone.aegis.authorize_packet_fast(
                     agent_hex.as_str(),
                     group_name.as_str(),
                     &public_key_bytes,
                     &question,
                     &sig_bytes,
                     &capability,
+                    current_ts,
                 ) {
-                    Ok(hex) => hex,
-                    Err(e) => {
-                        let err = WsMessage::Error {
-                            message: format!("[AEGIS Gate block] {}  ", e),
-                        };
-                        let _ = conn_clone
-                            .downstream_tx
-                            .send(Message::Text(serde_json::to_string(&err).unwrap()))
-                            .await;
-                        return;
+                    let err = WsMessage::Error {
+                        message: format!("[AEGIS Gate block] {}  ", e),
+                    };
+
+                    if let Ok(json_str) = serde_json::to_string(&err) {
+                        let _ = conn_clone.downstream_tx.send(Message::Text(json_str)).await;
                     }
+
+                    return;
                 };
 
                 let envelope = A2AEnvelope {
@@ -429,10 +448,10 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                             request_id,
                             answer: answer.clone(),
                         };
-                        let _ = conn_clone
-                            .downstream_tx
-                            .send(Message::Text(serde_json::to_string(&res).unwrap()))
-                            .await;
+
+                        if let Ok(json_str) = serde_json::to_string(&res) {
+                            let _ = conn_clone.downstream_tx.send(Message::Text(json_str)).await;
+                        }
 
                         // Fire the laser beam to the UI
                         let ui_event = UiEvent::A2aMessageRouted {
@@ -451,10 +470,9 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                         let err = WsMessage::Error {
                             message: e.to_string(),
                         };
-                        let _ = conn_clone
-                            .downstream_tx
-                            .send(Message::Text(serde_json::to_string(&err).unwrap()))
-                            .await;
+                        if let Ok(json_str) = serde_json::to_string(&err) {
+                            let _ = conn_clone.downstream_tx.send(Message::Text(json_str)).await;
+                        }
                     }
                 }
             });
