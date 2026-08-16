@@ -187,7 +187,7 @@ impl WalEngine {
         let payload_bytes = to_bytes::<rkyv::rancor::Error>(&batch.to_vec())
             .expect("Failed to serialize batch")
             .into_vec();
-
+        
         // Compute CRC32 checksums over payload bytes
         let payload_len = payload_bytes.len() as u32;
         let checksum = crc32fast::hash(&payload_bytes);
@@ -308,7 +308,7 @@ impl WalEngine {
 
             offset += 4 + 4 + payload_len as u64;
         }
-
+        
         // Truncate file back to the last 100% valid checksum-verified boundary
         if let Err(e) = file.set_len(offset) {
             eprintln!(

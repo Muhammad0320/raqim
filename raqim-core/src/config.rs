@@ -187,7 +187,7 @@ impl RaqimConfig {
         if let Some(p_key) = args.node_public_key_hex {
             config.node_public_key_hex = p_key;
         }
-
+        
         if let Some(e_type) = args.embedder_type {
             config.embedder_type = e_type
         }

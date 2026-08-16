@@ -85,7 +85,7 @@ impl WasmEngine {
         }
     }
 
-    /// TRUE ENTERPRISE CHECKPOINTING: Captures only the active memory pages, not the entire 50MB void.
+    /// TRUE  CHECKPOINTING: Captures only the active memory pages, not the entire 50MB void.
     pub fn create_checkpoint(store: &mut Store<SandboxContent>, memory: Memory) -> Vec<u8> {
         // memory.data_size() returns the exact number of active bytes currently in use,
         // preventing the massive data reduplication of saving the entire 50MB capacity!

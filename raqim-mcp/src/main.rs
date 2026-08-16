@@ -391,6 +391,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server = Server::new(Arc::new(transport), handler as Arc<dyn ServerHandler>);
 
     server.start().await?;
-
+    
     Ok(())
 }

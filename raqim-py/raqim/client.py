@@ -1,31 +1,116 @@
 import asyncio
+import base64
+import contextvars
+import functools
+import inspect
 import json
 import uuid
-from typing import Callable, Any, Optional, Dict, Awaitable
+from typing import (
+    Any,
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
+
+import blake3
+import httpx
 import websockets
 import zenoh
-import httpx
-import base64
-import blake3
 
-from raqim_core import RaqimCryptoCore  # Our compiled PyO3 Rust extension!
+from raqim_core import RaqimCryptoCore  
+
+# ASYNC CONTEXT PROPAGATION & ERROR SCHEMAS
 
 class ReplayDivergedError(Exception): 
     """Raised when replay Python code diverges from recorded WAL history."""
     pass
 
+class RaqimClientError(Exception): 
+    """Raised for general Raqim client communication or cryptographic errors."""
+    pass
+
+# Task-Local context tracker 
+_execution_step_context: contextvars.ContextVar[int] = contextvars.ContextVar("raqim_step_context", default = 0)
+
+# 2. CANONICAL ARGUMENTT SERIALIZER
+
+class CanonicalSerializer: 
+    """
+    Normalizes arbitrary Python objects, Pydantic models, and function arguments into a deterministic, 
+    canonical JSON byte representation for BLAKE3 hashing.
+    """
+    
+    @staticmethod
+    def _default_encoder(obj: Any) -> Any: 
+        # pydantic v2 support
+        if hasattr(obj, "model_dump"): 
+            return obj.model_dump()
+        # Pydantic v1 support
+        if hasattr(obj, "dict"): 
+            return obj.dict()
+        # Dataclass support
+        if hasattr(obj, "__dataclass_fields__"): 
+            import dataclasses
+            return dataclasses.asdict(obj)
+        # Byte support
+        if isinstance(obj, (bytes, bytearray)): 
+            return base64.b64decode(obj).decode("ascii")
+        
+        # Fallback to string representation
+        return str(obj)
+    
+    @classmethod
+    def canonical_json(cls, data: Any) -> str: 
+        return json.dumps(data, default=cls._default_encoder, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        
+    @classmethod
+    def derive_call_signature_hash(cls, fn: Callable[..., Any], args: Tuple[Any, ...], kwargs: Dict[str, Any], custom_signature: Optional[str] = None ) -> Tuple[str, str]: 
+        """ 
+        Extracts function signature, binds parameters with defaults, and computes a 
+        domain-separated 32-byte BLAKE3 hash.
+        """
+        # Bind arguments to formal parameters and indect defaults
+        sig = inspect.signature(fn)
+        bound_args = sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+    
+        # Build normalized call directory
+        func_name = custom_signature or f"{fn.__module__}.{fn.__qualname__}"
+        normalized_payload = {
+            "function": func_name,
+            "arguments": bound_args.arguments, 
+        }
+        
+        # Serialize to deterministic Canonical JSON
+        canonical_str = cls.canonical_json(normalized_payload)
+        
+        # 4. Compute 32-byte BLAKE3 Hash using Domain Separation Key
+        hasher = blake3.blake3(derive_key="raqim.effect.v1.signature")
+        hasher.update(canonical_str.encode("utf-8"))
+        call_sig_hash = hasher.digest(length=32)
+        
+        return call_sig_hash.hex(), canonical_str
+        
+        
 class RaqimClient:
     def __init__(
-        self, alias: str, tenant: str, private_key_path: str, cert_path: Optional[str] = None, daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081, mode: str = "record", on_divergence: str = "fork"
-        
+        self, alias: str, tenant: str, private_key_path: str, cert_path: Optional[str] = None,
+        daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081, 
+        mode: str = "record", # "record" (Live) or "reply" (Deterministic Time-Travel)
+        on_divergence: str = "fork" # "fork" (Auto-branch into phantom namespace) or "raise" (scream out the divergence)
         ):
         self.alias = alias 
         self.tenant = tenant 
-        self.crypto_core = RaqimCryptoCore(private_key_path)
+        self.crypto_core = RaqimCryptoCore(private_key_path, cert_path)
 
-       # Mathematically bind the 16-bytes routing ID to the 32-byte public key
+       # Mathematically derive 16-byte Agent ID via Blake3 Domain Separation
         public_key_bytes = bytes(self.crypto_core.public_key_bytes)
-        derived_16_bytes = blake3.blake3(public_key_bytes, derive_key="raqim.agent.v1.identity").digest(len=16)
+        derived_16_bytes = blake3.blake3(public_key_bytes, derive_key="raqim.agent.v1.identity").digest(length=16)
        
         # The 32-character hex string representing the 16-bytes
         self.agent_hex = derived_16_bytes.hex()
@@ -36,15 +121,37 @@ class RaqimClient:
         self.mode = mode
         self.on_divergence = on_divergence
         self.is_forked = False
-        self.active_step = 0   
-        
+
         # THE ASYNC MULTIPLEXER (Python's equivalent to DashMap + oneshot)
         self._pending_requests: Dict[str, asyncio.Future] = {}
         self._capabilities: Dict[str, Callable[[bytes], Awaitable[bytes]]] = {}
-        self._ws_connection = None
-        self._zenoh_session = None
+        self._ws_connection: Optional[websockets.WebSocketClientProtocol] = None
+        self._zenoh_session: Optional[Any] = None
         # The callback function provided by the developer
         self._reality_fork_hook: Callable[[str], None] = None 
+        
+    
+    
+    
+    async def boot(self): 
+        """
+        Enterprise Ignition Sequence: 
+        - Emits /system/handshake over TCPP to trigger JIT CRDT memory hydration
+        - Mounts zenoh control subscriber for 
+        """
+        # 1. TCP Handshake Protocol (Registers Alias with RAM Process Table)
+        await self.commit_thought(
+            agent_hex=self.agent_hex,
+            intent_path="/system/handshake",
+            text=f"ALIAS={self.alias}"
+        )
+        print(f"[BOOT] Agent '{self.alias}' ({self.agent_hex[:8]}...) registered.")
+
+        # 2. Establish Zenoh Control Plane for Aegis Circuit Breaker Resets
+        self._zenoh_session = zenoh.open(zenoh.Config())
+        control_topic = f"raqim/{self.tenant}/control/{self.agent_hex}"
+        self._zenoh_session.declare_subscriber(control_topic, self._handle_os_control_override)
+
 
     async def record_effect(self, call_signature: str, fn: Callable[[], Any], step_ordinal: Optional[int] = None, namespace: str = "/default") -> Any:
         """
@@ -77,7 +184,7 @@ class RaqimClient:
                     # Step matched recorded trace exactly! Decode and return Verbatim ($0 cost)
                     raw_byte = base64.b64decode( data["output_payload_base64"] )
                     print(f"[RAQIM REPLAY] Step {step_ordinal} replayed from WAL ($0 API cost). ")
-                    return json.loads(raw_byte.decode(raw_byte)) 
+                    return json.loads(raw_byte.decode("utf-8")) 
 
               # ------ DIVERGENCE DETECTED ----------
               
@@ -100,7 +207,7 @@ class RaqimClient:
                     result = await fn()
                 else: 
                     result = fn()
-                output_bytes = json.dump(result).encode("utf-8")
+                output_bytes = json.dumps(result).encode("utf-8")
                 b64_output = base64.b64decode(output_bytes).decode("utf-8")
                 
                 await http.post(f"{self.http_url}/v1/effect/record", json={"agent_id_hex": self.agent_hex, "step_ordinal": step_ordinal, "call_signature_hex": call_sig_hex, "output_payload_base64": b64_output, "namespace": target_namespace }) 
@@ -108,21 +215,6 @@ class RaqimClient:
                     print(f"[RAQIM FORK RECORD] Recorded step {step_ordinal} to parallel universe branch: {target_namespace} ")
 
                 return result
-
-    async def boot(self): 
-        """The Enterprise Ignition Sequence: Handshake + Zenoh Control Plane"""
-        # 1. TCP Handshake Protocol (Registers Alias with RAM Process Table)
-        await self.commit_thought(
-            agent_hex=self.agent_hex,
-            intent_path="/system/handshake",
-            text=f"ALIAS={self.alias}"
-        )
-        print(f"[BOOT] Agent '{self.alias}' ({self.agent_hex[:8]}...) registered.")
-
-        # 2. Establish Zenoh Control Plane for Aegis Circuit Breaker Resets
-        self._zenoh_session = zenoh.open(zenoh.Config())
-        control_topic = f"raqim/{self.tenant}/control/{self.agent_hex}"
-        self._zenoh_session.declare_subscriber(control_topic, self._handle_os_control_override)
 
     def register_eviction_hook(self, callback: Callable[[str], None]): 
         """
@@ -256,13 +348,13 @@ def verify_state_proof_offline(payload_bytes: bytes, agent_id_str: str, proof_di
     # Compute leaf hash
     hasher = blake3.blake3(derive_key="raqim.axon.v1.leaf")
     hasher.update(payload_bytes)
-    hasher.updapte(agent_id_bytes)
+    hasher.update(agent_id_bytes)
     current_hash = hasher.digest(length=32)
     
     index = proof_dict["leaf_index"]
     
     # Recompute path up the binary tre 
-    for sibling_hex in proof_dict["sibling_hahses_hex"]: 
+    for sibling_hex in proof_dict["sibling_hashes_hex"]: 
         sibling_bytes = bytes.fromhex(sibling_hex) 
         
         node_hasher = blake3.blake3(derive_key="raqim.axon.v1.node")
