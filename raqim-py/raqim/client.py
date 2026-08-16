@@ -129,15 +129,13 @@ class RaqimClient:
         self._zenoh_session: Optional[Any] = None
         # The callback function provided by the developer
         self._reality_fork_hook: Callable[[str], None] = None 
-        
-    
     
     
     async def boot(self): 
         """
         Enterprise Ignition Sequence: 
         - Emits /system/handshake over TCPP to trigger JIT CRDT memory hydration
-        - Mounts zenoh control subscriber for 
+        - Mounts zenoh control subscriber for Aegis out-of-band context eviction
         """
         # 1. TCP Handshake Protocol (Registers Alias with RAM Process Table)
         await self.commit_thought(
@@ -147,11 +145,19 @@ class RaqimClient:
         )
         print(f"[BOOT] Agent '{self.alias}' ({self.agent_hex[:8]}...) registered.")
 
-        # 2. Establish Zenoh Control Plane for Aegis Circuit Breaker Resets
-        self._zenoh_session = zenoh.open(zenoh.Config())
-        control_topic = f"raqim/{self.tenant}/control/{self.agent_hex}"
-        self._zenoh_session.declare_subscriber(control_topic, self._handle_os_control_override)
+        # 2. Establish Zenoh Control Plane for Aegis Circuit Breakers
+        try:
+            self._zenoh_session = zenoh.open(zenoh.Config())
+            control_topic = f"raqim/{self.tenant}/control/{self.agent_hex}"
+            self._zenoh_session.declare_subscriber(control_topic, self._handle_os_control_override)
+        except Exception as e: 
+            print(f"[BOOT WARN] Zenoh control plane unavailable: {e}. Running in local-only mode.")
 
+    def register_eviction_hook(self, callback: Callable[[str], None]): 
+        """
+            Registers the developer callback for Aegis FORCE_CONTEXT_EVICTION events.
+        """
+        self._reality_fork_hook = callback
 
     async def record_effect(self, call_signature: str, fn: Callable[[], Any], step_ordinal: Optional[int] = None, namespace: str = "/default") -> Any:
         """
@@ -216,11 +222,6 @@ class RaqimClient:
 
                 return result
 
-    def register_eviction_hook(self, callback: Callable[[str], None]): 
-        """
-            The developer defines HOW their specific LLM clears its memory, and registers that function here
-        """
-        self._reality_fork_hook = callback
 
     def _handle_os_control_override(self, sample):
         """ The Out-of-Band Context Eviction Listener """
