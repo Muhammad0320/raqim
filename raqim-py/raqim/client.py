@@ -159,6 +159,51 @@ class RaqimClient:
         """
         self._reality_fork_hook = callback
 
+
+    def _handle_os_control_override(self, sample: Any) -> None:
+        """Listener that wipes corrupted context when Aegis trips a circuit breaker """
+        
+        try:
+            payload = json.loads(sample.payload.decode('utf-8'))
+            if payload.get("command") == "FORCE_CONTEXT_EVICTION":
+                print(f"\n[OS RED ALERT] Aegis Firewall mandated a Reality Re-seed.")
+                new_system_prompt = payload.get("new_system_prompt", "")
+                print(f"[OS DIRECTIVE]: {new_system_prompt}")
+                # Trigger the closure
+                if self._reality_fork_hook: 
+                    self._reality_fork_hook(new_system_prompt)
+                    print("[OS OVERRIDE] Developer hook executed. Reality re-seeded.")
+                else: 
+                    print("[OS WARNING] No eviction hook registered. Context may be corrupted ")
+        except Exception as e: 
+            print(f"[OS ERROR] Failed to process control overrides: {e} ", e)
+
+# LOW-LEVEL DATA PLANE & RAG QUERIES
+    async def commit_thought(self, agent_hex: str, intent_path: str, text: str) -> None:
+        """Shoots signed zero-copy rkyv bytes over raw TCP to Raqim's WAL Engine"""
+        # The Rust PyO3 extension handles the blazing-fast serialization and signing
+        raw_payload = self.crypto_core.generate_tcp_payload(agent_hex, intent_path, text)
+        
+        reader, writer = await asyncio.open_connection(*self.tcp_addr)
+        try: 
+            writer.write(raw_payload)
+            await writer.drain()
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    async def query_memory(self, intent_path: str, query: str, limit: int = 5) -> list[str]:
+        """Queries Raqim's Unified Hybrid Search Router (LanceDB + Hot RAM Buffer)."""
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"{self.http_url}/v1/swarm/memory",
+                params={"namespace": intent_path, "query": query, "limit": limit},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    # @raqim.trac DECORATOR 
+
     async def record_effect(self, call_signature: str, fn: Callable[[], Any], step_ordinal: Optional[int] = None, namespace: str = "/default") -> Any:
         """
         THE EFFECT INTERCEPTOR: 
@@ -221,44 +266,6 @@ class RaqimClient:
                     print(f"[RAQIM FORK RECORD] Recorded step {step_ordinal} to parallel universe branch: {target_namespace} ")
 
                 return result
-
-
-    def _handle_os_control_override(self, sample):
-        """ The Out-of-Band Context Eviction Listener """
-        payload = json.loads(sample.payload.decode('utf-8'))
-        
-        if payload.get("command") == "FORCE_CONTEXT_EVICTION":
-            print(f"\n[OS RED ALERT] Aegis Firewall mandated a Reality Re-seed.")
-            new_system_prompt = payload.get("new_system_prompt")
-            print(f"[OS DIRECTIVE]: {new_system_prompt}")
-            # Trigger the closure
-            if self._reality_fork_hook: 
-                self._reality_fork_hook(new_system_prompt)
-                print("[OS OVERRIDE] Developer hook executed. Reality re-seeded.")
-            else: 
-                print("[OS WARNING] No eviction hook registered. Agent memory is corrupted ")
-    
-    async def commit_thought(self, agent_hex: str, intent_path: str, text: str):
-        """Firehose Data Plane: Shoots pure RKYV bytes over raw TCP."""
-        # The Rust PyO3 extension handles the blazing-fast serialization and signing
-        raw_payload = self.crypto_core.generate_tcp_payload(agent_hex, intent_path, text)
-        
-        reader, writer = await asyncio.open_connection(*self.tcp_addr)
-        writer.write(raw_payload)
-        await writer.drain()
-        writer.close()
-        await writer.wait_closed()
-
-    async def query_memory(self, intent_path: str, query: str, license_key: str) -> list[str]:
-        """Control Plane: Uses Axum HTTP for complex JSON RAG returns."""
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.http_url}/v1/swarm/memory",
-                params={"namespace": intent_path, "query": query},
-                headers={"Authorization": f"Bearer {license_key}"}
-            )
-            resp.raise_for_status()
-            return resp.json()
 
     async def connect_swarm(self):
         """Initializes the background WebSocket Multiplexer for A2A."""
