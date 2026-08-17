@@ -82,6 +82,7 @@ pub struct A2AEnvelope {
     pub payload: Vec<u8>,
     pub signature: [u8; 64],
     pub sender_capability_cert: Vec<u8>,
+    pub timestamp: i64,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -143,7 +144,6 @@ pub async fn execute_raqim_cascade(
     tx: Sender<SystemEvent>,
     seeds: Vec<u64>,
     responses: Vec<String>,
-    telemetry: Arc<TelemetryEngine>,
 ) -> Result<u128, anyhow::Error> {
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];

@@ -217,7 +217,6 @@ impl WasmEngine {
                         event_tx_clone,
                         seeds_to_save,
                         network_to_save,
-                        telemetry_clone,
                     )
                     .await;
 
@@ -362,6 +361,10 @@ impl WasmEngine {
                         sender_id.copy_from_slice(&id_bytes);
                     }
                 }
+                let now_ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
 
                 // Construct the Envelope
                 let envelope = A2AEnvelope {
@@ -371,6 +374,7 @@ impl WasmEngine {
                     payload: payload_bytes,
                     sender_capability_cert: content.capability_cert_bytes.clone(),
                     signature: packet_signature.to_bytes(),
+                    timestamp: now_ts,
                 };
 
                 // Execute the actual RPC call (block_in_place because WASM calls are sync)
@@ -379,11 +383,8 @@ impl WasmEngine {
                 let telemetry_clone = content.telemetry.clone();
 
                 let (response_bytes, _responder_hex) = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(net_clone.execute_a2a_rpc(
-                        envelope,
-                        aegis_clone,
-                        telemetry_clone,
-                    ))
+                    tokio::runtime::Handle::current()
+                        .block_on(net_clone.execute_a2a_rpc(envelope, aegis_clone))
                 })
                 .unwrap_or_else(|e| (e.to_string().into_bytes(), "SYSTEM_ERROR".to_string()));
 

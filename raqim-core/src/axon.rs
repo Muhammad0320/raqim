@@ -202,7 +202,7 @@ impl AxonGateKeeper {
                 index - 1
             };
 
-            sibling_hashes.push(current_level[sibling_hashes]);
+            sibling_hashes.push(current_level[sibling_idx]);
             current_level = next_level;
             index /= 2;
         }
@@ -353,11 +353,9 @@ impl AxonGateKeeper {
 
             // Critical disaster Recovery Override: Local delta is corrupted, altred or missing compeltely
             if !local_valid {
-                eprintln!("
-                
-                \n[PHOENIX RED ALERT] Cryptographic mismatch or missing data detected on local block Batch #{}! "
-                    "Disk state is comprised. Triggering WORM Vault Rollback...", withness.batch_id
-
+                eprintln!(
+                    "\n[PHOENIX RED ALERT] Cryptographic mismatch or missing data detected on local block Batch #{}! Disk state is comprised. Triggering WORM Vault Rollback...",
+                    witness.batch_id
                 );
 
                 // Fetch the absolute, untampered historical block bundle from our WORM Cloud/Local Vault

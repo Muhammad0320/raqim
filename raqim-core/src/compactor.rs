@@ -109,7 +109,7 @@ impl WalCompactor {
         let temp_path = format!("{}.tmp", path);
         let json_data = serde_json::to_string_pretty(manifest).unwrap();
         if fs::write(&temp_path, json_data).is_ok() {
-            let _ = fs::rename(&tmp_path, path);
+            let _ = fs::rename(&temp_path, path);
         }
     }
 
