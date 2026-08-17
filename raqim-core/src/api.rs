@@ -779,7 +779,8 @@ async fn lift_qurantine_and_resurrect(
                     &payload.agent_hex, e
                 );
                 Err(ApiError::InternalServerError(format!(
-                    "Resurrection failed: {}, e"
+                    "Resurrection failed: {}",
+                    e
                 )))
             }
         }
@@ -961,7 +962,6 @@ pub async fn http_ingress_endpoint(
     let task_wal = state.wal.clone();
     let task_cortex = state.cortex_tx.clone();
     let task_net = state.global_net.clone();
-    let task_counter_tx = state.global_tx_counter.clone();
     let task_brain = state.brain.clone();
 
     let body_clone = body.clone();
@@ -1265,7 +1265,7 @@ pub async fn record_effect_handler(
         .map_err(|_| ApiError::BadRequest("agent_hex must be exactly 16 bytes".to_string()))?;
 
     let call_signature_bytes = hex::decode(payload.call_signature_hex)
-        .map_err(|e| ApiError::BadRequest("Invalid call_signature_hex format".to_string))?;
+        .map_err(|e| ApiError::BadRequest("Invalid call_signature_hex format".to_string()))?;
     let call_signature_hash: [u8; 32] = call_signature_bytes.try_into().map_err(|_| {
         ApiError::BadRequest("call_signature_hex must be eactly 32 bytes".to_string())
     })?;
