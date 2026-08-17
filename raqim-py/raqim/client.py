@@ -211,6 +211,81 @@ class RaqimClient:
         - In 'replay' mode: Bypasses execution, fetches output from WAL ($0 API cost). 
         - On code change: Autoo-forks execution into a parallel universe branch
         """
+        def decorator(fn: Callable[..., Any]) -> Callable[..., Any]: 
+            if inspect.isasyncgenfunction(fn): 
+                # path A: Async Generator (streeaming LLM token)
+                @functools.wraps(fn)
+                async def async_gen_wrapper(*args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
+                    step = _execution_step_context.get()
+                    _execution_step_context.set(step+1)
+                    
+                    call_sig_hex, _ = CanonicalSerializer.derive_call_signature_hash(fn, args, kwargs, custom_signature)
+                    
+                    target_ns = namespace
+                    if self.is_forked: 
+                        target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+
+                    # Replay Check
+                    if self.mode == "replay" and not self.is_forked : 
+                        cached = await self._fetch_recorded_effect(step, call_sig_hex)
+                        if cached is not None: 
+                            print(f"[RAQIM REPLAY] Step {step}. (Stream) replayed from WAL ($0 API cost).")
+                            for chunk in cached: 
+                                yield chunk
+                            return 
+                        
+                        # Divergence Triggered
+                        self._handle_divergence(self, call_sig_hex, namespace)
+                        target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+
+                    # Live Execution & accumulation
+                    accumulated_chunks: List[Any] = []
+                    async for item in fn(*args, **kwargs):
+                        accumulated_chunks.append(item)
+                        yield item 
+                    
+                    # Persist accumulated stream to WAL
+                    await self._persist_effect(step, call_sig_hex, accumulated_chunks, target_ns)
+                
+                return async_gen_wrapper
+            
+            elif asyncio.iscoroutinefunction(fn): 
+                # Path B: Stadard Async Coroutine
+                @functools.wraps(fn) 
+                async def async_wrapper(*args: Any, **kwargs: Any) -> Any: 
+                    step = _execution_step_context.get()
+                    _execution_step_context.set(step + 1)
+                    
+                    call_sig_hex, _ = CanonicalSerializer.derive_call_signature_hash(fn, args, kwargs, custom_signature)
+                    
+                    target_ns = namespace
+                    if self.is_forked: 
+                        target_ns = f"phantom_{namespace}_{self.agent_hex}_step_{step}"
+                    
+                    
+                    # Replay Check
+                    if self.mode == "replay" and not self.is_forked: 
+                        cached = await self._fetch_recorded_effect(step, call_sig_hex)
+                        if cached is not None: 
+                            print(f"[RAQIM REPLAY] Step {step} replayed from WAL ($0 API cost) ")
+                            return cached
+                        
+                        
+                        # Divergence Triggered
+                        self._handle_divergence(step, call_sig_hex, namespace)
+                        target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+                    
+                    # Live execution
+                    result = await fn(*args, **kwargs) 
+                    await self._persist_effect(step, call_sig_hex, result, target_ns)
+                    return result
+                
+                return async_wrapper
+            else: 
+                # Path C: Synchronous function
+                @functools.wraps(fn)
+                def sync_wrapper(*args: Any, **kwargs: Any) -> Any: 
+                    
 
     # Internal Effect Engine Helpers
     async def _fetch_recorded_effect(self, step_ordinal: int, call_sig_hex: str) -> Optional[Any]:
