@@ -202,8 +202,82 @@ class RaqimClient:
             resp.raise_for_status()
             return resp.json()
 
-    # @raqim.trac DECORATOR 
+    # @raqim.trace DECORATOR 
+    def trace(self, namespace: str = "/default", custom_signature: Optional[str] = None ) -> Callable[..., Any]: 
+        """ 
+        @raqim.trace Decorator: 
+        Wraps any sync function, async coroutine, or async streaming generator. 
+        - In 'record' mode: Runs fn live, records result to Raqim WAL. 
+        - In 'replay' mode: Bypasses execution, fetches output from WAL ($0 API cost). 
+        - On code change: Autoo-forks execution into a parallel universe branch
+        """
 
+    # Internal Effect Engine Helpers
+    async def _fetch_recorded_effect(self, step_ordinal: int, call_sig_hex: str) -> Optional[Any]:
+        """Fetches recorded effect from daemon. Returns None if signature diverged."""
+        async with httpx.AsyncClient() as http: 
+            try: 
+                res = await http.post(
+                    f"{self.http_url}/v1/effect/get", 
+                    json={"agent_hex": self.agent_hex, "step_ordinal": step_ordinal, "call_signature_hex": call_sig_hex }, 
+                    timeout=5.0
+                )
+                
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get("found") and data.get("output_payload_base64"): 
+                        raw_bytes = base64.b64decode(data["output_payload_base64"])
+                        return json.loads(raw_bytes.decode("utf-8"))
+            except Exception as e: 
+                print(f"[RAQIM REPLAY WARN] Effect fetch error at step {step_ordinal}: {e}")
+        return None
+
+    async def _persist_effect(self, step_ordinal: int, call_signature_hex: str, result: Any, namespace: str) -> None: 
+        """Persists live execution output into Raqim's WAL + Merkle DAG."""
+        canonical_output = CanonicalSerializer.canonical_json(result)
+        b64_output = base64.b64encode(canonical_output.encode("utf-8")).decode("ascii")
+        
+        async with httpx.AsyncClient() as http: 
+            try: 
+                await http.post(
+                    f"{self.http_url}/v1/effect/record", 
+                    json={
+                        "agent_hex": self.agent_hex, 
+                        "step_ordinal": step_ordinal, 
+                        "call_signature_hex": call_signature_hex, 
+                        "namespace": namespace,
+                        "output_payload_base64": b64_output 
+                    }, 
+                    timeout=5.0
+                )
+                if self.is_forked: 
+                    print(f"[RAQIM FORM RECORD] Step {step_ordinal} recorded to branch: {namespace}")
+            except Exception as e: 
+                print(f"[RAQIM RECORD ERROR] Failed to persist effect at step {step_ordinal}: {e}")
+
+    def _handle_divergence(self, step: int, call_sig_hex: str, namespace: str) -> None: 
+        """Executes the divergence policy when replayed code does not match WAL history.""" 
+        if self.on_divergence == "raise":
+            raise ReplayDivergedError(
+                                      f"[RAQIM REPLAY DIVERGED] code modified at Step {step} " 
+                                      f"(Signature: {call_sig_hex[:8]}...). No recorded trace matches history."
+                                      )
+        
+        self.is_forked = True 
+        phantom_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+        print(
+            f"\n [RAQIM PARALLEL UNIVERSE FORK] Code divergence at Step {step}! "
+            f"Auto-swtiching REPLAY -> LIVE mode on branch: {phantom_ns}"
+        )
+        
+    def _get_or_create_event_loop(self) -> asyncio.AbstractEventLoop: 
+        try: 
+            return asyncio.get_event_loop
+        except RuntimeError: 
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop
+        
     async def record_effect(self, call_signature: str, fn: Callable[[], Any], step_ordinal: Optional[int] = None, namespace: str = "/default") -> Any:
         """
         THE EFFECT INTERCEPTOR: 
