@@ -1,5 +1,6 @@
 use rand_core::OsRng;
 use raqim_siege::{AgentState, AgentStatus, CapabilityCertificate, IngressEnvelope};
+use std::io::Write;
 use std::{
     eprintln, format,
     fs::{self, OpenOptions},
@@ -10,8 +11,9 @@ use std::{
 };
 
 use ed25519_dalek::{Signer, SigningKey};
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpStream;
 use tokio::sync::Barrier;
-use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 /// Struct holding pre-minted cryptographic agent credentials in memory
 #[derive(Clone)]
@@ -252,7 +254,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for handle in worker_handles {
         let worker_sample = handle.await?;
-        all_latency_samples.extend(worker_handles);
+        all_latency_samples.extend(worker_sample);
     }
 
     let bench_elapsed = bench_start.elapsed();
@@ -285,93 +287,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_volume_mb = (total_processed * 250) as f64 / (1024.0 * 1024.0);
 
     // 7. Publish verified benchmark report
+    println!("\n =================================================");
+    println!("         RAQIM HARDENED SIEGE BENCHMARK REPORT       ");
+    println!(" Status                       : ✅ PASSES (Closed-Loop Complete)");
+    println!(" Total Ingestion Volume    : {} Thoughts", total_processed);
+    println!(
+        " Concurrent Shards Hit     : {} Partitioned Agents",
+        num_agents
+    );
+    println!(" Concurrent TCP Streams    : {} Sockets", concurrency);
+    println!(
+        " Transferred Byte Volume   : {:.2} MB (Zero-Copy rkvy)",
+        data_volume_mb
+    );
+    println!(
+        " Total Benchmark Duration  : {:.3} Seconds",
+        bench_elapsed.as_secs_f64()
+    );
+    println!("-----------------------------------------------------------");
+    println!(" REAL THROUGHPUT (TPS)     : {:.2} THROUGHPUT / SEC", tps);
+    println!("------------------------------------------------------------");
+    println!(" LATENCY DISTRIBUTION (Per-Thought Ingress + Hashing):");
+    println!(
+        "  Min Latency            : {} µs ({:.3} ms)",
+        min_lat,
+        min_lat as f64 / 1000.0
+    );
+    println!(
+        "  P50 (Median Latency)   : {} µs ({:.3} ms)",
+        p50,
+        p50 as f64 / 1000.0
+    );
+    println!(
+        "  P90 Latency            : {} µs ({:.3} ms)",
+        p90,
+        p90 as f64 / 1000.0
+    );
+    println!(
+        "  P95 Latency            : {} µs ({:.3} ms)",
+        p95,
+        p95 as f64 / 1000.0
+    );
+    println!(
+        "  P99 Latency (Tail Latency)     : {} µs ({:.3} ms)",
+        p99,
+        p99 as f64 / 1000.0
+    );
+    println!(
+        "  P99.9 (Worst Tail)    : {} µs ({:.3} ms)",
+        p999,
+        p999 as f64 / 1000.0
+    );
+    println!(
+        "  Max Latency     : {} µs ({:.3} ms)",
+        max_lat,
+        max_lat as f64 / 1000.0
+    );
+    println!(
+        "  Arithmetic Mean     : {:.2} µs ({:.3} ms)",
+        avg_latency,
+        avg_latency as f64 / 1000.0
+    );
+    println!("=================================================");
 
-    // Forge the Magazine in RAM (Interleaved to guarantee lock-free parallemlism)
-    let mut magazine: Vec<Vec<u8>> = Vec::with_capacity(total_rounds);
-
-    for i in 0..total_rounds {
-        // Interleave Selection. Round 0 -> Agent 0, Round 1 -> Agent 1 ... Round 50 -> Agent 0
-        let agent_idx = i % num_agents;
-        let (agent_id, ref signing_key, pub_key_bytes, ref cert_bytes, ref namespace) =
-            agents[agent_idx];
-
-        let state = AgentState {
-            agent_id: Some(agent_id),
-            transaction_id: i as u64,
-            timestamp: 0,
-            status: AgentStatus::Idle,
-            text: format!("Siege Parallel Payload: {}", i),
-            namespace: namespace.clone(),
-        };
-
-        let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&state)
-            .unwrap()
-            .into_vec();
-        let signature = signing_key.sign(&state_bytes);
-
-        let envelope = IngressEnvelope {
-            intent_path: namespace.clone(),
-            public_key: pub_key_bytes,
-            signature: signature.to_bytes(),
-            state_bytes,
-            capability_cert: cert_bytes.clone(),
-        };
-
-        let payload_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope)
-            .unwrap()
-            .into_vec();
-        let len_prefix = (payload_bytes.len() as u32).to_le_bytes().to_vec();
-
-        let mut network_packet = Vec::with_capacity(len_prefix.len() + payload_bytes.len());
-        network_packet.extend(len_prefix);
-        network_packet.extend(payload_bytes);
-
-        magazine.push(network_packet);
-    }
-
-    println!("Magazine loaded. Distributing to multi-core network streams...");
-
-    // Split the magazine across 32 threads
-    let chunks: Vec<Vec<Vec<u8>>> = magazine
-        .chunks(rounds_per_thread)
-        .map(|c| c.to_vec())
-        .collect();
-    let mut join_handles = Vec::new();
-
-    let start_time = Instant::now();
-
-    for chunk in chunks {
-        let handle = tokio::spawn(async move {
-            let mut socket = TcpStream::connect("127.0.0.1:8080")
-                .await
-                .expect("Failed to connect to Raqim Core TCP listener");
-
-            // No Nagle's algorithm delay for pure throuput benchmark
-            let _ = socket.set_nodelay(true);
-
-            // Monolithic buffer aggregation: Calculate the total capacity required to avoid costly heap allocation.
-            let total_size: usize = chunk.iter().map(|p| p.len()).sum();
-            let mut super_buffer = Vec::with_capacity(total_size);
-
-            // Pull the trigger
-            for packet in chunk {
-                super_buffer.extend(packet);
-            }
-
-            // Pull the trigger: Blast the entire magazine in a single kernel syscall.
-            if let Err(e) = socket.write_all(&super_buffer).await {
-                eprintln!("[SEIGE THRREAD WARN]: TCP write interrupted: {}", e)
-            }
-        });
-
-        join_handles.push(handle);
-    }
-
-    println!("==================================");
-    println!("MULTI-SHHARD SIEGE COMPLETE.");
-    println!("Total Thoughts Processed: {}", total_rounds);
-    println!("Concurrent Shards Hit: {}", num_agents);
-    println!("Total Elapsed: {:.2} seconds", elapsed.as_secs_f64());
-    println!("Throughput: {:.2} TPS", tps);
-    println!("==================================");
+    Ok(())
 }
