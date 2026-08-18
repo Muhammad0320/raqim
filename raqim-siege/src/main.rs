@@ -1,45 +1,94 @@
 use rand_core::OsRng;
 use raqim_siege::{AgentState, AgentStatus, CapabilityCertificate, IngressEnvelope};
-use std::{fs, time::Instant};
+use std::{
+    fs::{self, OpenOptions},
+    path::Path,
+    println,
+    time::Instant,
+};
 
 use ed25519_dalek::{Signer, SigningKey};
 use tokio::net::TcpStream;
 
+/// Struct holding pre-minted cryptographic agent credentials in memory
+#[derive(Clone)]
+struct VirtualAgent {
+    agent_id: [u8; 16],
+    signing_key: Arc<SigningKey>,
+    pub_key_bytes: [u8; 32],
+    cert_bytes: Vec<u8>,
+    namespace: String,
+}
+
 #[tokio::main]
-async fn main() {
-    println!("Bismillah. Forging the Enterprise Distributed Magazine...");
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("===================================");
+    println!("Bismillah. Initializing Hardened Raqim Siege Benchmark Suite v1.0.0");
+    println!("=====================================");
 
-    let total_rounds = 500_000;
-    let concurrency = 32;
-    let num_agents = 50;
-    let rounds_per_thread = total_rounds / concurrency;
+    // Benchmark parameter & harware profiling
+    let total_rounds: usize = 500_000;
+    let concurrency: usize = 32;
+    let num_agents: usize = 50;
+    let rounds_per_worker = total_rounds / concurrency;
 
-    // Load the Soverign Master Key directly from the secure disk vault
+    println!("[CONFIG] Total Ingestion Rounds: {} ", total_rounds);
+    println!("[CONFIG] Concurrent TCP Workers: {}", concurrency);
+    println!("[CONFIG] Partitioned Shards: {}", num_agents);
+    println!("[CONFIG] Rounds Per Worker, {}", rounds_per_worker);
+
+    // Master Swarm CA Bootstrapping
+
     println!("[SIEGE CA] Acessing Swarm Master from ./ca-keys/swarm_master.key ....");
-    let master_key_bytes = fs::read("./ca-keys/swarm_master.key")
-        .expect("FATAL: Master Key Missing. Run raqim-core once to bootstrap keys ");
+    let key_path = ["./keys/master_private.pem", "./ca-keys/swarm_master.key"];
+    let mut master_key_bytes_opt: Option<Vec<u8>> = None;
 
-    let master_key_array: [u8; 32] = master_key_bytes.as_slice().try_into().unwrap();
-    let master_signing_key = SigningKey::from_bytes(&master_key_array);
+    for path_str in &key_paths {
+        if Path::new(path_str).exists() {
+            if let Ok(bytes) = fs::read(path_str) {
+                if bytes.len() == 32 {
+                    println!("[SIEGE CA] Loaded Master Key from  '{}' ", path_str);
+                    master_key_bytes_opt = Some(bytes);
+                    break;
+                }
+            }
+        }
+    }
 
-    // Forge 50 agents and Certificates.
+    let master_signing_key = match master_key_bytes_opt {
+        Some(bytes) => {
+            let key_array: [u8; 32] = bytes.as_slice().try_into()?;
+            SigningKey::from_bytes(&key_array)
+        }
+
+        None => {
+            println!("[SEIGE CA] No master key found on disk. Auto-generating fresh keypair... ");
+            fs::create_dir_all("./keys")?;
+
+            let mut csprng = OsRng;
+            let fresh_key = SigningKey::generate(&mut csprng);
+            let mut file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open("./keys/master_private.pem")?;
+            file.write_all(&fresh_key.to_bytes())?;
+            file.sync_all()?;
+
+            fresh_key
+        }
+    };
+
+    // Minting 50  virtual agents
     println!(
-        "[SIEGE CA] Minting {} Crytographic Identity and Passports.... ",
+        "[SIEGE CA] Minting {} certified virtual agent identities.... ",
         num_agents
     );
     let mut agents = Vec::with_capacity(num_agents);
 
     for i in 0..num_agents {
         let mut csprng = OsRng;
-        let agent_signing_key = SigningKey::generate(&mut csprng);
-        let pub_key_bytes = agent_signing_key.verifying_key().to_bytes();
-
-        let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
-        hasher.update(&pub_key_bytes);
-
-        let mut agent_id = [0u8; 16];
-        hasher.finalize_xof().fill(&mut agent_id);
-        let agent_hex = hex::encode(agent_id);
+        let agent_key = SigningKey::generate(&mut csprng);
 
         let namespace = format!("/siege/shard_{:02}", i);
 
