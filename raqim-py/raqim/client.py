@@ -14,7 +14,6 @@ from typing import (
     List,
     Optional,
     Tuple,
-    Union,
 )
 
 import blake3
@@ -130,7 +129,7 @@ class RaqimClient:
         # The callback function provided by the developer
         self._reality_fork_hook: Callable[[str], None] = None 
     
-    
+ 
     async def boot(self): 
         """
         Enterprise Ignition Sequence: 
@@ -285,7 +284,38 @@ class RaqimClient:
                 # Path C: Synchronous function
                 @functools.wraps(fn)
                 def sync_wrapper(*args: Any, **kwargs: Any) -> Any: 
+                    @functools.wraps(fn)
+                    def sync_wrapper(*args: Any, **kwargs: Any) -> Any: 
+                        step = _execution_step_context.get()
+                        _execution_step_context.set(step+1)
+                        
+                        call_sig_hex, _ = CanonicalSerializer.derive_call_signature_hash(fn, args, kwargs, custom_signature)
+                        
+                        target_ns = namespace
+                        if self.is_forked:
+                            target = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+                            
+                        # For sync functions, bridge to async execution via loop runner
+                        loop = self._get_or_create_event_loop()
+                        
+                        if self.mode == "replay" and not self.is_forked: 
+                            cached = loop.run_until_complete(
+                                self._fetch_recorded_effect(step, call_sig_hex)
+                            ) 
+                            if cached is not None: 
+                                print(f"[RAQIM REPLA] Step {step} (Sync) replayed from WAL ($0 API cost.) "  )
+                                return cached 
+
+                            self._handle_divergence(step, call_sig_hex, namespace)
+                            target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+                        
+                        result = fn(*args, **kwargs)
+                        loop.run_until_complete(self._persist_effect(step, call_sig_hex, result, target_ns))
+                        return result 
                     
+                    return sync_wrapper
+                
+                return decorator
 
     # Internal Effect Engine Helpers
     async def _fetch_recorded_effect(self, step_ordinal: int, call_sig_hex: str) -> Optional[Any]:
@@ -353,76 +383,16 @@ class RaqimClient:
             asyncio.set_event_loop(loop)
             return loop
         
-    async def record_effect(self, call_signature: str, fn: Callable[[], Any], step_ordinal: Optional[int] = None, namespace: str = "/default") -> Any:
-        """
-        THE EFFECT INTERCEPTOR: 
-        In 'record' mode: Runs fn(), persists output to WAL + Merkle DAG, rreturns result.
-        In 'replay' mode: Bypass fn(), fetches recorded payload from WAL
-        """
-
-        # Auto Increment Step ordinal if not explicitly passed
-        if step_ordinal is None: 
-            step_ordinal = self.active_step
-            self.active_step +=1
-            
-        target_namespace = namespace 
-        if self.is_forked: 
-            target_namespace = f"phantom_{namespace}_{self.agent_hex}_step{step_ordinal}"
-        
-        
-        call_sig_hash = blake3.blake3(call_signature.encode("utf-8"), derive_key="raqim.effect.v1.signature").digest(length=32)
-         
-        call_sig_hex = call_sig_hash.hex()
-        
-        async with httpx.AsyncClient() as http: 
-            if self.mode == "replay": 
-                resp = await http.post(f"{self.http_url}/v1/effect/get", json={ "agent_id_hex": self.agent_hex, "step_ordinal": step_ordinal, "call_signature_hex": call_sig_hex })
-                data = resp.json()
-                
-                if data.get("found"):
-                    
-                    # Step matched recorded trace exactly! Decode and return Verbatim ($0 cost)
-                    raw_byte = base64.b64decode( data["output_payload_base64"] )
-                    print(f"[RAQIM REPLAY] Step {step_ordinal} replayed from WAL ($0 API cost). ")
-                    return json.loads(raw_byte.decode("utf-8")) 
-
-              # ------ DIVERGENCE DETECTED ----------
-              
-                if self.on_divergence == "raise":
-                    raise ReplayDivergedError(f"[RAQIM REPLAY DIVERGED] Code modified at Step {step_ordinal} "
-                                            f"(Signature: {call_sig_hex[:8]}...). No recorded trace matches."
-                                            )
-                    
-                # ON_DIVERGENCE = "FORK": reality form transition!
-                print(
-                    f"\n ⚡ [RAQIM PARALLEL UNIVERSE FORK] Code divergennce at step {step_ordinal}!"
-                    f"Auto-switching REPLAY --> LIVE mode on namespace: phantom_{namespace}_{self.agent_hex}_step{step_ordinal}"
-
-                    )
-                self.is_forked = True 
-                target_namespace = f"phantom_{namespace}_{self.agent_hex}_step{step_ordinal}"
-    
-            else: 
-                if asyncio.iscoroutinefunction(fn):
-                    result = await fn()
-                else: 
-                    result = fn()
-                output_bytes = json.dumps(result).encode("utf-8")
-                b64_output = base64.b64decode(output_bytes).decode("utf-8")
-                
-                await http.post(f"{self.http_url}/v1/effect/record", json={"agent_id_hex": self.agent_hex, "step_ordinal": step_ordinal, "call_signature_hex": call_sig_hex, "output_payload_base64": b64_output, "namespace": target_namespace }) 
-                if self.is_forked: 
-                    print(f"[RAQIM FORK RECORD] Recorded step {step_ordinal} to parallel universe branch: {target_namespace} ")
-
-                return result
-
+    # A2A Websocket Swarm router 
     async def connect_swarm(self):
-        """Initializes the background WebSocket Multiplexer for A2A."""
+        """Connect  background WebSocket Multiplexer to Raqim's A2A gateway"""
         self._ws_connection = await websockets.connect(self.ws_url)
         asyncio.create_task(self._websocket_listener())
 
     async def _websocket_listener(self):
-        """The Background Router: Mirrors the Rust tokio::select/recv loop."""
+        """The Background Router matching incoming A2A tp suspended Futures"""
+        if not self._ws_connection: 
+            return 
         try:
             async for message in self._ws_connection:
                 data = json.loads(message)
@@ -433,36 +403,36 @@ class RaqimClient:
                     req_id = data["request_id"]
                     if req_id in self._pending_requests:
                         future = self._pending_requests.pop(req_id)
-                        future.set_result(data["answer"])
+                        future.set_result(data.get("answer")) 
                 
                 elif msg_type == "IncomingQuestion":
                     # Someone is asking us a question!
-                    cap = data["capability"]
-                    if cap in self._capabilities:
+                    cap = data.get("capability")
+                    if cap and cap in self._capabilities:
                         handler = self._capabilities[cap]
                         # Execute the user's AI logic
-                        answer_bytes = await handler(bytes(data["question"]))
+                        answer_bytes = await handler(bytes(data.get("question")))
                         
                         # Send the reply back up the socket
                         reply = {
                             "type": "ReplyToQuestion",
-                            "request_id": data["request_id"],
+                            "request_id": data.get("request_id"),
                             "answer": list(answer_bytes), 
                             "responder_hex": self.agent_hex
                         }
                         await self._ws_connection.send(json.dumps(reply))
                         
         except websockets.ConnectionClosed:
-            print("[RAQIM] Swarm WebSocket disconnected.")
+            print("[RAQIM] Swarm WebSocket connection closed.")
 
     async def ask_swarm(self, capability: str, question: bytes, sender_hex: str) -> bytes:
-        """Suspends the Python coroutine until the answer arrives over WS."""
+        """Suspends the Python coroutine until the answer arrives over A2A network"""
         if not self._ws_connection:
-            raise Exception("Must call connect_swarm() first.")
+            raise RaqimClientError("Must call `await client.connect_swarm()` before querying swarm.")
 
         request_id = str(uuid.uuid4())
         loop = asyncio.get_running_loop()
-        future = loop.create_future()
+        future: asyncio.Future[bytes] = loop.create_future()
         self._pending_requests[request_id] = future
 
         # True crytography
@@ -475,7 +445,8 @@ class RaqimClient:
             "question": list(question),
             "sender_hex": sender_hex,
             "public_key": list(self.crypto_core.public_key_bytes),
-            "signature": list(signature) 
+            "signature": list(signature),
+            "capability_cert": ""
         }
 
         await self._ws_connection.send(json.dumps(ask_msg))
@@ -484,25 +455,24 @@ class RaqimClient:
         return await asyncio.wait_for(future, timeout=15.0)
 
     async def serve_capability(self, capability: str, handler: Callable[[bytes], Awaitable[bytes]]):
-        """Registers a listener on the Global Swarm."""
+        """Exposes an AI logic capability to the global swarm."""
         if not self._ws_connection:
-            raise Exception("Must call connect_swarm() first.")
+            raise RaqimClientError("Must call `await client.connect_swarm() first.")
             
         self._capabilities[capability] = handler
         msg = {"type": "RegisterCapability", "capability": capability}
         await self._ws_connection.send(json.dumps(msg))
 
-
+# Zero Dependency Offline merkle proof verifier
 def verify_state_proof_offline(payload_bytes: bytes, agent_id_str: str, proof_dict: dict) -> bool: 
     """ 
     OFFLINE MERKLE VERIFIER 
     Recomputes the Blake3 Merkle path offline with ZERO networkk calls. 
-    And as expected returns True if the transaction is proven to be in the Merkle root
-    
+    And as expected returns True if the transaction is mathematically bound to the Public Merkle root
     """
     agent_id_bytes = bytes.fromhex(agent_id_str)
     
-    # Compute leaf hash
+    # Recompute leaf hash 
     hasher = blake3.blake3(derive_key="raqim.axon.v1.leaf")
     hasher.update(payload_bytes)
     hasher.update(agent_id_bytes)
@@ -526,3 +496,4 @@ def verify_state_proof_offline(payload_bytes: bytes, agent_id_str: str, proof_di
         index //=2
         
     return current_hash.hex() == proof_dict["merkle_root_hex"]
+

@@ -1025,7 +1025,6 @@ async fn main() {
                         task_event_tx.clone(),
                         Vec::new(),
                         Vec::new(),
-                        task_telemetry.clone(),
                     )
                     .await;
 
