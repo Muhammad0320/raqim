@@ -1,14 +1,17 @@
 use rand_core::OsRng;
 use raqim_siege::{AgentState, AgentStatus, CapabilityCertificate, IngressEnvelope};
 use std::{
+    eprintln, format,
     fs::{self, OpenOptions},
     path::Path,
     println,
-    time::Instant,
+    sync::Arc,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use ed25519_dalek::{Signer, SigningKey};
-use tokio::net::TcpStream;
+use tokio::sync::Barrier;
+use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 /// Struct holding pre-minted cryptographic agent credentials in memory
 #[derive(Clone)]
@@ -40,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Master Swarm CA Bootstrapping
 
     println!("[SIEGE CA] Acessing Swarm Master from ./ca-keys/swarm_master.key ....");
-    let key_path = ["./keys/master_private.pem", "./ca-keys/swarm_master.key"];
+    let key_paths = ["./keys/master_private.pem", "./ca-keys/swarm_master.key"];
     let mut master_key_bytes_opt: Option<Vec<u8>> = None;
 
     for path_str in &key_paths {
@@ -89,37 +92,201 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..num_agents {
         let mut csprng = OsRng;
         let agent_key = SigningKey::generate(&mut csprng);
+        let pub_key_bytes = agent_key.verifying_key().to_bytes();
 
+        // Derive 16-byte identity using Blake3 domain separation
+        let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
+        hasher.update(&pub_key_bytes);
+        let mut agent_id = [0u8; 16];
+        hasher.finalize_xof().fill(&mut agent_id);
+
+        let agent_hex = hex::encode(agent_id);
         let namespace = format!("/siege/shard_{:02}", i);
 
-        // Forge the capability passport.
+        // Forge the capability certificate passport.
         let mut cert = CapabilityCertificate {
             agent_hex: agent_hex.clone(),
-            group_name: "siege_tester".to_string(),
+            group_name: "admin_group".to_string(),
             expiration_timestamp: u64::MAX,
             master_signature: Vec::new(),
         };
 
         // Sign the passport with the Master Key
-        let serialized_raw = postcard::to_allocvec(&cert).unwrap();
+        let serialized_raw = postcard::to_allocvec(&cert)?;
 
         let master_sig = master_signing_key.sign(&serialized_raw);
         cert.master_signature = master_sig.to_bytes().to_vec();
 
-        let cert_bytes = postcard::to_allocvec(&cert).unwrap();
-        agents.push((
+        let cert_bytes = postcard::to_allocvec(&cert)?;
+        agents.push(VirtualAgent {
             agent_id,
-            agent_signing_key,
+            signing_key: Arc::new(agent_key),
             pub_key_bytes,
             cert_bytes,
             namespace,
-        ));
+        });
     }
 
-    println!("[SIEGE] Agents deployed. Allocating 1,000,000 rounds in RAM... ");
+    let shared_agents = Arc::new(agents);
+    let sync_barrier = Arc::new(Barrier::new(concurrency + 1));
+    let mut worker_handles = Vec::with_capacity(concurrency);
+
+    println!(
+        "[SIEGE] Spawing {} concurrent TCP worker streams... ",
+        concurrency
+    );
+
+    // CONCURRENT WORKER PIPELINE
+    for worker_id in 0..concurrency {
+        let agent_ref = shared_agents.clone();
+        let barrier_ref = sync_barrier.clone();
+
+        let handle = tokio::spawn(async move {
+            // Establish persisent TCP stream to Raqim core daemon
+            let mut stream = match TcpStream::connect("127.0.0::8080").await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!(
+                        "[WORKER {} FATAL] Failed to connect to 127.0.0.1:8080: {} ",
+                        worker_id, e
+                    );
+                    return Vec::new();
+                }
+            };
+
+            // Disable Nagle's algorith for low-latency packet streaming
+            let _ = stream.set_nodelay(true);
+
+            let mut latency_samples_micros: Vec<u64> = Vec::with_capacity(rounds_per_worker);
+
+            // Sync all workers at the starting gate before benchmarking starts
+            barrier_ref.wait().await;
+
+            for round_idx in 0..rounds_per_worker {
+                let global_idx = (worker_id * rounds_per_worker) + round_idx;
+                let agent_idx = global_idx % agent_ref.len();
+                let agent = &agent_ref[agent_idx];
+
+                // Fixed: live unix ts prevents Aegis Antireply drops
+                let now_ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+
+                // Fixed: Globally unique 128-bit UUIDv7 tx_id
+                let tx_id = uuid::Uuid::now_v7().as_u128();
+
+                let state = AgentState {
+                    agent_id: Some(agent.agent_id),
+                    transaction_id: tx_id,
+                    namespace: agent.namespace.clone(),
+                    timestamp: now_ts,
+                    status: AgentStatus::Idle,
+                    text: format!("Siege Payload #{} [Worker {}]", global_idx, worker_id),
+                };
+
+                // Zero-copy rkyv serialization of AgentState
+                let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&state)
+                    .expect("Failed to serialize AgentState")
+                    .into_vec();
+
+                // Ed25519 signature over state bytes
+                let signature = agent.signing_key.sign(&state_bytes);
+
+                let envelope = IngressEnvelope {
+                    intent_path: agent.namespace.clone(),
+                    public_key: agent.pub_key_bytes,
+                    signature: signature.to_bytes(),
+                    state_bytes,
+                    capability_cert: agent.cert_bytes.clone(),
+                };
+
+                // Zero-copy rkyv serialization of IngressEnvelope
+                let envelope_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope)
+                    .expect("Failed to serialize IngressEnvelope")
+                    .into_vec();
+
+                // Pack 4-byte Little-Endian length prefix
+                let len_prefix = (envelope_bytes.len() as u32).to_le_bytes();
+
+                // Measure individual packet write & transport latency
+                let op_start = Instant::now();
+
+                // Send frame.
+                if let Err(e) = stream.write_all(&len_prefix).await {
+                    eprintln!(
+                        "[WORKER {} ERROR] Length prefix write failed: {}",
+                        worker_id, e
+                    );
+                    break;
+                }
+
+                if let Err(e) = stream.write_all(&envelope_bytes).await {
+                    eprintln!("[WORKER {} ERROR] Payload write failed: {}", worker_id, e);
+                    break;
+                }
+
+                let op_micros = op_start.elapsed().as_micros() as u64;
+                latency_samples_micros.push(op_micros);
+            }
+
+            // Flush remaining socket bytes
+            let _ = stream.flush().await;
+            latency_samples_micros
+        });
+
+        worker_handles.push(handle);
+    }
+
+    // 5. Synchronized execution & time measurement
+    println!(
+        "\n[SIEGE] All {} worker ready. Starting benchmark firehose....",
+        concurrency
+    );
+
+    let bench_start = Instant::now();
+    // Release workers simultaneously
+    sync_barrier.wait().await;
+
+    let mut all_latency_samples: Vec<u64> = Vec::with_capacity(total_rounds);
+
+    for handle in worker_handles {
+        let worker_sample = handle.await?;
+        all_latency_samples.extend(worker_handles);
+    }
+
+    let bench_elapsed = bench_start.elapsed();
+
+    // Closed-Loop drain  & latency percentile analysis
+    println!("[SIEGE] Packet transmitted. Calculating percentiles...");
+
+    let total_processed = all_latency_samples.len();
+    if total_processed == 0 {
+        eprintln!(
+            "[SIEGE ERROR] Zero packets were proocessed. Ensure rawim-core is running on port  8080."
+        );
+        return Ok(());
+    }
+
+    // Sort all latency samples for statistical analysis
+    all_latency_samples.sort_unstable();
+
+    let p50 = all_latency_samples[(total_processed as f64 * 0.50) as usize];
+    let p90 = all_latency_samples[(total_processed as f64 * 0.90) as usize];
+    let p95 = all_latency_samples[(total_processed as f64 * 0.95) as usize];
+    let p99 = all_latency_samples[(total_processed as f64 * 0.99) as usize];
+    let p999 =
+        all_latency_samples[((total_processed as f64 * 0.999) as usize).min(total_processed - 1)];
+    let max_lat = all_latency_samples[total_processed - 1];
+    let min_lat = all_latency_samples[0];
+
+    let avg_latency: f64 = all_latency_samples.iter().sum::<u64>() as f64 / total_processed as f64;
+    let tps = (total_processed as f64) / bench_elapsed.as_secs_f64();
+    let data_volume_mb = (total_processed * 250) as f64 / (1024.0 * 1024.0);
+
+    // 7. Publish verified benchmark report
 
     // Forge the Magazine in RAM (Interleaved to guarantee lock-free parallemlism)
-
     let mut magazine: Vec<Vec<u8>> = Vec::with_capacity(total_rounds);
 
     for i in 0..total_rounds {
@@ -199,14 +366,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         join_handles.push(handle);
     }
-
-    // Wait for all 32 threads to empty their magazines
-    for handle in join_handles {
-        let _ = handle.await;
-    }
-
-    let elapsed = start_time.elapsed();
-    let tps = (total_rounds as f64) / elapsed.as_secs_f64();
 
     println!("==================================");
     println!("MULTI-SHHARD SIEGE COMPLETE.");
