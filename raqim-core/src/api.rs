@@ -426,6 +426,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                     signature: sig_bytes,
                     sender_capability_cert: cert_bytes,
+                    timestamp: current_ts,
                 };
 
                 // Start the stopwatch
@@ -433,11 +434,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                 match os_state_clone
                     .global_net
-                    .execute_a2a_rpc(
-                        envelope,
-                        os_state_clone.aegis.clone(),
-                        os_state_clone.telemetry.clone(),
-                    )
+                    .execute_a2a_rpc(envelope, os_state_clone.aegis.clone())
                     .await
                 {
                     Ok((answer, responder_hex)) => {
@@ -956,7 +953,6 @@ pub async fn http_ingress_endpoint(
         )
         .map_err(|e| ApiError::Forbidden(format!("Aegis Interdiction: {}", e)))?;
 
-    let task_telemetry = state.telemetry.clone();
     let task_event = state.event_tx.clone();
     let task_axon = state.axon.clone();
     let task_wal = state.wal.clone();
@@ -987,7 +983,6 @@ pub async fn http_ingress_endpoint(
             task_event,
             Vec::new(),
             Vec::new(),
-            task_telemetry,
         )
         .await;
 
