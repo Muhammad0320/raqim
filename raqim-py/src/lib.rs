@@ -41,7 +41,7 @@ impl RaqimCryptoCore {
         Ok(Self {
             signing_key,
             pub_key_bytes,
-            capability_cert_bytes,
+            capability_cert_bytes: capability_cert,
         })
     }
 

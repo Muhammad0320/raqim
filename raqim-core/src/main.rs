@@ -21,7 +21,7 @@ use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
 use raqim_core::witness::WormWitnessEngine;
 use raqim_core::{
-    AgentState, IngressEnvelope, OpLog, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
+    AgentState, IngressEnvelope, OpLog, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade, generate_uuidv7_txid,
 };
 use tower_http::cors::{Any, CorsLayer};
 
@@ -102,7 +102,7 @@ async fn main() {
             }
         }
     });
-
+    
     // BOOT-TIME LICENSE_VERIFIICATION
     const RAQIM_PUBLIC_KEY: &[u8] = include_bytes!("../../keys/raqim_public.pem");
 
@@ -660,7 +660,6 @@ async fn main() {
                         let tx_clone = w_event_tx.clone();
                         let lance_clone = w_lance.clone();
                         let ae_clone = w_aegis.clone();
-                        let tele_clone = w_telemetry.clone();
                         let shard_clone = w_brain_shard.clone();
 
                         // When an agent connects or boots, we retreive or initialize its specific tracker
@@ -685,7 +684,6 @@ async fn main() {
                             replay_responses: Vec::new(),
                             replay_seeds: Vec::new(),
                             replay_timestamps: Vec::new(),
-                            telemetry: tele_clone,
                             a2a_response_cache: Vec::new(),
                             http_response_cache: Vec::new(),
                             a2a_incoming_cache: Vec::new(),
@@ -711,7 +709,7 @@ async fn main() {
                         drop(tracker_lock);
 
                         // Get the exact current Transaction ID
-                        let current_tx = w_tx_couter.load(std::sync::atomic::Ordering::SeqCst);
+                        let current_tx = generate_uuidv7_txid();
                         let w_engine_clone = w_wasm_engine.clone();
                         let wasm_bytes_clone = wasm_bytes.clone();
 
