@@ -11,7 +11,7 @@ use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::CortexDataPlane;
 use raqim_core::embedding::{EmbeddingProvider, LocalBgeProvider, OpenAIProvider};
 use raqim_core::health::{HealthMonitor, SystemHealth};
-use raqim_core::hot_memory::HotVectorBuffer;
+use raqim_core::hot_memory::{HotVectorBuffer, HotVectorEntry};
 use raqim_core::lancedb_store::LanceEngine;
 use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
@@ -21,7 +21,7 @@ use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
 use raqim_core::witness::WormWitnessEngine;
 use raqim_core::{
-    AgentState, IngressEnvelope, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
+    AgentState, IngressEnvelope, OpLog, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
 };
 use tower_http::cors::{Any, CorsLayer};
 
@@ -375,10 +375,8 @@ async fn main() {
 
                     // Prevent Amnesia (Data Loss): File was rotated but never made it to lancedb 
                     println!("[PHOENIX] Orphaned WAL '{}' detected in PENDING state. Queuing for RAM Hydration", &target_file);
-                    if Path::new(&target_path).exists {
-
+                    if Path::new(&target_file).exists {
                         files_to_scan.push(target_file.to_string());
-
                     }
                 }
             }
@@ -388,7 +386,7 @@ async fn main() {
 
     // Scans the active WAL last so temporal order is preserved
     if Path::new(&config.wal_path).exists() {
-        file_to_scan.push(config.wal_path.clone())
+        files_to_scan.push(config.wal_path.clone())
     }
 
 
@@ -396,7 +394,7 @@ async fn main() {
     let witness_engine = Arc::new(WormWitnessEngine::new( &config.witness_path, master_signing_key.clone(), None ));
 
     let mut recovered_logs: Vec<OpLog> = Vec::new();
-    let mut upcompacted_count = 0; 
+    let mut uncompacted_count = 0; 
 
 
     // Execute assembled scanning over the assembled timeline array
@@ -428,15 +426,15 @@ async fn main() {
                 let entry_slice = &wal_bytes[offset..offset + entry_len];
 
                 if let Ok(archived_log) =
-                    rkyv::access::<<OpLog as rkyv::Archive>::Archived>(entry_slice)
+                    rkyv::access::<<OpLog as rkyv::Archive>::Archived, rkyv::rancor::Error>(entry_slice)
                 {
                     if let Ok(recovered_log) =
                         rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
                     {
-                        axon.hydrate_from_recoverey(&recovered_log);
+                        axon.hydrate_from_recovery(&recovered_log);
 
                         // Fetch crdt shard for this namespace and apply historical delta
-                        let brain = brain_shard.get_or_create_brain(&recovered_log.namespace);
+                        let brain = brain_shard.get_or_create_brain(&recovered_log.state.namespace);
                         if let Err(e) = brain.assimilate_foreign_thought(&recovered_log.delta) {
                             eprintln!("[PHOENIX WARN] Failed to assimilate CRDT delta during recovery: {},", e);
                         }
@@ -477,20 +475,20 @@ async fn main() {
                         vector: vectors[i].clone(),
                     });
                 }
-                hot_buffer.push_batch(hot_entries);
-                println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_buffer.len());
+                hot_buffer.push_back(hot_entries);
+                println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_entries.len());
             }                
         }
 
         // Load un-tamperable chronological WORM roots and assert execution matrix match 
         let anchored_witness = witness_engine.load_local_witness();
         if !anchored_witness.is_empty() {
-            axon.execute_forensic_boot_audit(witnesses, &witness_engine.clone()).await?;
+            axon.execute_forensic_boot_audit(&anchored_witness, &witness_engine.clone()).await?;
         }
 
         println!(
             "[INITIALIIZATION] Phoenix protocol Complete. Hydrated {} log frames into Axon DAG memory. ",
-            recovered_count
+            recovered_logs.len()
         );
 
     // ---  COMPACTION EVENT LISTENENR  (Watermark eviction) ---- 
@@ -573,10 +571,8 @@ async fn main() {
     let w_cortex_tx = cortex_tx.clone();
     let w_global_net = global_net.clone();
     let w_wasm_engine = wasm_engine.clone();
-    let w_tx_couter = tx_counter.clone();
     let w_event_tx = event_tx.clone();
     let w_aegis = aegis.clone();
-    let w_telemetry = telemetry.clone();
     let w_brain_shard = brain_shard.clone();
 
     // Spawns a dedicated background thread to monitor the plugins folder
@@ -789,12 +785,10 @@ async fn main() {
         aegis: aegis.clone(),
         mem_router: mem_router.clone(),
         global_net: global_net.clone(),
-        telemetry: telemetry.clone(),
         axon: axon.clone(),
         brain: brain_shard.clone(),
         lance: lance_engine.clone(),
         cortex_tx: cortex_tx.clone(),
-        global_tx_counter: tx_counter.clone(),
         wal: wal.clone(),
         event_tx: event_tx.clone(),
 

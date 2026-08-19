@@ -25,7 +25,6 @@ use tokio_stream::wrappers::BroadcastStream;
 
 use serde::{Deserialize, Serialize};
 use std::result::Result::{Err, Ok};
-use std::sync::atomic::AtomicU64;
 use std::{collections::HashMap, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::broadcast::Sender;
@@ -44,7 +43,7 @@ use crate::registry::SwarmRegistry;
 use crate::state::SwarmStateRegistry;
 use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
-    network::GlobalNetworkBridge, telemetry::TelemetryEngine,
+    network::GlobalNetworkBridge,
 };
 use crate::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
 
@@ -174,11 +173,9 @@ pub struct ApiState {
     pub brain: Arc<SwarmStateRegistry>,
     pub aegis: Arc<AegisGateKeeper>,
     pub global_net: Arc<GlobalNetworkBridge>,
-    pub telemetry: Arc<TelemetryEngine>,
     pub cortex_tx: UnboundedSender<Vec<u8>>,
     pub wal: Arc<WalEngine>,
     pub lance: Arc<LanceEngine>,
-    pub global_tx_counter: Arc<AtomicU64>,
 
     pub event_tx: Sender<SystemEvent>,
     pub ui_tx: Sender<UiEvent>,
@@ -1048,11 +1045,6 @@ pub async fn dashboard_cards_endpoint(
     // Vault capacity (Direct from lance)
     let total_vec = state.lance.get_total_vector_count().await.unwrap_or(0);
 
-    // Global Transactions (Direct from the Atomic counter)
-    let highest_tx = state
-        .global_tx_counter
-        .load(std::sync::atomic::Ordering::SeqCst);
-
     // Active agents (60s Rolling window)
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1072,7 +1064,7 @@ pub async fn dashboard_cards_endpoint(
         .count();
 
     Ok(Json(DashboardCards {
-        global_transactions: highest_tx,
+        // global_transactions: highest_tx,
         active_agents: active_count,
         vault_capacity: total_vec,
     }))
@@ -1169,10 +1161,6 @@ pub async fn cluster_info_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
 ) -> Result<Json<Value>, ApiError> {
-    let highest_tx = state
-        .global_tx_counter
-        .load(std::sync::atomic::Ordering::SeqCst);
-
     let pending_wal_items = state.wal.get_pending_count().await;
     let wal_size = std::fs::metadata(&state.config.wal_path)
         .map(|m| m.len())
@@ -1182,7 +1170,7 @@ pub async fn cluster_info_endpoint(
 
     let payload = json!({
         "node_id": node_id,
-        "highest_tx_id": highest_tx,
+        // "highest_tx_id": highest_tx,
         "wal_bytes": wal_size,
         "buffer_load": pending_wal_items
     });
