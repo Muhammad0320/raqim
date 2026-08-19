@@ -1,7 +1,7 @@
 use ed25519_dalek::SigningKey;
 use notify::{Event, Watcher};
 use rand_core::OsRng;
-use raqim_core::aegis::{self, AegisConfigFile, AegisGateKeeper, GroupPolicy};
+use raqim_core::aegis::{ AegisConfigFile, AegisGateKeeper};
 use raqim_core::api::{ApiState, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 
@@ -19,7 +19,6 @@ use raqim_core::nucleus::WalEngine;
 use raqim_core::registry::SwarmRegistry;
 use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
-use raqim_core::telemetry::TelemetryEngine;
 use raqim_core::witness::WormWitnessEngine;
 use raqim_core::{
     AgentState, IngressEnvelope, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
@@ -28,7 +27,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool};
 use std::sync::{Arc, Mutex};
 use std::{eprintln, fs, println};
 
@@ -190,7 +189,7 @@ async fn main() {
     let axon = Arc::new(AxonGateKeeper::new());
 
     // LEAK-PROOF BROADCAST RECEIVER LOOP: Spawn consumer loop to detect lagging and evict slow readers automatically
-    let mut system_event_subscriber = event_tx.subscribe();
+    let mut system_events_subscriber = event_tx.subscribe();
     tokio::spawn(async move {
 
         loop {
@@ -206,8 +205,7 @@ async fn main() {
 
                 Err(broadcast::error::RecvError::Lagged(skipped_count)) => {
                     // Memory Safeguard: Clear internal lags forcefully to protect RAM
-                    eprintln!("[MEMORY WARNING] Subscriber loop lagged behind channel sequence!" 
-                      "Forcefully skipped {} events to prevent heap memory growth", skipped_count
+                    eprintln!("[MEMORY WARNING] Subscriber loop lagged behind channel sequence! \n Forcefully skipped {} events to prevent heap memory growth", skipped_count
                      );
                 }
 
@@ -249,12 +247,12 @@ async fn main() {
 
     let initial_policies = parsed_cfg.to_group_policies();
 
-    let aegis = AegisGateKeeper::new(
+    let aegis = Arc::new(AegisGateKeeper::new(
         initial_policies,
         &master_public_key,
         event_tx.clone(),
         ui_tx.clone(),
-    );
+    ));
 
     let aegis_clone = aegis.clone(); 
     let (watch_tx, mut watch_rx) = tokio::sync::mpsc::channel::<Result< Event, notify::Error >>(10);
@@ -852,12 +850,10 @@ async fn main() {
 
                 println!("External Agent connected from: {}", addr);
 
-                let task_telemetry = telemetry.clone();
                 let task_axon = axon.clone();
                 let task_cortex_tx = cortex_tx.clone();
                 let task_wal = wal.clone();
                 let global_publisher = global_net.clone();
-                let task_tx_couter = tx_counter.clone();
                 let task_event_tx = event_tx.clone();
                 let task_aegis = aegis.clone();
                 let task_ui_tx = ui_tx.clone();

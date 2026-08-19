@@ -50,7 +50,9 @@ pub struct AgentState {
 }
 
 // The current execution state of the agent in the swarm.
-#[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(
+    Archive, Deserialize, Serialize, Debug, PartialEq, Clone, SerdeDeserialize, SerdeSerialize,
+)]
 pub enum AgentStatus {
     Idle,
     Reasoning,     // Waiting on LLM token generation
