@@ -32,11 +32,12 @@ use tokio::sync::broadcast::Sender;
 use crate::aegis::QuarantineRecord;
 use crate::axon::MarkleBatch;
 use crate::state::SwarmStateRegistry;
-use crate::telemetry::TelemetryEngine;
 use crate::{axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine};
 
 // The fundamental unit of our Flight Recorder.
-#[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(
+    Archive, Deserialize, Serialize, Debug, PartialEq, Clone, SerdeDeserialize, SerdeSerialize,
+)]
 pub struct AgentState {
     pub agent_id: Option<[u8; 16]>,
     pub transaction_id: u128,
@@ -58,7 +59,9 @@ pub enum AgentStatus {
 }
 
 // Every thought and action is an Op.
-#[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(
+    Archive, Deserialize, Serialize, Debug, PartialEq, Clone, SerdeDeserialize, SerdeSerialize,
+)]
 pub struct OpLog {
     pub agent_id: [u8; 16],
     pub state: AgentState,
