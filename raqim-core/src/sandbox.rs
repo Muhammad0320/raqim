@@ -32,7 +32,6 @@ pub struct SandboxContent {
     pub event_tx: Sender<SystemEvent>,
     pub wasi: WasiP1Ctx,
     pub lance: Arc<LanceEngine>,
-    pub telemetry: Arc<TelemetryEngine>,
 
     // Agent credentials
     pub agent_hex: String,
@@ -175,7 +174,6 @@ impl WasmEngine {
                 let event_tx_clone = layers.event_tx.clone();
                 let seeds_to_save = layers.live_seeds.clone();
                 let network_to_save = layers.replay_responses.clone();
-                let telemetry_clone = layers.telemetry.clone();
                 let shard_clone = layers.shard.clone();
 
                 // Clear the live queues for the next thought cycle
@@ -380,7 +378,6 @@ impl WasmEngine {
                 // Execute the actual RPC call (block_in_place because WASM calls are sync)
                 let net_clone = content.global_net.clone();
                 let aegis_clone = content.aegis.clone();
-                let telemetry_clone = content.telemetry.clone();
 
                 let (response_bytes, _responder_hex) = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current()

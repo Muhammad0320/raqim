@@ -375,7 +375,7 @@ async fn main() {
 
                     // Prevent Amnesia (Data Loss): File was rotated but never made it to lancedb 
                     println!("[PHOENIX] Orphaned WAL '{}' detected in PENDING state. Queuing for RAM Hydration", &target_file);
-                    if Path::new(&target_file).exists {
+                    if Path::new(&target_file).exists() {
                         files_to_scan.push(target_file.to_string());
                     }
                 }
@@ -547,7 +547,6 @@ async fn main() {
 
     let mem_router = Arc::new(MemoryRouter::new(
         config.clone(),
-        telemetry.clone(),
         aegis.clone(),
         axon.clone(),
         brain_shard.clone(),
@@ -956,7 +955,7 @@ async fn main() {
                     }
 
                     // Perform ultrafast packet audit for each packet.
-                    let packet_timestamp = archived_state.timestamp.as_slice();
+                    let packet_timestamp = archived_state.timestamp.into();
                     if let  Err(e) = task_aegis.authorize_packet_fast(&cached_agent_hex, &cached_group_name, &agent_pub_key, state_slice, &packet_sig, path_intent, packet_timestamp) {
                         eprintln!("[AEGIS INTERDICTION] Fast Audit failed: {} ", e);
                         break;

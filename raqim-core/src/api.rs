@@ -1033,7 +1033,7 @@ pub async fn fetch_agent_timeline(
 
 #[derive(Serialize)]
 pub struct DashboardCards {
-    pub global_transactions: u64,
+    // pub global_transactions: u64,
     pub active_agents: usize,
     pub vault_capacity: usize,
 }
