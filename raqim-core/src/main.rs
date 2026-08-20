@@ -40,13 +40,13 @@ use uuid::Uuid;
 use wasmtime_wasi::WasiCtxBuilder;
 
 #[tokio::main]
-async fn main() {
-    let config = Arc::new(RaqimConfig::load_or_bootstrap());
-
-    println!("Bismillah. Booting Raqim Daemon on port {}...", config.port);
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println("==================================================================");
+    println!("Bismillah. Booting Hardened Raqim Sovereign Core Daemon v.1.0.0");
+    println("==================================================================");
 
     // =================================
-    // SIGNAL INTERCEPTION (K8s SIGTERM)
+    // SIGNAL INTERCEPTION (Graceful OS shutdown Handlers)
     // ================================
     let cancel_token = CancellationToken::new();
     let ct_clone = cancel_token.clone();
@@ -64,9 +64,10 @@ async fn main() {
         ct_clone.cancel();
     });
 
-    // BOOT TELEMETRY SINKER
-    // let telemetry = TelemetryEngine::new(&config.tenant_id);
-    // TelemetryEngine::start_sinker_daemon(telemetry.clone());
+
+    let config = Arc::new(RaqimConfig::load_or_bootstrap());
+    println("[CONFIG] Active Port: {} | WAL Path: {} ", &config.port, &config.wal_path);
+
 
     // THE INTERNAL EVENT BUS
     let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(50_000);
@@ -120,30 +121,6 @@ async fn main() {
 
     let allow_wan = Arc::new(AtomicBool::new(false));
 
-    // let allow_wan_clone = allow_wan.clone();
-    // tokio::spawn(async move {
-    //     println!("[SYSTEM] Ingess security claim listener spawned successfully. ");
-    //     while let Ok(event) = license_rx.recv().await {
-    //         if let SystemEvent::LicenseUpdated { new_jwt } = event {
-    //             flag_worker.evaluate_jwt(&new_jwt, &decoding_key_clone);
-    //         }
-
-    //         let allow_global_a2a = flag_worker.allow_global_a2a.clone().load(Ordering::Relaxed);
-    //         let allow_global_aegis = flag_worker
-    //             .allow_global_aegis
-    //             .clone()
-    //             .load(Ordering::Relaxed);
-    //         let allow_global_crdt = flag_worker
-    //             .allow_global_crdt
-    //             .clone()
-    //             .load(Ordering::Relaxed);
-
-    //         // Determine if Zenoh needs to connect to the cloud router at all.
-    //         let allow_wan_bool = allow_global_a2a || allow_global_aegis || allow_global_crdt;
-
-    //         allow_wan_clone.store(allow_wan_bool, Ordering::SeqCst);
-    //     }
-    // });
 
     // Securely loads the swarm key from disk. Generate it if it doesn't exist/
     let key_dir = Path::new("./ca-keys");
@@ -419,7 +396,7 @@ async fn main() {
                 if offset + 4 > wal_bytes.len() {break;} 
                 offset += 4;
 
-                if offset + entry_len > len_bytes.len() {
+                if offset + entry_len > wal_bytes.len() {
                     break;
                 }
 
@@ -475,7 +452,7 @@ async fn main() {
                         vector: vectors[i].clone(),
                     });
                 }
-                hot_buffer.push_back(hot_entries);
+                hot_buffer.push_batch(hot_entries);
                 println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_entries.len());
             }                
         }
@@ -499,8 +476,8 @@ async fn main() {
 
             while let Ok(event) = system_rx.recv().await {
 
-                if let SystemEvent::CompactionTriggered { .., max_compacted_tx } = event {
-                    hot_buffer_clone.evits_compacted_up_to(max_compacted_tx);
+                if let SystemEvent::CompactionTriggered {  max_compacted_tx, .. } = event {
+                    hot_buffer_clone.evict_compacted_up_to(max_compacted_tx);
                 }
 
             }
@@ -693,7 +670,6 @@ async fn main() {
                         };
 
                         // Mutex lifetime enforcement
-
                         let mut tracker_lock = global_tracker.lock().unwrap();
 
                         // Extract an owned, independent clone of the tracker out of the map boundary
@@ -832,12 +808,10 @@ async fn main() {
 
                 // Otherwise, Accept connections normally.
                 accpet_res = listener.accept() => {
-
                     let (socket, addr) = match accpet_res {
                         Ok(res) => res,
                         Err(_) => continue
                     };
-
 
                 println!("External Agent connected from: {}", addr);
 
@@ -1073,10 +1047,10 @@ async fn main() {
     drop(wal);
     println!("[WAL] Senders dropped. Awaiting final io_uring fsync to NVMe... ");
 
-    // Block the main thread from exiting until the disk thread physically joins
-    handle
-        .join()
-        .expect("FATAL: WAL thread panicked during shutdown.");
+    let _ = handle
+        .await;
 
-    println!("[SYSTEM] Raqim OS terminated cleanly. Zero data loss. Alhamdullilah.");
+    println!("[SYSTEM] Raqim OS terminated cleanly. Zero data loss. AlhamdulliLah.");
+
+    Ok(())
 }
