@@ -289,21 +289,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wasm_engine = Arc::new(WasmEngine::new());
     let hot_buffer = Arc::new(HotVectorBuffer::new(10_0000));
 
-    let embedder: Box<dyn EmbeddingProvider> = match config.embedder_type.as_str() {
+    let embedder: Arc<dyn EmbeddingProvider> = match config.embedder_type.as_str() {
         "openai" => {
             let key =
                 std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| config.openai_api_key.clone());
             if key.is_empty() {
                 panic!("OPENAI_API_KEY environment variable or config entry is required");
             }
-            Box::new(OpenAIProvider::new(key))
+            Arc::new(OpenAIProvider::new(key))
         }
 
-        _ => Box::new(LocalBgeProvider::new()),
+        _ => Arc::new(LocalBgeProvider::new()),
     };
 
     let lance_engine =
-        Arc::new(LanceEngine::new(&config.lance_path, &config.table_name, embedder).await);
+        Arc::new(LanceEngine::new(&config.lance_path, &config.table_name, embedder.clone()).await);
 
     // 1. Boot global Quarantine network subscriber
     global_net.listen_for_global_quarantine(aegis.clone()).await;

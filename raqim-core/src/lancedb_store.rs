@@ -23,7 +23,7 @@ pub struct LanceEngine {
     pub snapshot_table: String,
     pub storage_path: String,
     pub dims: i32,
-    pub embedder: Box<dyn EmbeddingProvider>, // Polymorphic injection
+    pub embedder: Arc<dyn EmbeddingProvider>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,7 +42,7 @@ impl LanceEngine {
     pub async fn new(
         storage_path: &str,
         table_name: &str,
-        embedder: Box<dyn EmbeddingProvider>,
+        embedder: Arc<dyn EmbeddingProvider>,
     ) -> Self {
         println!("Bismillah. Booting LanceEngine & Local Embedding Model...");
         let db = connect(storage_path)
@@ -61,7 +61,7 @@ impl LanceEngine {
         }
     }
 
-    pub async fn new_dummy(embedder: Box<dyn EmbeddingProvider>) -> Self {
+    pub async fn new_dummy(embedder: Arc<dyn EmbeddingProvider>) -> Self {
         let db = connect("dummy_lance_path")
             .execute()
             .await
@@ -879,4 +879,3 @@ impl LanceEngine {
         Ok(nodes)
     }
 }
-
