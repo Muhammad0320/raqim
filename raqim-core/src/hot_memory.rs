@@ -29,7 +29,7 @@ impl HotVectorBuffer {
     }
 
     /// Batch pushes recovered entried during Phoenix Boot Hydration
-    pub fn push_back(&self, entries: Vec<HotVectorEntry>) {
+    pub fn push_batch(&self, entries: Vec<HotVectorEntry>) {
         let mut lock = self.entries.write();
         for entry in entries {
             lock.push_back(entry);
@@ -65,7 +65,7 @@ impl HotVectorBuffer {
     }
 
     /// WATERMARK EVICTION: Evists entries ONLY if they have been durably archived into LanceDB
-    pub fn evits_compacted_up_to(&self, max_compacted_tx: u128) -> usize {
+    pub fn evict_compacted_up_to(&self, max_compacted_tx: u128) -> usize {
         let mut lock = self.entries.write();
         let initial_len = lock.len();
 

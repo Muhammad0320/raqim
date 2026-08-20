@@ -60,9 +60,9 @@ impl RaqimCryptoCore {
         text: &str,
     ) -> PyResult<Bound<'py, PyBytes>> {
         let agent_id_bytes = hex::decode(agent_hex)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()));
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
 
-        let agent_id_array: [u8; 16] = agent_id_bytes.try_into().map_err(|_| {
+        let agent_id_array: [u8; 16] = agent_id_bytes.as_slice().try_into().map_err(|_| {
             pyo3::exceptions::PyValueError::new_err("Agent hex must be exactly 16-bytes")
         })?;
 

@@ -1,7 +1,7 @@
 use ed25519_dalek::SigningKey;
 use notify::{Event, Watcher};
 use rand_core::OsRng;
-use raqim_core::aegis::{ AegisConfigFile, AegisGateKeeper};
+use raqim_core::aegis::{AegisConfigFile, AegisGateKeeper};
 use raqim_core::api::{ApiState, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 
@@ -21,13 +21,14 @@ use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
 use raqim_core::witness::WormWitnessEngine;
 use raqim_core::{
-    AgentState, IngressEnvelope, OpLog, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade, generate_uuidv7_txid,
+    AgentState, IngressEnvelope, OpLog, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
+    generate_uuidv7_txid,
 };
 use tower_http::cors::{Any, CorsLayer};
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::{eprintln, fs, println};
 
@@ -41,9 +42,9 @@ use wasmtime_wasi::WasiCtxBuilder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println("==================================================================");
+    println!("==================================================================");
     println!("Bismillah. Booting Hardened Raqim Sovereign Core Daemon v.1.0.0");
-    println("==================================================================");
+    println!("==================================================================");
 
     // =================================
     // SIGNAL INTERCEPTION (Graceful OS shutdown Handlers)
@@ -64,15 +65,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ct_clone.cancel();
     });
 
-
     let config = Arc::new(RaqimConfig::load_or_bootstrap());
-    println("[CONFIG] Active Port: {} | WAL Path: {} ", &config.port, &config.wal_path);
-
+    println!(
+        "[CONFIG] Active Port: {} | WAL Path: {} ",
+        &config.port, &config.wal_path,
+    );
 
     // THE INTERNAL EVENT BUS
     let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(50_000);
     let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(10_000);
-
 
     let registry = Arc::new(SwarmRegistry::new());
     let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
@@ -103,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    
+
     // BOOT-TIME LICENSE_VERIFIICATION
     const RAQIM_PUBLIC_KEY: &[u8] = include_bytes!("../../keys/raqim_public.pem");
 
@@ -114,13 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let security_flags = RuntimeSecurityFlags::new();
 
-    // Spawning a dynamic hot swap listener
-    let decoding_key_clone = decoding_key.clone();
-    let mut license_rx = event_tx.subscribe();
-    let flag_worker = security_flags.clone();
-
     let allow_wan = Arc::new(AtomicBool::new(false));
-
 
     // Securely loads the swarm key from disk. Generate it if it doesn't exist/
     let key_dir = Path::new("./ca-keys");
@@ -168,13 +163,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // LEAK-PROOF BROADCAST RECEIVER LOOP: Spawn consumer loop to detect lagging and evict slow readers automatically
     let mut system_events_subscriber = event_tx.subscribe();
     tokio::spawn(async move {
-
         loop {
-
             match system_events_subscriber.recv().await {
-
                 Ok(event) => {
-                    // Normal ingestion processing 
+                    // Normal ingestion processing
                     if let SystemEvent::SystemBoot { message } = event {
                         println!("[BUS PROCESSING] Ingested boot message: {}", message);
                     }
@@ -182,22 +174,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 Err(broadcast::error::RecvError::Lagged(skipped_count)) => {
                     // Memory Safeguard: Clear internal lags forcefully to protect RAM
-                    eprintln!("[MEMORY WARNING] Subscriber loop lagged behind channel sequence! \n Forcefully skipped {} events to prevent heap memory growth", skipped_count
-                     );
+                    eprintln!(
+                        "[MEMORY WARNING] Subscriber loop lagged behind channel sequence! \n Forcefully skipped {} events to prevent heap memory growth",
+                        skipped_count
+                    );
                 }
 
                 Err(broadcast::error::RecvError::Closed) => {
-
                     println!("[SYSTEM] Event bus channel closed cleanly. ");
                     break;
-
                 }
             }
         }
-    }); 
+    });
 
     // THE KERNEL AEGIS.TOML HOT-RELOAD WATCHER
-    let policy_path_str = "aegis.toml"; 
+    let policy_path_str = "aegis.toml";
 
     // Ensure policy manifest target exists beofre running file watcher
     if !Path::new(policy_path_str).exists() {
@@ -220,7 +212,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let initial_content = fs::read_to_string(policy_path_str)?;
-    let parsed_cfg = toml::from_str::<AegisConfigFile>(&initial_content).expect("FATAL: Failed to parse initial aegis.toml configuration file"); 
+    let parsed_cfg = toml::from_str::<AegisConfigFile>(&initial_content)
+        .expect("FATAL: Failed to parse initial aegis.toml configuration file");
 
     let initial_policies = parsed_cfg.to_group_policies();
 
@@ -231,21 +224,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ui_tx.clone(),
     ));
 
-    let aegis_clone = aegis.clone(); 
-    let (watch_tx, mut watch_rx) = tokio::sync::mpsc::channel::<Result< Event, notify::Error >>(10);
-    
+    let aegis_clone = aegis.clone();
+    let (watch_tx, mut watch_rx) = tokio::sync::mpsc::channel::<Result<Event, notify::Error>>(10);
+
     // Spawn synchronous notify loop hooked directly to OS virtual filesystem events
     let mut watcher = notify::recommended_watcher(move |res| {
         let _ = watch_tx.blocking_send(res);
-
     })?;
-    watcher.watch(Path::new(policy_path_str), notify::RecursiveMode::NonRecursive)?;
+    watcher.watch(
+        Path::new(policy_path_str),
+        notify::RecursiveMode::NonRecursive,
+    )?;
 
     //  Async task consuming events transmitted out of the notify bridge loop
     tokio::spawn(async move {
+        println!(
+            "[KERNEL WATCHER] Listening for direct kernel modification on: {}... ",
+            policy_path_str
+        );
 
-        println!("[KERNEL WATCHER] Listening for direct kernel modification on: {}... ", policy_path_str);
-        
         while let Some(Ok(event)) = watch_rx.recv().await {
             // Check if modification contains a data close op (File update commit complete)
             if event.kind.is_modify() {
@@ -253,28 +250,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Read and re-parse file delta safely
                 if let Ok(content) = fs::read_to_string("aegis.toml") {
-
-                        match toml::from_str::<AegisConfigFile>(&content) {
-
-                            Ok(parsed_cfg) => {
-
-                                let fresh_policies = parsed_cfg.to_group_policies();
-                                aegis_clone.reload_policies(fresh_policies);
-
-                            }
-                            Err(e) => {
-                                // FAIL-SAFE 
-                                eprintln!("[AEGIS CONFIG ERROR] Invalid aegis.toml syntax: {}. Retaining previous security policies in RAM.", e);
-                            }
+                    match toml::from_str::<AegisConfigFile>(&content) {
+                        Ok(parsed_cfg) => {
+                            let fresh_policies = parsed_cfg.to_group_policies();
+                            aegis_clone.reload_policies(fresh_policies);
                         }
+                        Err(e) => {
+                            // FAIL-SAFE
+                            eprintln!(
+                                "[AEGIS CONFIG ERROR] Invalid aegis.toml syntax: {}. Retaining previous security policies in RAM.",
+                                e
+                            );
+                        }
+                    }
                 }
             }
         }
     });
 
     // Emit Initial system boot signal
-    let _ = event_tx.send(SystemEvent::SystemBoot { message: "Raqim Sovereign Core Active.".to_string() });
-    
+    let _ = event_tx.send(SystemEvent::SystemBoot {
+        message: "Raqim Sovereign Core Active.".to_string(),
+    });
 
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
@@ -327,31 +324,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // THE PHOENIX HYDRATION PROTOCOL: Reconstructs in-memory Axon Merkle trees from uncompacted WAL frames on boot.
     // ============================
 
-    println!("[INITIALIIZATION] Phoenix protocol: Commencing state rehydration scanning from active WAL frame sequences..."); 
+    println!(
+        "[INITIALIIZATION] Phoenix protocol: Commencing state rehydration scanning from active WAL frame sequences..."
+    );
     let manifest_path = "compaction.manifest.json";
     let mut files_to_scan = Vec::new();
 
     // 2PC MANIFEST CHECK
     if Path::new(&manifest_path).exists() {
-
         if let Ok(content) = fs::read_to_string(manifest_path) {
-
             if let Ok(json_manifest) = serde_json::from_str::<serde_json::Value>(&content) {
-
                 let state = json_manifest["state"].as_str().unwrap_or("");
                 let target_file = json_manifest["target_file"].as_str().unwrap_or("");
 
                 if state == "Committed" {
-
-                    // Prevent Schizophrenia (Duplication): Data is in LanceDB, but WAL wasn't deleted. 
-                    println!("[PHONIX] Ghost WAL '{}' detected in COMMITTED state. Erasing to prevent Duplicate RAG Ingestion ", &target_file);
+                    // Prevent Schizophrenia (Duplication): Data is in LanceDB, but WAL wasn't deleted.
+                    println!(
+                        "[PHONIX] Ghost WAL '{}' detected in COMMITTED state. Erasing to prevent Duplicate RAG Ingestion ",
+                        &target_file
+                    );
                     let _ = fs::remove_file(target_file);
                     let _ = fs::remove_file(manifest_path);
-
                 } else if state == "PENDING" {
-
-                    // Prevent Amnesia (Data Loss): File was rotated but never made it to lancedb 
-                    println!("[PHOENIX] Orphaned WAL '{}' detected in PENDING state. Queuing for RAM Hydration", &target_file);
+                    // Prevent Amnesia (Data Loss): File was rotated but never made it to lancedb
+                    println!(
+                        "[PHOENIX] Orphaned WAL '{}' detected in PENDING state. Queuing for RAM Hydration",
+                        &target_file
+                    );
                     if Path::new(&target_file).exists() {
                         files_to_scan.push(target_file.to_string());
                     }
@@ -360,23 +359,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-
     // Scans the active WAL last so temporal order is preserved
     if Path::new(&config.wal_path).exists() {
         files_to_scan.push(config.wal_path.clone())
     }
 
-
-
-    let witness_engine = Arc::new(WormWitnessEngine::new( &config.witness_path, master_signing_key.clone(), None ));
+    let witness_engine = Arc::new(WormWitnessEngine::new(
+        &config.witness_path,
+        master_signing_key.clone(),
+        None,
+    ));
 
     let mut recovered_logs: Vec<OpLog> = Vec::new();
-    let mut uncompacted_count = 0; 
-
+    let mut uncompacted_count = 0;
 
     // Execute assembled scanning over the assembled timeline array
     for file_path in files_to_scan {
-
         println!("[PHOENIX] Scanning {} ...", file_path);
 
         if let Ok(wal_bytes) = fs::read(&file_path) {
@@ -393,7 +391,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 offset += 4;
 
                 // Check for 4-byte CRC header boundary
-                if offset + 4 > wal_bytes.len() {break;} 
+                if offset + 4 > wal_bytes.len() {
+                    break;
+                }
                 offset += 4;
 
                 if offset + entry_len > wal_bytes.len() {
@@ -402,8 +402,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let entry_slice = &wal_bytes[offset..offset + entry_len];
 
-                if let Ok(archived_log) =
-                    rkyv::access::<<OpLog as rkyv::Archive>::Archived, rkyv::rancor::Error>(entry_slice)
+                if let Ok(archived_log) = rkyv::access::<
+                    <OpLog as rkyv::Archive>::Archived,
+                    rkyv::rancor::Error,
+                >(entry_slice)
                 {
                     if let Ok(recovered_log) =
                         rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
@@ -413,11 +415,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Fetch crdt shard for this namespace and apply historical delta
                         let brain = brain_shard.get_or_create_brain(&recovered_log.state.namespace);
                         if let Err(e) = brain.assimilate_foreign_thought(&recovered_log.delta) {
-                            eprintln!("[PHOENIX WARN] Failed to assimilate CRDT delta during recovery: {},", e);
+                            eprintln!(
+                                "[PHOENIX WARN] Failed to assimilate CRDT delta during recovery: {},",
+                                e
+                            );
                         }
 
                         recovered_logs.push(recovered_log);
-                        uncompacted_count +=1
+                        uncompacted_count += 1
                     }
                 }
 
@@ -425,63 +430,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-                    
-        println!("[PHOENIX] Rehydrated {} un-crystallized log frames into Axon buffer ", uncompacted_count);
 
-        if !recovered_logs.is_empty() {
-            // Batch embed all recovered WAL texts to restore hot vector memory
-            let texts: Vec<String> = recovered_logs
-                .iter()
-                .map(|l| format!("[{:?}] Agent in {} stated {}", l.state.status, l.state.namespace, l.state.text))
-                .collect();
+    println!(
+        "[PHOENIX] Rehydrated {} un-crystallized log frames into Axon buffer ",
+        uncompacted_count
+    );
 
-            // Recompute the vector space asynchronouly to bypass short-term amnesia gaps
-            // Simulated blocks, maps out directly to fastembed / OpenAI endpoints
-            let mock_embed_vectors = vec![vec![0.0f32; 768]; recovered_logs.len() ];
-            
+    if !recovered_logs.is_empty() {
+        // Batch embed all recovered WAL texts to restore hot vector memory
+        let texts: Vec<String> = recovered_logs
+            .iter()
+            .map(|l| {
+                format!(
+                    "[{:?}] Agent in {} stated {}",
+                    l.state.status, l.state.namespace, l.state.text
+                )
+            })
+            .collect();
 
-            if let Ok(vectors) = embedder.embed_batch(&texts).await {
-                let mut hot_entries = Vec::with_capacity(recovered_logs.len());
-                for (i, log) in recovered_logs.into_iter().enumerate() {
-                    hot_entries.push(HotVectorEntry {
-                        tx_id: log.state.transaction_id,
-                        agent_hex: hex::encode(log.agent_id),
-                        namespace: log.state.namespace,
-                        text: log.state.text,
-                        timestamp: log.state.timestamp,
-                        vector: vectors[i].clone(),
-                    });
-                }
-                hot_buffer.push_batch(hot_entries);
-                println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_entries.len());
-            }                
+        // Recompute the vector space asynchronouly to bypass short-term amnesia gaps
+        // Simulated blocks, maps out directly to fastembed / OpenAI endpoints
+        // let mock_embed_vectors = vec![vec![0.0f32; 768]; recovered_logs.len()];
+
+        if let Ok(vectors) = embedder.embed_batch(&texts).await {
+            let mut hot_entries = Vec::with_capacity(recovered_logs.len());
+            for (i, log) in recovered_logs.into_iter().enumerate() {
+                hot_entries.push(HotVectorEntry {
+                    tx_id: log.state.transaction_id,
+                    agent_hex: hex::encode(log.agent_id),
+                    namespace: log.state.namespace,
+                    text: log.state.text,
+                    timestamp: log.state.timestamp,
+                    vector: vectors[i].clone(),
+                });
+            }
+            let entry_count = hot_entries.len();
+            hot_buffer.push_batch(hot_entries);
+            println!(
+                "[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.",
+                entry_count
+            );
         }
+    }
 
-        // Load un-tamperable chronological WORM roots and assert execution matrix match 
-        let anchored_witness = witness_engine.load_local_witness();
-        if !anchored_witness.is_empty() {
-            axon.execute_forensic_boot_audit(&anchored_witness, &witness_engine.clone()).await?;
-        }
+    // Load un-tamperable chronological WORM roots and assert execution matrix match
+    let anchored_witness = witness_engine.load_local_witness();
+    if !anchored_witness.is_empty() {
+        axon.execute_forensic_boot_audit(&anchored_witness, &witness_engine.clone())
+            .await?;
+    }
 
-        println!(
-            "[INITIALIIZATION] Phoenix protocol Complete. Hydrated {} log frames into Axon DAG memory. ",
-            recovered_logs.len()
-        );
-
-    // ---  COMPACTION EVENT LISTENENR  (Watermark eviction) ---- 
+    // ---  COMPACTION EVENT LISTENENR  (Watermark eviction) ----
     let mut system_rx = event_tx.subscribe();
     let hot_buffer_clone = hot_buffer.clone();
 
     tokio::spawn(async move {
-
-            while let Ok(event) = system_rx.recv().await {
-
-                if let SystemEvent::CompactionTriggered {  max_compacted_tx, .. } = event {
-                    hot_buffer_clone.evict_compacted_up_to(max_compacted_tx);
-                }
-
+        while let Ok(event) = system_rx.recv().await {
+            if let SystemEvent::CompactionTriggered {
+                max_compacted_tx, ..
+            } = event
+            {
+                hot_buffer_clone.evict_compacted_up_to(max_compacted_tx);
             }
-
+        }
     });
 
     // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
@@ -947,11 +958,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // ==============================
                             // JIT COLD-START HYDRATION
                             // ==============================
-                            let agent_hex_clone = agent_hex.clone(); 
-                            let wal_clone = task_wal.clone(); 
+                            let agent_hex_clone = agent_hex.clone();
+                            let wal_clone = task_wal.clone();
                             let router_clone = task_mem_router.clone();
 
-                            // spawn the heave lancedb/wal lookup in the bg os thread 
+                            // spawn the heave lancedb/wal lookup in the bg os thread
                             tokio::spawn(async move {
 
                                 println!("[JIT HYDRATION] Waking up agent {} from cold storage.", agent_hex_clone);
@@ -1047,8 +1058,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     drop(wal);
     println!("[WAL] Senders dropped. Awaiting final io_uring fsync to NVMe... ");
 
-    let _ = handle
-        .await;
+    let _ = handle.await;
 
     println!("[SYSTEM] Raqim OS terminated cleanly. Zero data loss. AlhamdulliLah.");
 
