@@ -31,8 +31,10 @@ export interface SystemHealthPayload {
 
 export interface GroupPolicyTelemetry {
   group_name: string;
-  allowed_namspace: string[];
-  blocked_namespace: string[];
+  allowed_namspace?: string[];
+  allowed_namespaces?: string[];
+  blocked_namespace?: string[];
+  blocked_namespaces?: string[];
   max_tps: number;
   burst_capacity: number;
   remaining_tokens: number;
@@ -41,7 +43,8 @@ export interface GroupPolicyTelemetry {
 export interface AegisMetricsData {
   total_quarantined: number;
   recent_interdictions: number;
-  signarure_spoofs: number;
+  signarure_spoofs?: number;
+  signature_spoofs?: number;
   namespace_breaches: number;
   rate_limit_blocks: number;
   active_policies: GroupPolicyTelemetry[];

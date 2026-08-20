@@ -1,39 +1,37 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import styled, { keyframes } from 'styled-components';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import styled, { keyframes } from 'styled-components';
 import { motion } from 'framer-motion';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { fetchClusterDiagnostics } from '../../actions/admin';
-import { RAQIM_DAEMON_BASE_URL } from '../../lib/api';
 
 const blinkHeartbeat = keyframes`
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 `;
 
 const SidebarContainer = styled.aside`
-  width: 260px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
+  width: 256px;
   background-color: #050505;
   border-right: 1px solid #1f1f23;
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  z-index: 40;
-  box-sizing: border-box;
   font-family: monospace;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  z-index: 40;
 `;
 
 const LogoSection = styled.div`
-  padding: 24px;
-  border-bottom: 1px solid #1f1f23;
+  padding: 16px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  background-color: #050505;
+  gap: 12px;
+  border-bottom: 1px solid #1f1f23;
   box-sizing: border-box;
 `;
 
@@ -43,34 +41,29 @@ const LogoWrapper = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
 `;
 
 const BrandName = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 2px;
 `;
 
-const BrandTitle = styled.h1`
-  font-size: 18px;
+const BrandTitle = styled.span`
+  font-size: 16px;
   font-weight: 900;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.25em;
   color: #ffffff;
-  margin: 0;
-  text-transform: uppercase;
 `;
 
 const BrandSubtitle = styled.span`
   font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  color: #71717a;
+  letter-spacing: 0.15em;
+  color: #00f3ff;
   text-transform: uppercase;
 `;
 
 const ProfileSection = styled.div`
-  padding: 16px 24px;
+  padding: 14px 16px;
   border-bottom: 1px solid #1f1f23;
   background-color: rgba(9, 9, 11, 0.4);
   display: flex;
@@ -272,7 +265,7 @@ export function Sidebar() {
   const navLinks = [
     { href: '/', label: 'Dashboard' },
     { href: '/topology', label: 'Topology' },
-    { href: '/firewall', label: 'Aegis Firewall' },
+    { href: '/aegis', label: 'Aegis Governance' },
     { href: '/vault', label: 'Audit Vault' },
     { href: '/router', label: 'Memory Router' },
   ];
@@ -342,7 +335,7 @@ export function Sidebar() {
 
       <NavList>
         {navLinks.map((link) => {
-          const isActive = pathname === link.href;
+          const isActive = pathname === link.href || (link.href === '/aegis' && pathname === '/firewall');
           return (
             <NavLink key={link.href} href={link.href} $isActive={isActive}>
               {isActive && (
