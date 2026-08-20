@@ -1,33 +1,51 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useSwarmStore, UiThought, UiEvent } from '../store/useSwarmStore';
+import { useSwarmStore, UiThought, UiEvent, formatTxIdHex } from '../store/useSwarmStore';
 import { fetchEventSource } from '@microsoft/fetch-event-source';
 import { getFirehoseStreamUrl } from '../api';
 
+const inferStatus = (text: string, path: string): UiThought['status'] => {
+  const lower = (text + ' ' + path).toLowerCase();
+  if (lower.includes('halt') || lower.includes('error') || lower.includes('quarantine') || lower.includes('drop')) {
+    return 'HALTED';
+  }
+  if (lower.includes('tool') || lower.includes('exec') || lower.includes('action') || lower.includes('call')) {
+    return 'TOOL_EXEC';
+  }
+  if (lower.includes('reason') || lower.includes('think') || lower.includes('eval') || lower.includes('query')) {
+    return 'REASONING';
+  }
+  return 'COMMITTED';
+};
+
 export function useSwarmStream() {
-  const {
-    batchAddThoughts,
-    processUiEvents,
-    setDaemonOnline,
-    pruneEphemeralEdges,
-    tickRollingMetrics,
-  } = useSwarmStore();
+  const batchAddThoughts = useSwarmStore((state) => state.batchAddThoughts);
+  const processUiEvents = useSwarmStore((state) => state.processUiEvents);
+  const setDaemonOnline = useSwarmStore((state) => state.setDaemonOnline);
+  const pruneEphemeralEdges = useSwarmStore((state) => state.pruneEphemeralEdges);
+  const tickRollingMetrics = useSwarmStore((state) => state.tickRollingMetrics);
+  const isPaused = useSwarmStore((state) => state.isPaused);
+
+  const isPausedRef = useRef(isPaused);
+  isPausedRef.current = isPaused;
 
   const thoughtsBufferRef = useRef<UiThought[]>([]);
   const eventsBufferRef = useRef<UiEvent[]>([]);
   const rAF_Ref = useRef<number>(0);
 
   useEffect(() => {
-    // 1. Setup requestAnimationFrame batching for smooth rendering
+    // 1. Setup requestAnimationFrame batching for smooth 60fps rendering
     const flushBuffer = () => {
-      if (thoughtsBufferRef.current.length > 0) {
-        batchAddThoughts([...thoughtsBufferRef.current]);
-        thoughtsBufferRef.current = [];
-      }
-      if (eventsBufferRef.current.length > 0) {
-        processUiEvents([...eventsBufferRef.current]);
-        eventsBufferRef.current = [];
+      if (!isPausedRef.current) {
+        if (thoughtsBufferRef.current.length > 0) {
+          batchAddThoughts([...thoughtsBufferRef.current]);
+          thoughtsBufferRef.current = [];
+        }
+        if (eventsBufferRef.current.length > 0) {
+          processUiEvents([...eventsBufferRef.current]);
+          eventsBufferRef.current = [];
+        }
       }
       rAF_Ref.current = requestAnimationFrame(flushBuffer);
     };
@@ -65,16 +83,26 @@ export function useSwarmStream() {
         try {
           const rawData = JSON.parse(event.data);
           const eventType = rawData.event_type || rawData.type;
+          const now = Date.now();
 
           if (eventType === 'ThoughtCommited' || eventType === 'ThoughtCommitted') {
+            const rawTx = rawData.tx_id;
+            const numericTx = typeof rawTx === 'number' ? rawTx : (parseInt(rawTx, 16) || now);
+            const hexTx = typeof rawTx === 'string' && rawTx.length >= 10 ? rawTx : formatTxIdHex(rawTx);
+
+            const text = rawData.text || rawData.payload || '';
+            const path = rawData.intent_path || rawData.namespace || '/rqm_core';
+
             const data: UiThought = {
-              tx_id: rawData.tx_id,
-              agent_hex: rawData.agent_hex,
-              intent_path: rawData.intent_path,
-              text: rawData.text || rawData.payload || '',
-              status: 'COMMITTED',
-              is_a2a_query: rawData.intent_path?.includes('/a2a/') || false,
-              parent_tx_id: rawData.tx_id > 0 ? rawData.tx_id - 1 : null,
+              tx_id: numericTx,
+              tx_id_hex: hexTx,
+              agent_hex: rawData.agent_hex || '0xUNKNOWN',
+              intent_path: path,
+              text,
+              status: inferStatus(text, path),
+              is_a2a_query: path?.includes('/a2a/') || false,
+              parent_tx_id: numericTx > 0 ? numericTx - 1 : null,
+              timestamp: rawData.timestamp || now,
             };
             thoughtsBufferRef.current.push(data);
 
@@ -83,6 +111,7 @@ export function useSwarmStream() {
               agent_hex: data.agent_hex,
               intent_path: data.intent_path,
               tx_id: data.tx_id,
+              tx_id_hex: data.tx_id_hex,
               text: data.text,
             });
           } else if (eventType === 'A2aMessageRouted') {
@@ -124,9 +153,8 @@ export function useSwarmStream() {
       onclose() {
         setDaemonOnline(false, 'DAEMON_STREAM_CLOSED');
       },
-      onerror(err) {
+      onerror() {
         setDaemonOnline(false, 'DAEMON_UNREACHABLE');
-        // Let it retry quietly
       },
     }).catch(() => {
       setDaemonOnline(false, 'DAEMON_UNREACHABLE');

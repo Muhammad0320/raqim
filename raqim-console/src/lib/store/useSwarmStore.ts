@@ -6,9 +6,12 @@ import {
   ClusterShard,
   QuarantineRecord,
   SystemHealthPayload,
+  ClusterInfoData,
+  VaultTelemetry,
+  DashboardCardsData,
 } from '../api';
 
-export type { ClusterShard, QuarantineRecord };
+export type { ClusterShard, QuarantineRecord, ClusterInfoData, VaultTelemetry, DashboardCardsData };
 
 export interface AegisRecord {
   agent_hex: string;
@@ -24,6 +27,7 @@ export type UiEvent =
       agent_hex: string;
       intent_path: string;
       tx_id: number;
+      tx_id_hex?: string;
       text: string;
     }
   | {
@@ -53,9 +57,11 @@ export interface UiThought {
   intent_path: string;
   text: string;
   tx_id: number;
-  status: 'PENDING' | 'COMMITTED' | 'REJECTED' | 'FORKED';
+  tx_id_hex?: string;
+  status: 'IDLE' | 'REASONING' | 'TOOL_EXEC' | 'HALTED' | 'COMMITTED' | 'PENDING' | 'FORKED' | 'REJECTED';
   is_a2a_query: boolean;
   parent_tx_id: number | null;
+  timestamp?: number;
 }
 
 export interface SystemHealth {
@@ -65,6 +71,14 @@ export interface SystemHealth {
   mesh_latency_ms: number;
   time: number;
 }
+
+export const formatTxIdHex = (txId: number | string): string => {
+  if (typeof txId === 'string') {
+    if (txId.startsWith('0x')) return txId;
+    return '0x' + txId;
+  }
+  return '0x' + txId.toString(16).padStart(32, '0');
+};
 
 export interface SwarmState {
   // Connection State
@@ -76,11 +90,20 @@ export interface SwarmState {
   thoughts: Record<number, UiThought>;
   thoughtOrder: number[];
   activeTxId: number | null;
+  latestTxIdHex: string | null;
   tpsHistory: { time: number; tps: number }[];
   currentTps: number;
   agentLastSeen: Record<string, number>;
   thoughtsThisSecond: number;
   highestTxId: number;
+
+  // Static / Polled Cluster Telemetry
+  clusterInfo: ClusterInfoData | null;
+  vaultTelemetry: VaultTelemetry | null;
+  dashboardCards: DashboardCardsData | null;
+  setClusterInfo: (info: ClusterInfoData | null) => void;
+  setVaultTelemetry: (tel: VaultTelemetry | null) => void;
+  setDashboardCards: (cards: DashboardCardsData | null) => void;
 
   // Topology State
   topologyNodes: Node[];
@@ -93,7 +116,7 @@ export interface SwarmState {
   aegisAlerts: AegisRecord[];
   quarantinedAgents: string[];
 
-  // Temporal Router State
+  // Temporal Router / Stream State
   isPaused: boolean;
   isForking: boolean;
 
@@ -109,26 +132,28 @@ export interface SwarmState {
   pruneEphemeralEdges: () => void;
   tickRollingMetrics: () => void;
   setActiveTxId: (tx_id: number | null) => void;
+  setLatestTxIdHex: (hex: string | null) => void;
   liftQuarantine: (agent_hex: string) => void;
   setIsPaused: (paused: boolean) => void;
+  togglePause: () => void;
   setIsForking: (forking: boolean) => void;
   setActiveTopology: (topology: ClusterShard[]) => void;
   setQuarantinedAgents: (agents: string[]) => void;
   setAgentAliases: (aliases: Record<string, string>) => void;
+  clearStream: () => void;
   clear: () => void;
 }
 
 export const useSwarmStore = create<SwarmState>((set, get) => ({
-  // Connection State
   daemonOnline: false,
   daemonError: null,
   setDaemonOnline: (online, error = null) =>
     set({ daemonOnline: online, daemonError: error }),
 
-  // Stream & Thought Pipeline
   thoughts: {},
   thoughtOrder: [],
   activeTxId: null,
+  latestTxIdHex: null,
   tpsHistory: Array(60)
     .fill(0)
     .map((_, i) => ({ time: Date.now() - (60 - i) * 1000, tps: 0 })),
@@ -137,50 +162,48 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
   thoughtsThisSecond: 0,
   highestTxId: 0,
 
-  // Topology State
+  clusterInfo: null,
+  vaultTelemetry: null,
+  dashboardCards: null,
+  setClusterInfo: (info) => set({ clusterInfo: info }),
+  setVaultTelemetry: (tel) => set({ vaultTelemetry: tel }),
+  setDashboardCards: (cards) => set({ dashboardCards: cards }),
+
   topologyNodes: [],
   topologyEdges: [],
   namespaces: [],
   activeTopology: [],
   agentAliases: {},
 
-  // Firewall / Aegis State
   aegisAlerts: [],
   quarantinedAgents: [],
 
-  // Temporal Router State
   isPaused: false,
   isForking: false,
 
-  // System Health Vitals
-  vitalsHistory: Array(60)
-    .fill(0)
-    .map((_, i) => ({
-      cpu_load_percent: 0,
-      wasm_memory_mb: 0,
-      core_temp_celcius: 0,
-      mesh_latency_ms: 0,
-      time: Date.now() - (60 - i) * 1000,
-    })),
+  vitalsHistory: [],
   currentVitals: null,
 
-  recordHealthVitals: (raw) =>
+  recordHealthVitals: (payload) =>
     set((state) => {
-      const payload: SystemHealth = {
-        cpu_load_percent: raw.cpu_load_percent ?? 0,
-        wasm_memory_mb: raw.wasm_memory_mb ?? 0,
-        core_temp_celcius: raw.core_temp_celcius ?? 0,
-        mesh_latency_ms: raw.mesh_latency_ms ?? 0,
-        time: Date.now(),
+      const now = Date.now();
+      const newVitals: SystemHealth = {
+        cpu_load_percent: payload.cpu_load_percent,
+        wasm_memory_mb: payload.wasm_memory_mb,
+        core_temp_celcius: payload.core_temp_celcius,
+        mesh_latency_ms: payload.mesh_latency_ms,
+        time: now,
       };
-      const newHistory = [...state.vitalsHistory, payload];
+
+      const newHistory = [...state.vitalsHistory, newVitals];
       if (newHistory.length > 60) {
         newHistory.shift();
       }
+
       return {
         daemonOnline: true,
         daemonError: null,
-        currentVitals: payload,
+        currentVitals: newVitals,
         vitalsHistory: newHistory,
       };
     }),
@@ -197,15 +220,15 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
         const aliases = aliasRes.success && aliasRes.data ? aliasRes.data : {};
 
         set((state) => {
+          const newNamespaces = new Set(state.namespaces);
           const newNodes: Node[] = [];
-          const newNamespaces = new Set<string>();
 
           shards.forEach((shard, index) => {
             const ns = shard.namespace;
             newNamespaces.add(ns);
             const radius = 450;
-            const angle =
-              index * (Math.PI * 2 / Math.max(shards.length, 1));
+            const angle = index * (Math.PI / 3);
+
             newNodes.push({
               id: `cluster-${ns}`,
               type: 'cluster',
@@ -255,6 +278,7 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
       let newThoughtsThisSecond = state.thoughtsThisSecond;
       const newAgentLastSeen = { ...state.agentLastSeen };
       let maxTx = state.highestTxId;
+      let lastHex = state.latestTxIdHex;
       const now = Date.now();
 
       for (const t of newThoughts) {
@@ -263,11 +287,20 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
           newOrder.push(t.tx_id);
           newThoughtsThisSecond++;
           newAgentLastSeen[t.agent_hex] = now;
-          if (t.tx_id > maxTx) maxTx = t.tx_id;
+          if (t.tx_id > maxTx) {
+            maxTx = t.tx_id;
+            lastHex = t.tx_id_hex || formatTxIdHex(t.tx_id);
+          }
         }
       }
 
-      newOrder.sort((a, b) => a - b);
+      if (newOrder.length > 2000) {
+        const excess = newOrder.length - 2000;
+        const removed = newOrder.splice(0, excess);
+        for (const id of removed) {
+          delete updatedThoughts[id];
+        }
+      }
 
       return {
         daemonOnline: true,
@@ -277,6 +310,7 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
         thoughtsThisSecond: newThoughtsThisSecond,
         agentLastSeen: newAgentLastSeen,
         highestTxId: maxTx,
+        latestTxIdHex: lastHex,
       };
     }),
 
@@ -443,21 +477,30 @@ export const useSwarmStore = create<SwarmState>((set, get) => ({
     }),
 
   setActiveTxId: (tx_id) => set({ activeTxId: tx_id }),
+  setLatestTxIdHex: (hex) => set({ latestTxIdHex: hex }),
   liftQuarantine: (agent_hex) =>
     set((state) => ({
       quarantinedAgents: state.quarantinedAgents.filter((a) => a !== agent_hex),
     })),
   setIsPaused: (paused) => set({ isPaused: paused }),
+  togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
   setIsForking: (forking) => set({ isForking: forking }),
   setActiveTopology: (topology) => set({ activeTopology: topology }),
   setQuarantinedAgents: (agents) => set({ quarantinedAgents: agents }),
   setAgentAliases: (aliases) => set({ agentAliases: aliases }),
+
+  clearStream: () =>
+    set({
+      thoughts: {},
+      thoughtOrder: [],
+    }),
 
   clear: () =>
     set({
       thoughts: {},
       thoughtOrder: [],
       activeTxId: null,
+      latestTxIdHex: null,
       thoughtsThisSecond: 0,
       agentLastSeen: {},
       tpsHistory: Array(60)
