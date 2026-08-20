@@ -4,7 +4,9 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { liftQuarantine } from '../actions/admin';
+import { fetchQuarantineList } from '../actions/firewall';
 import { useSwarmStore } from '../lib/store/useSwarmStore';
+import { QuarantineRecord } from '../lib/api';
 
 const PanelContainer = styled.div`
   background-color: #050505;
@@ -25,7 +27,7 @@ const PanelHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  shrink-0: true;
+  flex-shrink: 0;
 `;
 
 const Title = styled.h3`
@@ -91,7 +93,7 @@ const AgentHex = styled.span`
 `;
 
 const ViolationType = styled.span<{ $type: string }>`
-  color: ${props => props.$type === 'CRYPTO_SPOOF' ? '#ff003c' : '#ffb300'};
+  color: ${props => (props.$type === 'CRYPTO_SPOOF' ? '#ff003c' : '#ffb300')};
   font-size: 10px;
   font-weight: bold;
 `;
@@ -121,7 +123,7 @@ const ActionBtn = styled.button`
     color: #000000;
     box-shadow: 0 0 10px rgba(255, 0, 60, 0.5);
   }
-  
+
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -141,7 +143,6 @@ const EmptyState = styled.div`
   text-align: center;
 `;
 
-// Toast Notification System
 const ToastContainer = styled.div`
   position: fixed;
   bottom: 24px;
@@ -155,9 +156,13 @@ const ToastContainer = styled.div`
 
 const ToastMessage = styled(motion.div)<{ $type: 'success' | 'error' }>`
   background-color: #050505;
-  border: 1px solid ${props => props.$type === 'success' ? '#00f3ff' : '#ff003c'};
-  color: ${props => props.$type === 'success' ? '#00f3ff' : '#ff003c'};
-  box-shadow: 0 0 15px ${props => props.$type === 'success' ? 'rgba(0, 243, 255, 0.2)' : 'rgba(255, 0, 60, 0.2)'};
+  border: 1px solid ${props => (props.$type === 'success' ? '#00f3ff' : '#ff003c')};
+  color: ${props => (props.$type === 'success' ? '#00f3ff' : '#ff003c')};
+  box-shadow: 0 0 15px
+    ${props =>
+      props.$type === 'success'
+        ? 'rgba(0, 243, 255, 0.2)'
+        : 'rgba(255, 0, 60, 0.2)'};
   padding: 12px 20px;
   font-size: 11px;
   letter-spacing: 1px;
@@ -166,14 +171,6 @@ const ToastMessage = styled(motion.div)<{ $type: 'success' | 'error' }>`
   align-items: center;
   gap: 10px;
 `;
-
-interface QuarantineRecord {
-  agent_hex: string;
-  violation_type: string;
-  attempted_path: string;
-  payload_preview: string;
-  timestamp: number;
-}
 
 interface Toast {
   id: string;
@@ -185,7 +182,8 @@ export function AegisPanel() {
   const [quarantined, setQuarantined] = useState<QuarantineRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const { quarantinedAgents, setQuarantinedAgents, liftQuarantine: liftStoreQuarantine } = useSwarmStore();
+  const { setQuarantinedAgents, liftQuarantine: liftStoreQuarantine } =
+    useSwarmStore();
 
   const showToast = (message: string, type: 'success' | 'error') => {
     const id = Math.random().toString();
@@ -195,22 +193,12 @@ export function AegisPanel() {
     }, 4000);
   };
 
-  const fetchQuarantineList = async () => {
+  const loadQuarantineList = async () => {
     setLoading(true);
     try {
-      const token = document.cookie.split('; ').find(row => row.startsWith('raqim_license='))?.split('=')[1] || '';
-      const res = await fetch('http://127.0.0.1:8081/v1/aegis/quarantine_list', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        cache: 'no-store',
-      });
-      if (res.ok) {
-        const data: QuarantineRecord[] = await res.json();
-        setQuarantined(data);
-        setQuarantinedAgents(data.map(d => d.agent_hex));
-      }
+      const data = await fetchQuarantineList();
+      setQuarantined(data);
+      setQuarantinedAgents(data.map(d => d.agent_hex));
     } catch (e) {
       console.error('Failed to load quarantine list', e);
       showToast('FAILED TO FETCH ACTIVE FIREWALL BLOCKS', 'error');
@@ -220,123 +208,117 @@ export function AegisPanel() {
   };
 
   useEffect(() => {
-    fetchQuarantineList();
-    
-    // Auto sync from state store (threat radar pushes live)
+    loadQuarantineList();
+
     const interval = setInterval(async () => {
-      // Periodic check
-      const token = document.cookie.split('; ').find(row => row.startsWith('raqim_license='))?.split('=')[1] || '';
       try {
-        const res = await fetch('http://127.0.0.1:8081/v1/aegis/quarantine_list', {
-          headers: { 'Authorization': `Bearer ${token}` },
-          cache: 'no-store',
-        });
-        if (res.ok) {
-          const data: QuarantineRecord[] = await res.json();
-          setQuarantined(data);
-        }
-      } catch (e) {}
-    }, 3000);
+        const data = await fetchQuarantineList();
+        setQuarantined(data);
+      } catch (_e) {}
+    }, 5000);
 
     return () => clearInterval(interval);
   }, []);
 
   const handleLift = async (agentHex: string) => {
-    // 1. Optimistic UI updates
     const backup = [...quarantined];
     setQuarantined(prev => prev.filter(item => item.agent_hex !== agentHex));
     liftStoreQuarantine(agentHex);
 
-    showToast(`DISPATCHING OVERRIDE KEY FOR ENCLAVE ${agentHex.slice(0, 8)}`, 'success');
+    showToast(
+      `DISPATCHING OVERRIDE KEY FOR ENCLAVE ${agentHex.slice(0, 8)}`,
+      'success'
+    );
 
-    // 2. Perform server action
     try {
       const res = await liftQuarantine(agentHex);
       if (res.success) {
-        showToast(`FIREWALL UNLOCKED: ENCLAVE ${agentHex} RESTORED`, 'success');
+        showToast(
+          `FIREWALL UNLOCKED: ENCLAVE ${agentHex} RESTORED`,
+          'success'
+        );
       } else {
-        // Revert on failure
         setQuarantined(backup);
         setQuarantinedAgents(backup.map(b => b.agent_hex));
-        showToast(`MUTATION REJECTED: ${res.error || 'UNAUTHORIZED'}`, 'error');
+        showToast(`FAILED TO LIFT QUARANTINE: ${res.error}`, 'error');
       }
-    } catch (error: any) {
+    } catch (e: any) {
       setQuarantined(backup);
       setQuarantinedAgents(backup.map(b => b.agent_hex));
-      showToast('NETWORK EXCEPTION: FAILED TO RESURRECT WASM CONTEXT', 'error');
+      showToast(`FAILED TO LIFT QUARANTINE: ${e.message}`, 'error');
     }
   };
 
   return (
-    <>
-      <PanelContainer>
-        <PanelHeader>
-          <Title>
-            <span className="material-symbols-outlined text-[14px]">gshield</span>
-            Aegis Threat Mitigation Core
-          </Title>
-          <RefreshBtn onClick={fetchQuarantineList}>Sync ACL</RefreshBtn>
-        </PanelHeader>
+    <PanelContainer>
+      <PanelHeader>
+        <Title>
+          <span className="w-2 h-2 rounded-full bg-[#ff003c] animate-pulse"></span>
+          Aegis Quarantine Jail ({quarantined.length})
+        </Title>
+        <RefreshBtn onClick={loadQuarantineList}>Refresh</RefreshBtn>
+      </PanelHeader>
 
-        <TableWrapper>
-          <GridHeader>
-            <div>Agent Hex</div>
-            <div>Violation</div>
-            <div>Target Path</div>
-            <div style={{ textAlign: 'right' }}>Lineage Firewall</div>
-          </GridHeader>
+      <TableWrapper>
+        <GridHeader>
+          <div>ENCLAVE</div>
+          <div>VIOLATION</div>
+          <div>TARGET PATH</div>
+          <div>ACTION</div>
+        </GridHeader>
 
-          {loading && quarantined.length === 0 ? (
-            <EmptyState>Scanning firewall enclaves...</EmptyState>
-          ) : quarantined.length === 0 ? (
-            <EmptyState>Zero Threat Incidents Logged. Aegis Nominal.</EmptyState>
-          ) : (
-            <AnimatePresence>
-              {quarantined.map(record => (
-                <GridRow
-                  key={record.agent_hex}
-                  exit={{ opacity: 0, x: -50 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <AgentHex>{record.agent_hex}</AgentHex>
-                  <div>
-                    <ViolationType $type={record.violation_type}>
-                      {record.violation_type}
-                    </ViolationType>
-                  </div>
-                  <PathText title={record.attempted_path}>{record.attempted_path}</PathText>
-                  <div style={{ textAlign: 'right' }}>
-                    <ActionBtn onClick={() => handleLift(record.agent_hex)}>
-                      Lift Quarantine
-                    </ActionBtn>
-                  </div>
-                </GridRow>
-              ))}
-            </AnimatePresence>
-          )}
-        </TableWrapper>
-      </PanelContainer>
+        {quarantined.length === 0 ? (
+          <EmptyState>
+            {loading
+              ? 'SCANNING MEMORY BLOCKS...'
+              : 'ZERO COMPROMISED ENCLAVES ACTIVE'}
+          </EmptyState>
+        ) : (
+          <AnimatePresence initial={false}>
+            {quarantined.map(record => (
+              <GridRow
+                key={record.agent_hex}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 10 }}
+                transition={{ duration: 0.2 }}
+              >
+                <AgentHex>{record.agent_hex.slice(0, 10)}...</AgentHex>
+                <ViolationType $type={record.violation_type}>
+                  {record.violation_type}
+                </ViolationType>
+                <PathText title={record.attempted_path}>
+                  {record.attempted_path}
+                </PathText>
+                <div>
+                  <ActionBtn onClick={() => handleLift(record.agent_hex)}>
+                    Lift Jail
+                  </ActionBtn>
+                </div>
+              </GridRow>
+            ))}
+          </AnimatePresence>
+        )}
+      </TableWrapper>
 
-      {/* Custom cyberpunk micro-toasts */}
       <ToastContainer>
         <AnimatePresence>
           {toasts.map(toast => (
             <ToastMessage
               key={toast.id}
               $type={toast.type}
-              initial={{ opacity: 0, y: 20, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.2 }}
             >
-              <span className="material-symbols-outlined text-sm">
-                {toast.type === 'success' ? 'check_circle' : 'warning'}
+              <span className="material-symbols-outlined text-[14px]">
+                {toast.type === 'success' ? 'verified' : 'error'}
               </span>
-              {toast.message}
+              <span>{toast.message}</span>
             </ToastMessage>
           ))}
         </AnimatePresence>
       </ToastContainer>
-    </>
+    </PanelContainer>
   );
 }

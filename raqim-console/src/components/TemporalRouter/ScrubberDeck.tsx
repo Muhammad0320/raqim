@@ -3,7 +3,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import styled from 'styled-components';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
-import { fetchAgentTimeline, TimelineNode } from '../../actions/admin';
+import { fetchAgentTimeline } from '../../actions/admin';
+import type { TimelineNode } from '../../lib/api';
 
 const DeckContainer = styled.div`
   height: 80px;
@@ -56,7 +57,7 @@ const ScrubberWrapper = styled.div`
   flex-direction: column;
   justify-content: center;
   height: 100%;
-  padding-top: 15px; /* Leave space for floating label */
+  padding-top: 15px;
 `;
 
 const SliderTrack = styled.div`
@@ -145,9 +146,9 @@ export function ScrubberDeck({ selectedAgentHex }: ScrubberDeckProps) {
       .then((nodes) => {
         setTimelineNodes(nodes);
         if (nodes.length > 0) {
-          // Default to the latest transaction in the timeline
           const latest = nodes[nodes.length - 1];
-          setActiveTxId(latest.tx_id);
+          const numTx = Number(latest.tx_id) || 0;
+          setActiveTxId(numTx);
         } else {
           setActiveTxId(null);
         }
@@ -157,52 +158,62 @@ export function ScrubberDeck({ selectedAgentHex }: ScrubberDeckProps) {
       });
   }, [selectedAgentHex, setActiveTxId]);
 
+  const parsedNodes = useMemo(() => {
+    return timelineNodes.map((n) => ({
+      ...n,
+      numId: Number(n.tx_id) || 0,
+    }));
+  }, [timelineNodes]);
+
   const { minTxId, maxTxId, activeNode, percent } = useMemo(() => {
-    if (timelineNodes.length === 0) {
+    if (parsedNodes.length === 0) {
       return { minTxId: 0, maxTxId: 0, activeNode: null, percent: 100 };
     }
-    const min = timelineNodes[0].tx_id;
-    const max = timelineNodes[timelineNodes.length - 1].tx_id;
-    
-    // Find closest node to activeTxId, or default to max
+    const min = parsedNodes[0].numId;
+    const max = parsedNodes[parsedNodes.length - 1].numId;
+
     const target = activeTxId ?? max;
-    const closest = timelineNodes.reduce((prev, curr) => {
-      return Math.abs(curr.tx_id - target) < Math.abs(prev.tx_id - target) ? curr : prev;
+    const closest = parsedNodes.reduce((prev, curr) => {
+      return Math.abs(curr.numId - target) < Math.abs(prev.numId - target)
+        ? curr
+        : prev;
     });
 
-    const pct = max > min ? ((closest.tx_id - min) / (max - min)) * 100 : 100;
+    const pct = max > min ? ((closest.numId - min) / (max - min)) * 100 : 100;
     return { minTxId: min, maxTxId: max, activeNode: closest, percent: pct };
-  }, [timelineNodes, activeTxId]);
+  }, [parsedNodes, activeTxId]);
 
   const handleStep = (amount: number) => {
-    if (timelineNodes.length === 0 || !activeNode) return;
-    const targetVal = activeNode.tx_id + amount;
-    
-    // Clamp inside timeline bounds
+    if (parsedNodes.length === 0 || !activeNode) return;
+    const targetVal = activeNode.numId + amount;
+
     let clampedVal = targetVal;
     if (clampedVal < minTxId) clampedVal = minTxId;
     if (clampedVal > maxTxId) clampedVal = maxTxId;
 
-    // Find the closest real node
-    const closest = timelineNodes.reduce((prev, curr) => {
-      return Math.abs(curr.tx_id - clampedVal) < Math.abs(prev.tx_id - clampedVal) ? curr : prev;
+    const closest = parsedNodes.reduce((prev, curr) => {
+      return Math.abs(curr.numId - clampedVal) < Math.abs(prev.numId - clampedVal)
+        ? curr
+        : prev;
     });
 
-    setActiveTxId(closest.tx_id);
+    setActiveTxId(closest.numId);
   };
 
   const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (timelineNodes.length === 0) return;
+    if (parsedNodes.length === 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const pct = Math.max(0, Math.min(1, x / rect.width));
     const targetVal = minTxId + pct * (maxTxId - minTxId);
 
-    const closest = timelineNodes.reduce((prev, curr) => {
-      return Math.abs(curr.tx_id - targetVal) < Math.abs(prev.tx_id - targetVal) ? curr : prev;
+    const closest = parsedNodes.reduce((prev, curr) => {
+      return Math.abs(curr.numId - targetVal) < Math.abs(prev.numId - targetVal)
+        ? curr
+        : prev;
     });
 
-    setActiveTxId(closest.tx_id);
+    setActiveTxId(closest.numId);
   };
 
   if (!selectedAgentHex) {
@@ -224,35 +235,49 @@ export function ScrubberDeck({ selectedAgentHex }: ScrubberDeckProps) {
   return (
     <DeckContainer>
       <ControlsGroup>
-        <StepButton onClick={() => handleStep(-100)} disabled={!activeNode || activeNode.tx_id <= minTxId}>-100</StepButton>
-        <StepButton onClick={() => handleStep(-10)} disabled={!activeNode || activeNode.tx_id <= minTxId}>-10</StepButton>
-        <StepButton onClick={() => handleStep(-1)} disabled={!activeNode || activeNode.tx_id <= minTxId}>-1</StepButton>
+        <StepButton
+          onClick={() => handleStep(-1)}
+          disabled={!activeNode || activeNode.numId <= minTxId}
+          title="Step Backward 1 Transaction"
+        >
+          &lt; PREV
+        </StepButton>
+        <StepButton
+          onClick={() => handleStep(1)}
+          disabled={!activeNode || activeNode.numId >= maxTxId}
+          title="Step Forward 1 Transaction"
+        >
+          NEXT &gt;
+        </StepButton>
+        <StepButton
+          onClick={() => setActiveTxId(maxTxId)}
+          disabled={!activeNode || activeNode.numId === maxTxId}
+          title="Jump to Current Head"
+        >
+          LIVE HEAD
+        </StepButton>
       </ControlsGroup>
 
       <ScrubberWrapper>
         {activeNode && (
           <FloatingLabel $percent={percent}>
-            TX_{activeNode.tx_id} [{activeNode.timestamp.split('T')[1]?.substring(0, 8) || activeNode.timestamp}]
+            Tx {activeNode.numId.toString().padStart(6, '0')}
           </FloatingLabel>
         )}
-        
         <SliderTrack onClick={handleTrackClick}>
           <SliderFill $percent={percent} />
           <SliderKnob $percent={percent} />
         </SliderTrack>
-
         <TextContainer>
-          <span>MIN_TX: {minTxId}</span>
-          {activeNode && <span>STATE: {activeNode.agent_status}</span>}
-          <span>MAX_TX: {maxTxId}</span>
+          <span>Tx {minTxId.toString().padStart(6, '0')}</span>
+          <span>
+            {activeNode?.timestamp
+              ? new Date(activeNode.timestamp).toLocaleTimeString()
+              : ''}
+          </span>
+          <span>Tx {maxTxId.toString().padStart(6, '0')}</span>
         </TextContainer>
       </ScrubberWrapper>
-
-      <ControlsGroup>
-        <StepButton onClick={() => handleStep(1)} disabled={!activeNode || activeNode.tx_id >= maxTxId}>+1</StepButton>
-        <StepButton onClick={() => handleStep(10)} disabled={!activeNode || activeNode.tx_id >= maxTxId}>+10</StepButton>
-        <StepButton onClick={() => handleStep(100)} disabled={!activeNode || activeNode.tx_id >= maxTxId}>+100</StepButton>
-      </ControlsGroup>
     </DeckContainer>
   );
 }

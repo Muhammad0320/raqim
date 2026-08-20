@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import styled from 'styled-components';
 import { useSwarmStore, UiThought } from '../../lib/store/useSwarmStore';
+import { getPhantomStreamUrl } from '../../lib/api';
 
 const TerminalContainer = styled.div`
   width: 100%;
@@ -95,10 +96,8 @@ export function PhantomTerminal() {
     addLog('[PHANTOM_OS] Fork complete. Diverging timeline active.');
     addLog('[PHANTOM_OS] Connecting to temporal stream /v1/time-travel/stream...');
 
-    const token = document.cookie.split('; ').find(row => row.startsWith('raqim_license='))?.split('=')[1] || '';
-    
-    // Connect to SSE
-    const eventSource = new EventSource(`http://127.0.0.1:8081/v1/time-travel/stream?token=${token}`);
+    const sseUrl = getPhantomStreamUrl();
+    const eventSource = new EventSource(sseUrl);
 
     eventSource.onopen = () => {
       addLog('[PHANTOM_OS] Stream session established. Awaiting temporal events...');
@@ -111,7 +110,7 @@ export function PhantomTerminal() {
 
         if (eventType === 'ThoughtCommitted') {
           addLog(`[PHANTOM_OS] [Tx ${parsed.tx_id}] Memory allocation complete: ${parsed.intent_path} - "${parsed.text}"`);
-          
+
           const newPhantomThought: UiThought = {
             tx_id: parsed.tx_id,
             agent_hex: parsed.agent_hex || '0xPHANTOM',
@@ -133,7 +132,7 @@ export function PhantomTerminal() {
       }
     };
 
-    eventSource.onerror = (err) => {
+    eventSource.onerror = (_err) => {
       addLog('[PHANTOM_OS] Stream connection degraded. Attempting reconnection...');
     };
 

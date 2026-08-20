@@ -78,23 +78,15 @@ const resolveAlias = (hex: string) => {
   return `Agent-${hex.slice(0, 6).toUpperCase()}`;
 };
 
-interface StdoutLogsProps {
-  token: string;
-}
-
-export function StdoutLogs({ token }: StdoutLogsProps) {
-  const events = useFirehoseStream(token);
+export function StdoutLogs() {
+  const events = useFirehoseStream();
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
-  // Filter AegisAlert events
   const aegisAlerts = events.filter(
-    (e): e is Extract<FirehoseEvent, { event_type: 'AegisAlert' }> => e.event_type === 'AegisAlert'
+    (e): e is Extract<FirehoseEvent, { event_type: 'AegisAlert' }> =>
+      e.event_type === 'AegisAlert'
   );
 
-  // We want to show logs oldest-to-newest.
-  // events array is newest first (appended at beginning).
-  // So the first 50 items of events are the 50 newest alerts.
-  // Reversing them yields them in chronological order.
   const ringBuffer = aegisAlerts.slice(0, 50).reverse();
 
   useEffect(() => {
@@ -106,25 +98,27 @@ export function StdoutLogs({ token }: StdoutLogsProps) {
   return (
     <Container>
       <Header>
-        <Title>Stdout Monitor</Title>
+        <Title>Live Interdiction Terminal // STDOUT</Title>
         <PulseDot />
       </Header>
       <TerminalBody>
         {ringBuffer.length === 0 ? (
-          <div style={{ color: '#52525b' }}>Listening on live edge enclaves...</div>
+          <div style={{ color: '#52525b' }}>
+            [AEGIS ENGINE READY] Monitoring high-throughput kernel rings...
+          </div>
         ) : (
-          ringBuffer.map((alert, index) => {
-            const d = new Date(alert.record.timestamp || Date.now());
-            const timeStr = `[${d.toTimeString().split(' ')[0]}.${d.getMilliseconds().toString().padStart(3, '0')}]`;
-            const alias = resolveAlias(alert.record.agent_hex);
-            const path = alert.record.attempted_path || alert.record.violated_path || '/';
-
+          ringBuffer.map((alert, idx) => {
+            const date = new Date(alert.record.timestamp);
+            const timeStr = date.toTimeString().split(' ')[0] + '.' + date.getMilliseconds();
             return (
-              <LogLine key={`${alert.record.timestamp}-${index}`}>
-                <Timestamp>{timeStr}</Timestamp>
-                <TagDrop>[AEGIS_DROP]</TagDrop>
-                <ViolationType>{alert.record.violation_type || 'SECURITY_ALERT'}</ViolationType>
-                <InfoText>from {alias} on path {path}</InfoText>
+              <LogLine key={`${alert.record.agent_hex}-${alert.record.timestamp}-${idx}`}>
+                <Timestamp>[{timeStr}]</Timestamp>
+                <TagDrop>[DROP]</TagDrop>
+                <ViolationType>[{alert.record.violation_type || 'VIOLATION'}]</ViolationType>
+                <span>{resolveAlias(alert.record.agent_hex)}:</span>{' '}
+                <InfoText>
+                  attempted {alert.record.attempted_path || alert.record.violated_path || 'unauthorized memory access'}
+                </InfoText>
               </LogLine>
             );
           })

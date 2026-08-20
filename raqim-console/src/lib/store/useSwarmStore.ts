@@ -1,18 +1,52 @@
 import { create } from 'zustand';
 import { Node, Edge } from '@xyflow/react';
+import {
+  getClusterTopology,
+  getAgentAliases,
+  ClusterShard,
+  QuarantineRecord,
+  SystemHealthPayload,
+} from '../api';
+
+export type { ClusterShard, QuarantineRecord };
 
 export interface AegisRecord {
-    agent_hex: string;
-    violation_type: "CRYPTO_SPOOF" | "NAMESPACE_BREACH" | "RAG_POISONING";
-    attempted_path: string;
-    payload_preview: string;
-    timestamp: number;
+  agent_hex: string;
+  violation_type: 'CRYPTO_SPOOF' | 'NAMESPACE_BREACH' | 'RAG_POISONING' | string;
+  attempted_path: string;
+  payload_preview: string;
+  timestamp: number;
 }
 
-export type UiEvent = 
-  | { event_type: "ThoughtCommitted"; agent_hex: string; intent_path: string; tx_id: number; text: string; }
-  | { event_type: "A2aMessageRouted"; source_hex: string; target_hex: string; namespace: string; question_payload: string; answer_payload: string; latency_ms: number; }
-  | { event_type: "AegisAlert"; record: AegisRecord };
+export type UiEvent =
+  | {
+      event_type: 'ThoughtCommitted';
+      agent_hex: string;
+      intent_path: string;
+      tx_id: number;
+      text: string;
+    }
+  | {
+      event_type: 'A2aMessageRouted';
+      source_hex: string;
+      target_hex: string;
+      namespace: string;
+      question_payload: string;
+      answer_payload: string;
+      latency_ms: number;
+    }
+  | {
+      event_type: 'AegisAlert';
+      record: AegisRecord;
+    }
+  | {
+      event_type: 'RealityForked';
+      agent_id: string;
+      original_namespace: string;
+      phantom_namespace: string;
+      step_ordinal: number;
+      tx_id: string;
+    };
 
 export interface UiThought {
   agent_hex: string;
@@ -32,13 +66,13 @@ export interface SystemHealth {
   time: number;
 }
 
-export interface ClusterShard {
-  namespace: string;
-  active_timelines: number;
-  total_crdt_operation: number;
-}
+export interface SwarmState {
+  // Connection State
+  daemonOnline: boolean;
+  daemonError: string | null;
+  setDaemonOnline: (online: boolean, error?: string | null) => void;
 
-interface SwarmState {
+  // Stream & Thought Pipeline
   thoughts: Record<number, UiThought>;
   thoughtOrder: number[];
   activeTxId: number | null;
@@ -53,8 +87,9 @@ interface SwarmState {
   topologyEdges: Edge[];
   namespaces: string[];
   activeTopology: ClusterShard[];
+  agentAliases: Record<string, string>;
 
-  // Firewall State
+  // Firewall / Aegis State
   aegisAlerts: AegisRecord[];
   quarantinedAgents: string[];
 
@@ -65,26 +100,38 @@ interface SwarmState {
   // System Health Vitals
   vitalsHistory: SystemHealth[];
   currentVitals: SystemHealth | null;
-  initVitalsStream: (token: string) => () => void;
 
+  // Actions
+  recordHealthVitals: (payload: SystemHealthPayload) => void;
   fetchInitialTopology: () => Promise<void>;
   batchAddThoughts: (thoughts: UiThought[]) => void;
   processUiEvents: (events: UiEvent[]) => void;
   pruneEphemeralEdges: () => void;
+  tickRollingMetrics: () => void;
   setActiveTxId: (tx_id: number | null) => void;
   liftQuarantine: (agent_hex: string) => void;
   setIsPaused: (paused: boolean) => void;
   setIsForking: (forking: boolean) => void;
   setActiveTopology: (topology: ClusterShard[]) => void;
   setQuarantinedAgents: (agents: string[]) => void;
+  setAgentAliases: (aliases: Record<string, string>) => void;
   clear: () => void;
 }
 
-export const useSwarmStore = create<SwarmState>((set) => ({
+export const useSwarmStore = create<SwarmState>((set, get) => ({
+  // Connection State
+  daemonOnline: false,
+  daemonError: null,
+  setDaemonOnline: (online, error = null) =>
+    set({ daemonOnline: online, daemonError: error }),
+
+  // Stream & Thought Pipeline
   thoughts: {},
   thoughtOrder: [],
   activeTxId: null,
-  tpsHistory: Array(60).fill(0).map((_, i) => ({ time: Date.now() - (60 - i) * 1000, tps: 0 })),
+  tpsHistory: Array(60)
+    .fill(0)
+    .map((_, i) => ({ time: Date.now() - (60 - i) * 1000, tps: 0 })),
   currentTps: 0,
   agentLastSeen: {},
   thoughtsThisSecond: 0,
@@ -95,8 +142,9 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   topologyEdges: [],
   namespaces: [],
   activeTopology: [],
+  agentAliases: {},
 
-  // Firewall State
+  // Firewall / Aegis State
   aegisAlerts: [],
   quarantinedAgents: [],
 
@@ -105,132 +153,99 @@ export const useSwarmStore = create<SwarmState>((set) => ({
   isForking: false,
 
   // System Health Vitals
-  vitalsHistory: Array(60).fill(0).map((_, i) => ({
-    cpu_load_percent: 0,
-    wasm_memory_mb: 0,
-    core_temp_celcius: 0,
-    mesh_latency_ms: 0,
-    time: Date.now() - (60 - i) * 1000
-  })),
+  vitalsHistory: Array(60)
+    .fill(0)
+    .map((_, i) => ({
+      cpu_load_percent: 0,
+      wasm_memory_mb: 0,
+      core_temp_celcius: 0,
+      mesh_latency_ms: 0,
+      time: Date.now() - (60 - i) * 1000,
+    })),
   currentVitals: null,
 
-  initVitalsStream: (token: string) => {
-    if (typeof window === 'undefined') return () => {};
-    const controller = new AbortController();
-    
-    import('@microsoft/fetch-event-source').then(({ fetchEventSource }) => {
-      fetchEventSource('http://127.0.0.1:8081/v1/system/health/live', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'text/event-stream',
-        },
-        signal: controller.signal,
-        async onopen(res) {
-          if (res.ok && res.headers.get('content-type')?.includes('text/event-stream')) {
-             console.log("Connected to Swarm Health SSE");
-             return;
-          }
-        },
-        onmessage(event) {
-          try {
-            const rawData = JSON.parse(event.data);
-            const payload: SystemHealth = {
-              cpu_load_percent: rawData.cpu_load_percent ?? 0,
-              wasm_memory_mb: rawData.wasm_memory_mb ?? 0,
-              core_temp_celcius: rawData.core_temp_celcius ?? 0,
-              mesh_latency_ms: rawData.mesh_latency_ms ?? 0,
-              time: Date.now()
-            };
-            set((state) => {
-              const newHistory = [...state.vitalsHistory, payload];
-              if (newHistory.length > 60) {
-                newHistory.shift();
-              }
-              return {
-                currentVitals: payload,
-                vitalsHistory: newHistory
-              };
-            });
-          } catch (e) {
-            console.error('Failed to parse health frame', e);
-          }
-        },
-        onerror(err) {
-          console.error("Health SSE connection error, retrying...", err);
-          throw err;
-        }
-      });
-    });
-
-    return () => {
-      controller.abort();
-    };
-  },
-
-  liftQuarantine: (agent_hex: string) => 
-    set((state) => ({
-      quarantinedAgents: state.quarantinedAgents.filter(a => a !== agent_hex)
-    })),
-
-  setIsPaused: (paused: boolean) => set({ isPaused: paused }),
-  setIsForking: (forking: boolean) => set({ isForking: forking }),
-  setActiveTopology: (topology: ClusterShard[]) => set({ activeTopology: topology }),
-  setQuarantinedAgents: (agents: string[]) => set({ quarantinedAgents: agents }),
+  recordHealthVitals: (raw) =>
+    set((state) => {
+      const payload: SystemHealth = {
+        cpu_load_percent: raw.cpu_load_percent ?? 0,
+        wasm_memory_mb: raw.wasm_memory_mb ?? 0,
+        core_temp_celcius: raw.core_temp_celcius ?? 0,
+        mesh_latency_ms: raw.mesh_latency_ms ?? 0,
+        time: Date.now(),
+      };
+      const newHistory = [...state.vitalsHistory, payload];
+      if (newHistory.length > 60) {
+        newHistory.shift();
+      }
+      return {
+        daemonOnline: true,
+        daemonError: null,
+        currentVitals: payload,
+        vitalsHistory: newHistory,
+      };
+    }),
 
   fetchInitialTopology: async () => {
-    // In a real app, this would be a fetch to /v1/swarm/topology/snapshot
-    // For now we mock it with the imported mock function
-    const { fetchMockTopologySnapshot } = await import('../mockGenerator');
-    const snapshot = await fetchMockTopologySnapshot();
-    
-    set((state) => {
-      const newNodes: Node[] = [];
-      const newNamespaces = new Set<string>();
+    try {
+      const [topRes, aliasRes] = await Promise.all([
+        getClusterTopology(),
+        getAgentAliases(),
+      ]);
 
-      // Render Parent Nodes for active namespaces
-      snapshot.active_namespaces.forEach((ns, index) => {
-        newNamespaces.add(ns);
-        const radius = 500;
-        const angle = index * (Math.PI * 2 / snapshot.active_namespaces.length); 
-        newNodes.push({
-          id: `cluster-${ns}`,
-          type: 'cluster',
-          position: { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius },
-          data: { label: ns },
-          style: { width: 350, height: 300, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px' },
+      if (topRes.success && topRes.data) {
+        const shards = topRes.data;
+        const aliases = aliasRes.success && aliasRes.data ? aliasRes.data : {};
+
+        set((state) => {
+          const newNodes: Node[] = [];
+          const newNamespaces = new Set<string>();
+
+          shards.forEach((shard, index) => {
+            const ns = shard.namespace;
+            newNamespaces.add(ns);
+            const radius = 450;
+            const angle =
+              index * (Math.PI * 2 / Math.max(shards.length, 1));
+            newNodes.push({
+              id: `cluster-${ns}`,
+              type: 'cluster',
+              position: {
+                x: Math.cos(angle) * radius,
+                y: Math.sin(angle) * radius,
+              },
+              data: {
+                label: ns,
+                active_timelines: shard.active_timelines,
+                total_crdt_operation: shard.total_crdt_operation,
+              },
+              style: {
+                width: 350,
+                height: 300,
+                backgroundColor: 'rgba(255,255,255,0.02)',
+                border: '1px dashed rgba(255,255,255,0.1)',
+                borderRadius: '16px',
+              },
+            });
+          });
+
+          return {
+            daemonOnline: true,
+            daemonError: null,
+            activeTopology: shards,
+            agentAliases: aliases,
+            topologyNodes: newNodes,
+            namespaces: Array.from(newNamespaces),
+          };
         });
-      });
-
-      // Render children with deterministic grid placement
-      const agentCounts: Record<string, number> = {};
-      snapshot.agents.forEach((agent) => {
-        const ns = agent.namespace;
-        agentCounts[ns] = (agentCounts[ns] || 0);
-        const i = agentCounts[ns];
-        agentCounts[ns]++;
-
-        // Grid of 3 columns
-        const col = i % 3;
-        const row = Math.floor(i / 3);
-        const x = 40 + col * 100;
-        const y = 70 + row * 100;
-
-        newNodes.push({
-          id: `agent-${agent.agent_hex}`,
-          type: 'agent',
-          parentId: `cluster-${agent.namespace}`,
-          extent: 'parent',
-          position: { x, y }, 
-          data: { agent_hex: agent.agent_hex, intent_path: agent.namespace, pulseTimestamp: null, lastTx: 0, lastText: "" },
+      } else {
+        set({
+          daemonOnline: false,
+          daemonError: topRes.error || 'DAEMON_UNREACHABLE',
         });
-      });
-
-      return {
-        topologyNodes: newNodes,
-        namespaces: Array.from(newNamespaces)
-      };
-    });
+      }
+    } catch (_err) {
+      set({ daemonOnline: false, daemonError: 'DAEMON_UNREACHABLE' });
+    }
   },
 
   batchAddThoughts: (newThoughts) =>
@@ -252,10 +267,11 @@ export const useSwarmStore = create<SwarmState>((set) => ({
         }
       }
 
-      // Ensure thoughtOrder is sorted chronologically
       newOrder.sort((a, b) => a - b);
 
       return {
+        daemonOnline: true,
+        daemonError: null,
         thoughts: updatedThoughts,
         thoughtOrder: newOrder,
         thoughtsThisSecond: newThoughtsThisSecond,
@@ -266,26 +282,34 @@ export const useSwarmStore = create<SwarmState>((set) => ({
 
   processUiEvents: (events) =>
     set((state) => {
-      let newNodes = [...state.topologyNodes];
-      let newEdges = [...state.topologyEdges];
+      const newNodes = [...state.topologyNodes];
+      const newEdges = [...state.topologyEdges];
       const newNamespaces = new Set(state.namespaces);
       const newAlerts = [...state.aegisAlerts];
       const newQuarantined = new Set(state.quarantinedAgents);
       const now = Date.now();
 
-      // Ensure namespaces are placed in a circle
       const ensureNamespaceNode = (ns: string) => {
         if (!newNamespaces.has(ns)) {
           newNamespaces.add(ns);
           const index = newNamespaces.size - 1;
-          const radius = 500;
-          const angle = index * (Math.PI / 3); // Position around center
+          const radius = 450;
+          const angle = index * (Math.PI / 3);
           newNodes.push({
             id: `cluster-${ns}`,
             type: 'cluster',
-            position: { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius },
+            position: {
+              x: Math.cos(angle) * radius,
+              y: Math.sin(angle) * radius,
+            },
             data: { label: ns },
-            style: { width: 350, height: 300, backgroundColor: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px' },
+            style: {
+              width: 350,
+              height: 300,
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              border: '1px dashed rgba(255,255,255,0.1)',
+              borderRadius: '16px',
+            },
           });
         }
       };
@@ -293,43 +317,56 @@ export const useSwarmStore = create<SwarmState>((set) => ({
       for (const ev of events) {
         if (ev.event_type === 'ThoughtCommitted') {
           ensureNamespaceNode(ev.intent_path);
-          
+
           const agentNodeId = `agent-${ev.agent_hex}`;
-          const existingNodeIndex = newNodes.findIndex(n => n.id === agentNodeId);
-          
+          const existingNodeIndex = newNodes.findIndex(
+            (n) => n.id === agentNodeId
+          );
+
           if (existingNodeIndex >= 0) {
-            // Update pulse state and save the text for the tooltip
             newNodes[existingNodeIndex] = {
               ...newNodes[existingNodeIndex],
-              data: { ...newNodes[existingNodeIndex].data, pulseTimestamp: now, lastTx: ev.tx_id, lastText: ev.text }
+              data: {
+                ...newNodes[existingNodeIndex].data,
+                pulseTimestamp: now,
+                lastTx: ev.tx_id,
+                lastText: ev.text,
+              },
             };
           } else {
-            // Should not happen frequently if bootstrap worked, but fallback to grid logic
-            const siblingsCount = newNodes.filter(n => n.parentId === `cluster-${ev.intent_path}`).length;
+            const siblingsCount = newNodes.filter(
+              (n) => n.parentId === `cluster-${ev.intent_path}`
+            ).length;
             const col = siblingsCount % 3;
             const row = Math.floor(siblingsCount / 3);
-            
+
             newNodes.push({
               id: agentNodeId,
               type: 'agent',
               parentId: `cluster-${ev.intent_path}`,
               extent: 'parent',
               position: { x: 40 + col * 100, y: 70 + row * 100 },
-              data: { agent_hex: ev.agent_hex, intent_path: ev.intent_path, pulseTimestamp: now, lastTx: ev.tx_id, lastText: ev.text },
+              data: {
+                agent_hex: ev.agent_hex,
+                intent_path: ev.intent_path,
+                pulseTimestamp: now,
+                lastTx: ev.tx_id,
+                lastText: ev.text,
+              },
             });
           }
         } else if (ev.event_type === 'A2aMessageRouted') {
-          // Edge to target agent! If agent doesn't exist yet, we still create the edge to the presumed id.
-          // React flow handles missing targets gracefully (it just doesn't render the edge, or renders it to 0,0, but usually ignores it).
-          // We will create the edge if the target agent node exists.
-          
-          if (newNodes.some(n => n.id === `agent-${ev.target_hex}`)) {
+          if (newNodes.some((n) => n.id === `agent-${ev.target_hex}`)) {
             newEdges.push({
               id: `edge-${now}-${Math.random()}`,
               source: `agent-${ev.source_hex}`,
               target: `agent-${ev.target_hex}`,
               type: 'a2a',
-              data: { timestamp: now, latency: ev.latency_ms, question_payload: ev.question_payload },
+              data: {
+                timestamp: now,
+                latency: ev.latency_ms,
+                question_payload: ev.question_payload,
+              },
               animated: true,
             });
           }
@@ -340,28 +377,32 @@ export const useSwarmStore = create<SwarmState>((set) => ({
       }
 
       return {
+        daemonOnline: true,
+        daemonError: null,
         topologyNodes: newNodes,
         topologyEdges: newEdges,
         namespaces: Array.from(newNamespaces),
-        aegisAlerts: newAlerts.slice(-200), // Keep last 200 alerts
-        quarantinedAgents: Array.from(newQuarantined)
+        aegisAlerts: newAlerts.slice(-200),
+        quarantinedAgents: Array.from(newQuarantined),
       };
     }),
 
   pruneEphemeralEdges: () =>
     set((state) => {
       const now = Date.now();
-      // Keep edges created within the last 2000ms so popup can live
-      const activeEdges = state.topologyEdges.filter(e => {
+      const activeEdges = state.topologyEdges.filter((e) => {
         const timestamp = (e.data as any)?.timestamp || 0;
         return now - timestamp < 2000;
       });
-      
-      // Also turn off pulse for old nodes
+
       let nodesChanged = false;
-      const updatedNodes = state.topologyNodes.map(n => {
+      const updatedNodes = state.topologyNodes.map((n) => {
         const data = n.data as any;
-        if (n.type === 'agent' && data?.pulseTimestamp && now - data.pulseTimestamp > 3000) {
+        if (
+          n.type === 'agent' &&
+          data?.pulseTimestamp &&
+          now - data.pulseTimestamp > 3000
+        ) {
           nodesChanged = true;
           return { ...n, data: { ...data, pulseTimestamp: null } };
         }
@@ -374,36 +415,16 @@ export const useSwarmStore = create<SwarmState>((set) => ({
       return {};
     }),
 
-  setActiveTxId: (tx_id) => set({ activeTxId: tx_id }),
-  
-  clear: () => set({ 
-    thoughts: {}, 
-    thoughtOrder: [], 
-    activeTxId: null,
-    thoughtsThisSecond: 0,
-    agentLastSeen: {},
-    tpsHistory: Array(60).fill(0).map((_, i) => ({ time: Date.now() - (60 - i) * 1000, tps: 0 })),
-    topologyNodes: [],
-    topologyEdges: [],
-    namespaces: [],
-    activeTopology: []
-  }),
-}));
-
-// Initialize the 1-second rolling window interval on the client side
-if (typeof window !== 'undefined') {
-  setInterval(() => {
-    useSwarmStore.setState((state) => {
+  tickRollingMetrics: () =>
+    set((state) => {
       const now = Date.now();
       const currentTps = state.thoughtsThisSecond;
-      
-      // Update TPS history
+
       const newHistory = [...state.tpsHistory, { time: now, tps: currentTps }];
       if (newHistory.length > 60) {
         newHistory.shift();
       }
 
-      // Clean up agentLastSeen (older than 60 seconds)
       const newAgentLastSeen = { ...state.agentLastSeen };
       let agentsChanged = false;
       for (const [hex, timestamp] of Object.entries(newAgentLastSeen)) {
@@ -417,13 +438,34 @@ if (typeof window !== 'undefined') {
         thoughtsThisSecond: 0,
         currentTps,
         tpsHistory: newHistory,
-        ...(agentsChanged ? { agentLastSeen: newAgentLastSeen } : {})
+        ...(agentsChanged ? { agentLastSeen: newAgentLastSeen } : {}),
       };
-    });
-  }, 1000);
+    }),
 
-  // Fast 100ms interval for pruning ephemeral visual edges
-  setInterval(() => {
-    useSwarmStore.getState().pruneEphemeralEdges();
-  }, 100);
-}
+  setActiveTxId: (tx_id) => set({ activeTxId: tx_id }),
+  liftQuarantine: (agent_hex) =>
+    set((state) => ({
+      quarantinedAgents: state.quarantinedAgents.filter((a) => a !== agent_hex),
+    })),
+  setIsPaused: (paused) => set({ isPaused: paused }),
+  setIsForking: (forking) => set({ isForking: forking }),
+  setActiveTopology: (topology) => set({ activeTopology: topology }),
+  setQuarantinedAgents: (agents) => set({ quarantinedAgents: agents }),
+  setAgentAliases: (aliases) => set({ agentAliases: aliases }),
+
+  clear: () =>
+    set({
+      thoughts: {},
+      thoughtOrder: [],
+      activeTxId: null,
+      thoughtsThisSecond: 0,
+      agentLastSeen: {},
+      tpsHistory: Array(60)
+        .fill(0)
+        .map((_, i) => ({ time: Date.now() - (60 - i) * 1000, tps: 0 })),
+      topologyNodes: [],
+      topologyEdges: [],
+      namespaces: [],
+      activeTopology: [],
+    }),
+}));

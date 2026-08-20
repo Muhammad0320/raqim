@@ -2,7 +2,8 @@
 
 import React, { useState, FormEvent } from 'react';
 import styled, { keyframes } from 'styled-components';
-import { executeUnifiedSearch, SearchResult, VaultTelemetry } from '@/actions/vault';
+import { executeUnifiedSearch } from '@/actions/vault';
+import type { VaultSearchResult as SearchResult, VaultTelemetry } from '@/lib/api';
 
 interface VaultClientLayoutProps {
     telemetry: VaultTelemetry;
@@ -13,25 +14,23 @@ interface VaultClientLayoutProps {
 // Styled Components
 // ─────────────────────────────────────────────────────────────────────────
 
-// Main layout wrapper utilizing CSS Grid for Left Sidebar and Main Content
 const LayoutGrid = styled.div`
     display: grid;
     grid-template-columns: 320px 1fr;
     height: 100%;
     width: 100%;
     min-height: 0;
-    background-color: #09090b; /* Brutalist Deep Black */
-    color: #ffffff; /* Pure white text */
-    font-family: 'Space Mono', monospace; /* Monospace accents */
+    background-color: #09090b;
+    color: #ffffff;
+    font-family: 'Space Mono', monospace;
     box-sizing: border-box;
     overflow: hidden;
 `;
 
-// Left Sidebar (Query Engine & Vitals) - Fixed width, full height
 const SidebarContainer = styled.aside`
     width: 320px;
     height: 100%;
-    border-right: 1px solid #27272a; /* Stark borders */
+    border-right: 1px solid #27272a;
     background-color: #09090b;
     display: flex;
     flex-direction: column;
@@ -59,29 +58,28 @@ const Title = styled.h2`
     color: #a1a1aa;
     text-transform: uppercase;
     letter-spacing: 0.15em;
-    margin-bottom: 20px;
+    font-weight: 700;
     display: flex;
     align-items: center;
     gap: 8px;
-    font-weight: 700;
+    margin: 0 0 16px 0;
 `;
 
 const Icon = styled.span`
     font-size: 16px;
-    color: #a1a1aa;
+    color: #00f3ff;
 `;
 
 const FormGroup = styled.div`
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 `;
 
 const Label = styled.label<{ $color?: string }>`
-    font-family: 'Space Mono', monospace;
-    font-size: 9px;
-    color: ${props => props.$color || '#71717a'};
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
     display: block;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: ${props => props.$color || '#71717a'};
     margin-bottom: 8px;
     font-weight: 700;
 `;
@@ -267,7 +265,6 @@ const VitalValue = styled.span<{ $color?: string }>`
     font-weight: 500;
 `;
 
-// Main content container with strict flex columns for zero dead space
 const MainContentArea = styled.div`
     display: flex;
     flex-direction: column;
@@ -277,7 +274,6 @@ const MainContentArea = styled.div`
     box-sizing: border-box;
 `;
 
-// Similarity Distribution Ribbon Component (max height: 120px)
 const RibbonContainer = styled.div`
     height: 120px;
     max-height: 120px;
@@ -413,7 +409,6 @@ const LegendDot = styled.div<{ $color: string }>`
     box-shadow: 0 0 4px ${props => props.$color};
 `;
 
-// Unified Ledger Table Components
 const TableContainer = styled.div`
     flex: 1;
     display: flex;
@@ -519,14 +514,14 @@ const SourceCell = styled.div`
     justify-content: flex-start;
 `;
 
-const SourceBadge = styled.span<{ $source: 'HOT_WAL' | 'LANCEDB' }>`
+const SourceBadge = styled.span<{ $source: string }>`
     font-size: 8px;
     padding: 2px 6px;
     font-weight: 700;
-    border: 1px solid ${props => props.$source === 'HOT_WAL' ? 'rgba(255, 179, 0, 0.3)' : 'rgba(6, 182, 212, 0.3)'};
-    background-color: ${props => props.$source === 'HOT_WAL' ? 'rgba(255, 179, 0, 0.05)' : 'rgba(6, 182, 212, 0.05)'};
-    color: ${props => props.$source === 'HOT_WAL' ? '#ffb300' : '#06b6d4'};
-    box-shadow: 0 0 4px ${props => props.$source === 'HOT_WAL' ? 'rgba(255, 179, 0, 0.1)' : 'rgba(6, 182, 212, 0.1)'};
+    border: 1px solid ${props => props.$source.includes('WAL') ? 'rgba(255, 179, 0, 0.3)' : 'rgba(6, 182, 212, 0.3)'};
+    background-color: ${props => props.$source.includes('WAL') ? 'rgba(255, 179, 0, 0.05)' : 'rgba(6, 182, 212, 0.05)'};
+    color: ${props => props.$source.includes('WAL') ? '#ffb300' : '#06b6d4'};
+    box-shadow: 0 0 4px ${props => props.$source.includes('WAL') ? 'rgba(255, 179, 0, 0.1)' : 'rgba(6, 182, 212, 0.1)'};
 `;
 
 const AgentCell = styled.div`
@@ -543,56 +538,55 @@ const PayloadCell = styled.div`
     padding-right: 12px;
 `;
 
-// Loading Scanning Animation Styled Components
 const scanAnim = keyframes`
     0% { transform: translateY(-100%); }
     100% { transform: translateY(1000%); }
 `;
 
 const LoadingRowContainer = styled.div`
-    position: relative;
-    height: 100%;
-    width: 100%;
     display: flex;
     flex-direction: column;
+    height: 100%;
+    position: relative;
     overflow: hidden;
-    background-color: #000000;
 `;
 
 const Laser = styled.div`
     position: absolute;
+    top: 0;
     left: 0;
     right: 0;
     height: 2px;
     background: linear-gradient(90deg, transparent, #00f3ff, transparent);
-    box-shadow: 0 0 8px #00f3ff, 0 0 15px #00f3ff;
-    animation: ${scanAnim} 3s infinite linear;
-    z-index: 5;
-    pointer-events: none;
+    box-shadow: 0 0 15px #00f3ff;
+    animation: ${scanAnim} 2s infinite linear;
+    z-index: 20;
 `;
 
 const ScanOverlay = styled.div`
     position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: linear-gradient(180deg, transparent 0%, rgba(0, 243, 255, 0.02) 50%, transparent 100%);
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 243, 255, 0.015),
+        rgba(0, 243, 255, 0.015) 1px,
+        transparent 1px,
+        transparent 2px
+    );
     pointer-events: none;
-    z-index: 4;
+    z-index: 10;
 `;
 
 const ScanningTextContainer = styled.div`
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    inset: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 12px;
-    z-index: 10;
-    background-color: rgba(0, 0, 0, 0.9);
-    border: 1px solid #27272a;
-    padding: 20px 40px;
-    box-shadow: 0 0 30px rgba(0, 0, 0, 0.95);
+    z-index: 15;
+    background-color: rgba(0, 0, 0, 0.6);
 `;
 
 const pulseText = keyframes`
@@ -635,7 +629,7 @@ export function VaultClientLayout({ telemetry, initialAliases }: VaultClientLayo
     const [includeHotWal, setIncludeHotWal] = useState(true);
     const [results, setResults] = useState<SearchResult[]>([]);
     const [activeQuery, setActiveQuery] = useState('');
-    const [hoveredTxId, setHoveredTxId] = useState<number | null>(null);
+    const [hoveredTxId, setHoveredTxId] = useState<number | string | null>(null);
     const [isSearching, setIsSearching] = useState(false);
 
     const handleSearch = async (e: FormEvent) => {
@@ -658,7 +652,6 @@ export function VaultClientLayout({ telemetry, initialAliases }: VaultClientLayo
         }
     };
 
-    // Helper to resolve alias or truncate agent_hex
     const getAgentDisplayName = (agentHex: string) => {
         const hexLower = agentHex.toLowerCase();
         const matchedKey = Object.keys(initialAliases || {}).find(
@@ -673,9 +666,11 @@ export function VaultClientLayout({ telemetry, initialAliases }: VaultClientLayo
         return agentHex;
     };
 
-    // Formats transaction id strictly as monospace hex 0x{HEX} padded to 6 chars
-    const formatTxId = (txId: number) => {
-        return `0x${txId.toString(16).padStart(6, '0').toUpperCase()}`;
+    const formatTxId = (txId: number | string) => {
+        if (typeof txId === 'number') {
+            return `0x${txId.toString(16).padStart(6, '0').toUpperCase()}`;
+        }
+        return txId.startsWith('0x') ? txId : `0x${txId.toUpperCase()}`;
     };
 
     return (
@@ -778,7 +773,6 @@ export function VaultClientLayout({ telemetry, initialAliases }: VaultClientLayo
 
             {/* Main Content Area: Distribution Ribbon & Unified Ledger Table */}
             <MainContentArea>
-                {/* Similarity Distribution Ribbon (Max height: 120px) */}
                 <RibbonContainer>
                     <RibbonHeader>
                         <RibbonTitle>
@@ -796,7 +790,7 @@ export function VaultClientLayout({ telemetry, initialAliases }: VaultClientLayo
                         <AxisLine />
                         {results.length > 0 && results.map((res) => {
                             const isHovered = hoveredTxId === res.tx_id;
-                            const dotColor = res.source === 'HOT_WAL' ? '#ffb300' : '#06b6d4';
+                            const dotColor = res.source.includes('WAL') ? '#ffb300' : '#06b6d4';
                             return (
                                 <DotWrapper 
                                     key={res.tx_id} 
@@ -835,7 +829,6 @@ export function VaultClientLayout({ telemetry, initialAliases }: VaultClientLayo
                     </RibbonLegend>
                 </RibbonContainer>
 
-                {/* Unified Ledger Table */}
                 <TableContainer>
                     <TableHeader>
                         <TableTitle>
@@ -892,7 +885,6 @@ export function VaultClientLayout({ telemetry, initialAliases }: VaultClientLayo
     );
 }
 
-// Sub-component for Loading state
 function LoadingStateView() {
     return (
         <LoadingRowContainer>

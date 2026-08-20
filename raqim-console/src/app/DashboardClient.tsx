@@ -1,10 +1,10 @@
 'use client';
+
 import { MainLayout } from '../components/Layout/MainLayout';
 import { useSwarmStore } from '../lib/store/useSwarmStore';
 import { useSwarmStream } from '../lib/hooks/useSwarmStream';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
-import { useEffect, useRef } from 'react';
-import { DashboardCardsData } from '../actions/admin';
+import type { DashboardCardsData } from '../lib/api';
 import { useHardwareVitals } from '../lib/hooks/useHardwareVitals';
 import { LiveSemanticStream } from '../components/LiveSemanticStream';
 import styled from 'styled-components';
@@ -19,19 +19,9 @@ const ProgressBar = styled.div<{ $width: string }>`
   box-shadow: 0 0 8px rgba(0, 243, 255, 0.8), 0 0 15px rgba(0, 243, 255, 0.4);
   transition: width 0.3s ease-out;
 `;
-const getAgentColor = (hex: string) => {
-  let hash = 0;
-  for (let i = 0; i < hex.length; i++) {
-    hash = hex.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hues = [180, 300, 120, 45, 210];
-  const hue = hues[Math.abs(hash) % hues.length];
-  return `hsl(${hue}, 100%, 65%)`;
-};
 
 interface DashboardClientProps {
   initialCards: DashboardCardsData | null;
-  token: string;
 }
 
 const formatNumber = (num: number) => {
@@ -40,45 +30,33 @@ const formatNumber = (num: number) => {
   return num.toString();
 };
 
-export function DashboardClient({ initialCards, token }: DashboardClientProps) {
+export function DashboardClient({ initialCards }: DashboardClientProps) {
   useSwarmStream();
-  const thoughts = useSwarmStore(state => state.thoughts);
-  const thoughtOrder = useSwarmStore(state => state.thoughtOrder);
   const currentTps = useSwarmStore(state => state.currentTps);
-  const tpsHistory = useSwarmStore(state => state.tpsHistory);
-  const highestTxId = useSwarmStore(state => state.highestTxId);
   const vitalsHistory = useSwarmStore(state => state.vitalsHistory);
-
-  const vitals = useHardwareVitals(token);
-
-  const recentThoughts = thoughtOrder.slice(-50).map(id => thoughts[id]).filter(Boolean);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [thoughtOrder.length]);
+  const daemonOnline = useSwarmStore(state => state.daemonOnline);
+  const vitals = useHardwareVitals();
 
   return (
-    <MainLayout title="Dashboard">
-      <div className="flex-1 flex flex-col gap-6 px-8 pb-8 overflow-hidden h-full">
+    <MainLayout title="Overview // Glass">
+      <div className="flex flex-col h-full overflow-y-auto p-8 gap-6">
 
-        {/* ── 1. The 4 Metric Cards (Top Row) ── */}
-        <div className="grid grid-cols-4 gap-4 flex-shrink-0">
-          
-          {/* Card 1: GLOBAL TRANSACTIONS */}
-          <div className="bg-surface-container p-5 rounded-lg border-l-2 border-primary-container relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-b from-primary-container/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+        {/* ── Top Metrics ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
+          {/* Card 1: TOTAL SYSTEM TRANSACTIONS */}
+          <div className="bg-surface-container p-5 rounded-lg border-l-2 border-primary relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
             <div className="flex justify-between items-start mb-4 relative z-10">
-              <span className="font-mono text-[11px] text-on-surface-variant uppercase tracking-[0.2em] font-bold">Global Transactions</span>
-              <span className="material-symbols-outlined text-outline text-sm">public</span>
+              <span className="font-mono text-[11px] text-on-surface-variant uppercase tracking-[0.2em] font-bold">Total Operations</span>
+              <span className="material-symbols-outlined text-outline text-sm">swap_horiz</span>
             </div>
             <div className="font-headline text-4xl font-black text-white relative z-10 tracking-tight">
-              {initialCards ? initialCards.global_transactions.toLocaleString() : <span className="font-mono text-sm tracking-widest text-outline-variant animate-pulse">[ PENDING... ]</span>}
+              {initialCards ? formatNumber(initialCards.global_transactions) : (
+                <span className="font-mono text-sm tracking-widest text-outline-variant animate-pulse">[ STANDALONE ]</span>
+              )}
             </div>
-            <div className="font-mono text-[10px] text-primary-fixed-dim mt-2 flex items-center gap-1.5 relative z-10">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary-container animate-pulse"></span> Highest TX_ID tracked
+            <div className="font-mono text-[10px] text-primary mt-2 flex items-center gap-1.5 relative z-10">
+              <span className="material-symbols-outlined text-[12px]">database</span> Lifetime WAL + LanceDB Tx
             </div>
           </div>
 
@@ -86,29 +64,31 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
           <div className="bg-surface-container p-5 rounded-lg border-l-2 border-secondary relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-b from-secondary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
             <div className="flex justify-between items-start mb-4 relative z-10">
-              <span className="font-mono text-[11px] text-on-surface-variant uppercase tracking-[0.2em] font-bold">Active Agents</span>
-              <span className="material-symbols-outlined text-outline text-sm">hub</span>
+              <span className="font-mono text-[11px] text-on-surface-variant uppercase tracking-[0.2em] font-bold">Active Enclaves</span>
+              <span className="material-symbols-outlined text-outline text-sm">smart_toy</span>
             </div>
             <div className="font-headline text-4xl font-black text-white relative z-10 tracking-tight">
-              {initialCards ? initialCards.active_agents : <span className="font-mono text-sm tracking-widest text-outline-variant animate-pulse">[ PENDING... ]</span>}
+              {initialCards ? initialCards.active_agents : 0}
             </div>
             <div className="font-mono text-[10px] text-secondary mt-2 flex items-center gap-1.5 relative z-10">
-              <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span> Unique 60s rolling window
+              <span className={`w-1.5 h-1.5 rounded-full ${daemonOnline ? 'bg-secondary animate-pulse' : 'bg-[#ff003c]'}`}></span>
+              {daemonOnline ? 'Live Swarm Agents' : 'Daemon Offline'}
             </div>
           </div>
 
-          {/* Card 3: SWARM VELOCITY (TPS) */}
-          <div className="bg-surface-container p-5 rounded-lg border-l-2 border-[#00f3ff] relative overflow-hidden group">
-            <div className="absolute inset-0 bg-gradient-to-b from-[#00f3ff]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          {/* Card 3: REAL-TIME VELOCITY */}
+          <div className="bg-surface-container p-5 rounded-lg border-l-2 border-tertiary relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-b from-tertiary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
             <div className="flex justify-between items-start mb-4 relative z-10">
-              <span className="font-mono text-[11px] text-on-surface-variant uppercase tracking-[0.2em] font-bold">Swarm Velocity</span>
+              <span className="font-mono text-[11px] text-on-surface-variant uppercase tracking-[0.2em] font-bold">Throughput</span>
               <span className="material-symbols-outlined text-outline text-sm">speed</span>
             </div>
-            <div className="font-headline text-4xl font-black relative z-10 tracking-tight transition-colors duration-200 text-white">
-              {currentTps} <span className="text-sm text-outline-variant font-mono">TPS</span>
+            <div className="font-headline text-4xl font-black text-white relative z-10 tracking-tight flex items-baseline gap-2">
+              {currentTps}
+              <span className="font-mono text-xs font-normal text-on-surface-variant tracking-widest">TPS</span>
             </div>
-            <div className="font-mono text-[10px] text-[#00f3ff] mt-2 flex items-center gap-1.5 relative z-10 opacity-80">
-              <span className="material-symbols-outlined text-[12px]">bolt</span> Real-time network throughput
+            <div className="font-mono text-[10px] text-tertiary mt-2 flex items-center gap-1.5 relative z-10">
+              <span className="material-symbols-outlined text-[12px]">bolt</span> 1-Second Rolling Window
             </div>
           </div>
 
@@ -120,10 +100,12 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
               <span className="material-symbols-outlined text-outline text-sm">database</span>
             </div>
             <div className="font-headline text-4xl font-black text-white relative z-10 tracking-tight">
-              {initialCards ? formatNumber(initialCards.vault_capacity) : <span className="font-mono text-sm tracking-widest text-outline-variant animate-pulse">[ PENDING... ]</span>}
+              {initialCards ? formatNumber(initialCards.vault_capacity) : (
+                <span className="font-mono text-sm tracking-widest text-outline-variant animate-pulse">[ STANDALONE ]</span>
+              )}
             </div>
             <div className="font-mono text-[10px] text-tertiary mt-2 flex items-center gap-1.5 relative z-10">
-              <span className="material-symbols-outlined text-[12px]">memory</span> LanceDB Vectors (Static)
+              <span className="material-symbols-outlined text-[12px]">memory</span> LanceDB Vectors
             </div>
           </div>
         </div>
@@ -133,7 +115,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
 
           {/* 2. Live Semantic Stream Table */}
           <div className="col-span-2 min-h-0">
-            <LiveSemanticStream token={token} />
+            <LiveSemanticStream />
           </div>
 
           {/* 3. Sidebar: Hardware Vitals & Velocity Graph */}
@@ -184,8 +166,10 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
                   <span className="material-symbols-outlined text-outline text-sm">memory</span>
                   <h3 className="font-mono text-[11px] uppercase text-on-surface-variant tracking-[0.2em] font-bold">Hardware Vitals</h3>
                 </div>
-                <span className="bg-secondary/10 text-secondary border border-secondary/30 px-2 py-0.5 rounded-sm font-mono text-[9px] uppercase tracking-widest">
-                  Nominal
+                <span className={`px-2 py-0.5 rounded-sm font-mono text-[9px] uppercase tracking-widest ${
+                  daemonOnline ? 'bg-secondary/10 text-secondary border border-secondary/30' : 'bg-[#ff003c]/10 text-[#ff003c] border border-[#ff003c]/30'
+                }`}>
+                  {daemonOnline ? 'Nominal' : 'Offline'}
                 </span>
               </div>
               
@@ -195,7 +179,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
                   <div className="flex justify-between items-end">
                     <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest">CPU Allocation</span>
                     <span className="font-mono text-[10px] text-white">
-                      {vitals ? `${vitals.cpu_percent.toFixed(1)}%` : <span className="animate-pulse">[ PENDING... ]</span>}
+                      {vitals ? `${vitals.cpu_percent.toFixed(1)}%` : <span className="animate-pulse">[ STANDBY ]</span>}
                     </span>
                   </div>
                   <div className="h-1.5 w-full bg-surface-container-highest relative overflow-hidden rounded-sm">
@@ -208,11 +192,11 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
                   <div className="flex justify-between items-end">
                     <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest">WASM Memory</span>
                     <span className="font-mono text-[10px] text-white">
-                      {vitals ? `${vitals.wasm_memory_gb.toFixed(1)}GB / ${vitals.wasm_memory_max_gb.toFixed(1)}GB` : <span className="animate-pulse">[ PENDING... ]</span>}
+                      {vitals ? `${vitals.wasm_memory_gb.toFixed(1)}MB / ${vitals.wasm_memory_max_gb.toFixed(1)}GB` : <span className="animate-pulse">[ STANDBY ]</span>}
                     </span>
                   </div>
                   <div className="h-1.5 w-full bg-surface-container-highest relative overflow-hidden rounded-sm">
-                    <ProgressBar $width={vitals ? `${Math.min((vitals.wasm_memory_gb / vitals.wasm_memory_max_gb) * 100, 100)}%` : '0%'} />
+                    <ProgressBar $width={vitals ? `${Math.min((vitals.wasm_memory_gb / (vitals.wasm_memory_max_gb * 1024)) * 100, 100)}%` : '0%'} />
                   </div>
                 </div>
 
@@ -221,7 +205,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
                   <div className="flex justify-between items-end">
                     <span className="font-mono text-[10px] text-on-surface-variant uppercase tracking-widest">Mesh Latency</span>
                     <span className="font-mono text-[10px] text-white">
-                      {vitals ? `${vitals.mesh_latency_ms.toFixed(0)}ms` : <span className="animate-pulse">[ PENDING... ]</span>}
+                      {vitals ? `${vitals.mesh_latency_ms.toFixed(0)}ms` : <span className="animate-pulse">[ STANDBY ]</span>}
                     </span>
                   </div>
                   <div className="h-1.5 w-full bg-surface-container-highest relative overflow-hidden rounded-sm">
@@ -236,7 +220,7 @@ export function DashboardClient({ initialCards, token }: DashboardClientProps) {
                      <span className="font-mono text-[10px] text-outline-variant uppercase tracking-widest">Core Temp</span>
                    </div>
                    <span className="font-mono text-[10px] text-tertiary">
-                     {vitals ? `${vitals.core_temp_c.toFixed(1)}°C` : <span className="animate-pulse">[ PENDING... ]</span>}
+                     {vitals ? `${vitals.core_temp_c.toFixed(1)}°C` : <span className="animate-pulse">[ STANDBY ]</span>}
                    </span>
                 </div>
               </div>

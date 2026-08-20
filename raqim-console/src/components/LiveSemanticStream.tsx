@@ -5,6 +5,7 @@ import styled, { keyframes } from 'styled-components';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchAgentAliases } from '../actions/aliases';
 import { useFirehoseStream, FirehoseEvent } from '../lib/hooks/useFirehoseStream';
+import { useSwarmStore } from '../lib/store/useSwarmStore';
 
 const Container = styled.div`
   display: flex;
@@ -12,10 +13,10 @@ const Container = styled.div`
   height: 100%;
   overflow: hidden;
   position: relative;
-  background-color: #09090b; /* Brutalism deep black */
+  background-color: #09090b;
   font-family: 'JetBrains Mono', 'Space Mono', monospace;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 `;
 
 const Header = styled.div`
@@ -37,7 +38,6 @@ const TitleArea = styled.div`
 const TitleText = styled.span`
   font-size: 0.6875rem;
   color: rgba(255, 255, 255, 0.8);
-  uppercase: true;
   letter-spacing: 0.2em;
   font-weight: 700;
   text-transform: uppercase;
@@ -49,10 +49,10 @@ const pulseAnimation = keyframes`
   100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 243, 255, 0); }
 `;
 
-const LiveBadge = styled.div`
-  background-color: rgba(0, 243, 255, 0.1);
-  color: #00f3ff;
-  border: 1px solid rgba(0, 243, 255, 0.3);
+const LiveBadge = styled.div<{ $online: boolean }>`
+  background-color: ${props => (props.$online ? 'rgba(0, 243, 255, 0.1)' : 'rgba(255, 0, 60, 0.1)')};
+  color: ${props => (props.$online ? '#00f3ff' : '#ff003c')};
+  border: 1px solid ${props => (props.$online ? 'rgba(0, 243, 255, 0.3)' : 'rgba(255, 0, 60, 0.3)')};
   padding: 0.125rem 0.5rem;
   border-radius: 2px;
   font-size: 0.5625rem;
@@ -66,7 +66,7 @@ const LiveBadge = styled.div`
     content: '';
     width: 6px;
     height: 6px;
-    background-color: #00f3ff;
+    background-color: ${props => (props.$online ? '#00f3ff' : '#ff003c')};
     border-radius: 50%;
     animation: ${pulseAnimation} 2s infinite;
   }
@@ -88,7 +88,7 @@ const TableHeaderRow = styled.div`
 
 const StreamBody = styled.div`
   flex: 1;
-  overflow-y: hidden;
+  overflow-y: auto;
   position: relative;
   background-color: #0a0a0a;
 `;
@@ -118,7 +118,7 @@ const Row = styled(motion.div)`
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 0.75rem;
   align-items: center;
-  
+
   &:hover {
     background-color: rgba(255, 255, 255, 0.03);
   }
@@ -157,8 +157,13 @@ const PayloadCol = styled.div`
   text-overflow: ellipsis;
 `;
 
-// Helper component for individual rows
-function PolymorphicRow({ event, resolveAgent }: { event: FirehoseEvent, resolveAgent: (hex: string) => string }) {
+function PolymorphicRow({
+  event,
+  resolveAgent,
+}: {
+  event: FirehoseEvent;
+  resolveAgent: (hex: string) => string;
+}) {
   if (event.event_type === 'ThoughtCommitted') {
     return (
       <Row
@@ -194,15 +199,23 @@ function PolymorphicRow({ event, resolveAgent }: { event: FirehoseEvent, resolve
           {resolveAgent(event.source_hex)} -&gt; {resolveAgent(event.target_hex)}
         </AgentCol>
         <NamespaceCol>{event.namespace}</NamespaceCol>
-        <PayloadCol>[LATENCY: {event.latency_ms}ms] Q: {event.question_payload.slice(0, 40)}...</PayloadCol>
+        <PayloadCol>
+          [LATENCY: {event.latency_ms}ms] Q: {event.question_payload.slice(0, 40)}...
+        </PayloadCol>
       </Row>
     );
   }
 
   if (event.event_type === 'AegisAlert') {
-    const reason = event.record.reason || event.record.violation_type || 'UNKNOWN_VIOLATION';
-    const path = event.record.violated_path || event.record.attempted_path || 'UNKNOWN_PATH';
-    
+    const reason =
+      event.record.reason ||
+      event.record.violation_type ||
+      'UNKNOWN_VIOLATION';
+    const path =
+      event.record.violated_path ||
+      event.record.attempted_path ||
+      'UNKNOWN_PATH';
+
     return (
       <Row
         initial={{ opacity: 0, y: -20 }}
@@ -216,7 +229,30 @@ function PolymorphicRow({ event, resolveAgent }: { event: FirehoseEvent, resolve
           {resolveAgent(event.record.agent_hex)}
         </AgentCol>
         <NamespaceCol $color="#ef4444">[ SECURITY INTERDICTION ]</NamespaceCol>
-        <PayloadCol style={{ color: '#ef4444' }}>{reason} | {path}</PayloadCol>
+        <PayloadCol style={{ color: '#ef4444' }}>
+          {reason} | {path}
+        </PayloadCol>
+      </Row>
+    );
+  }
+
+  if (event.event_type === 'RealityForked') {
+    return (
+      <Row
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
+      >
+        <div style={{ color: 'rgba(255,255,255,0.4)' }}>{event.tx_id.slice(0, 8)}</div>
+        <AgentCol $color="#eab308">
+          <Dot $color="#eab308" />
+          {resolveAgent(event.agent_id)}
+        </AgentCol>
+        <NamespaceCol $color="#eab308">[ REALITY FORK ]</NamespaceCol>
+        <PayloadCol style={{ color: '#eab308' }}>
+          {event.original_namespace} -&gt; {event.phantom_namespace} (Step {event.step_ordinal})
+        </PayloadCol>
       </Row>
     );
   }
@@ -224,13 +260,10 @@ function PolymorphicRow({ event, resolveAgent }: { event: FirehoseEvent, resolve
   return null;
 }
 
-interface LiveSemanticStreamProps {
-  token: string;
-}
-
-export function LiveSemanticStream({ token }: LiveSemanticStreamProps) {
+export function LiveSemanticStream() {
   const [aliases, setAliases] = useState<Record<string, string>>({});
-  const events = useFirehoseStream(token);
+  const events = useFirehoseStream();
+  const daemonOnline = useSwarmStore(state => state.daemonOnline);
 
   useEffect(() => {
     async function loadAliases() {
@@ -251,13 +284,16 @@ export function LiveSemanticStream({ token }: LiveSemanticStreamProps) {
     <Container>
       <Header>
         <TitleArea>
-          <span className="material-symbols-outlined" style={{ fontSize: '14px', color: 'rgba(255,255,255,0.8)' }}>
+          <span
+            className="material-symbols-outlined"
+            style={{ fontSize: '14px', color: 'rgba(255,255,255,0.8)' }}
+          >
             data_array
           </span>
           <TitleText>Live Semantic Stream</TitleText>
         </TitleArea>
-        <LiveBadge>
-          Connected
+        <LiveBadge $online={daemonOnline}>
+          {daemonOnline ? 'Connected' : 'Disconnected'}
         </LiveBadge>
       </Header>
 
@@ -270,22 +306,30 @@ export function LiveSemanticStream({ token }: LiveSemanticStreamProps) {
 
       <StreamBody>
         {events.length === 0 ? (
-          <EmptyState>Awaiting semantic ingress...</EmptyState>
+          <EmptyState>
+            {daemonOnline
+              ? 'Awaiting semantic ingress...'
+              : 'Daemon disconnected. Ingress stream standby...'}
+          </EmptyState>
         ) : (
           <AnimatePresence initial={false}>
             {events.map((event, index) => {
-              // Construct a reliable unique key. Fallback to index if needed.
               let key = '';
-              if (event.event_type === 'ThoughtCommitted') key = `thought-${event.tx_id}`;
-              else if (event.event_type === 'A2aMessageRouted') key = `a2a-${event.source_hex}-${event.target_hex}-${index}`;
-              else if (event.event_type === 'AegisAlert') key = `aegis-${event.record.agent_hex}-${event.record.timestamp}-${index}`;
+              if (event.event_type === 'ThoughtCommitted')
+                key = `thought-${event.tx_id}`;
+              else if (event.event_type === 'A2aMessageRouted')
+                key = `a2a-${event.source_hex}-${event.target_hex}-${index}`;
+              else if (event.event_type === 'AegisAlert')
+                key = `aegis-${event.record.agent_hex}-${event.record.timestamp}-${index}`;
+              else if (event.event_type === 'RealityForked')
+                key = `fork-${event.agent_id}-${event.tx_id}-${index}`;
               else key = `unknown-${index}`;
 
               return (
-                <PolymorphicRow 
-                  key={key} 
-                  event={event} 
-                  resolveAgent={resolveAgent} 
+                <PolymorphicRow
+                  key={key}
+                  event={event}
+                  resolveAgent={resolveAgent}
                 />
               );
             })}
