@@ -1074,12 +1074,24 @@ pub async fn dashboard_cards_endpoint(
     }))
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct GroupPolicyTelemetry {
+    pub group_name: String,
+    pub allowed_namspace: Vec<String>,
+    pub blocked_namespace: Vec<String>,
+    pub max_tps: u64,
+    pub burst_capacity: u64,
+    pub remaining_tokens: u64,
+}
+
 #[derive(Serialize)]
 pub struct AegisMetricsData {
     pub total_quarantined: usize,
     pub recent_interdictions: usize,
     pub signarure_spoofs: usize,
     pub namespace_breaches: usize,
+    pub rate_limit_blocks: usize,
+    pub active_policies: Vec<GroupPolicyTelemetry>,
 }
 
 pub async fn aegis_metics_endpoint(
@@ -1091,6 +1103,8 @@ pub async fn aegis_metics_endpoint(
         recent_interdictions: 0,
         signarure_spoofs: 0,
         namespace_breaches: 0,
+        rate_limit_blocks: 0,
+        active_policies: Vec::new(),
     };
 
     let now = SystemTime::now()
@@ -1113,8 +1127,26 @@ pub async fn aegis_metics_endpoint(
         match record.violation_type.as_str() {
             "CRYPTO_SPOOF" => metrics.signarure_spoofs += 1,
             "NAMESPACE_BREACH" => metrics.namespace_breaches += 1,
+            "RATE_LIMIT_EXCEEDED" => metrics.rate_limit_blocks += 1,
             _ => {}
         }
+    }
+
+    // Query live Atomic token bucket across active policies
+    let policies_guard = state.aegis.group_policies.read();
+    for (group_name, policy) in policies_guard.iter() {
+        let current_tokens = policy
+            .rate_limiter
+            .tokens
+            .load(std::sync::atomic::Ordering::Relaxed);
+        metrics.active_policies.push(GroupPolicyTelemetry {
+            group_name: group_name.clone(),
+            allowed_namspace: policy.allowed_namespaces.clone(),
+            blocked_namespace: policy.blocked_namespaces.clone(),
+            max_tps: policy.rate_limiter.max_tps,
+            burst_capacity: policy.rate_limiter.burst_capacity,
+            remaining_tokens: current_tokens,
+        });
     }
 
     Ok(Json(metrics))
