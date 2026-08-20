@@ -23,10 +23,10 @@ pub struct CapabilityCertificate {
 #[derive(Serialize, Deserialize, Debug)]
 
 pub struct AtomicTokenBucket {
-    max_tps: u64,
-    burst_capacity: u64,
-    tokens: AtomicU64,
-    last_refill_nanos: AtomicU64,
+    pub max_tps: u64,
+    pub burst_capacity: u64,
+    pub tokens: AtomicU64,
+    pub last_refill_nanos: AtomicU64,
 }
 
 impl AtomicTokenBucket {

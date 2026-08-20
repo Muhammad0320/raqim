@@ -1033,7 +1033,7 @@ pub async fn fetch_agent_timeline(
 
 #[derive(Serialize)]
 pub struct DashboardCards {
-    // pub global_transactions: u64,
+    pub global_transactions: u64,
     pub active_agents: usize,
     pub vault_capacity: usize,
 }
@@ -1063,8 +1063,12 @@ pub async fn dashboard_cards_endpoint(
         })
         .count();
 
+    let cold_count = state.lance.get_total_vector_count().await.unwrap_or(0);
+    let hot_count = state.wal.get_pending_count().await;
+    let total_lifetime_txn = (cold_count + hot_count) as u64;
+
     Ok(Json(DashboardCards {
-        // global_transactions: highest_tx,
+        global_transactions: total_lifetime_txn,
         active_agents: active_count,
         vault_capacity: total_vec,
     }))
