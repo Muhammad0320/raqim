@@ -69,6 +69,7 @@ export interface ClusterShard {
   namespace: string;
   active_timelines: number;
   total_crdt_operation: number;
+  total_crdt_operations?: number;
 }
 
 export interface VaultSearchResult {

@@ -1,0 +1,106 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { MainLayout } from '../Layout/MainLayout';
+import { ReactFlowProvider } from '@xyflow/react';
+import { ClusterTelemetryRibbon } from './ClusterTelemetryRibbon';
+import { TopologyCanvas } from './TopologyCanvas';
+import { ShardDetailDrawer } from './ShardDetailDrawer';
+import { AgentProcessTable } from './AgentProcessTable';
+import { ClusterShard, ClusterInfoData } from '../../lib/api';
+import { fetchTopology, fetchClusterDiagnostics } from '../../actions/admin';
+import { useSwarmStore } from '../../lib/store/useSwarmStore';
+import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
+
+interface TopologyClientLayoutProps {
+  initialTopology: ClusterShard[];
+  initialClusterInfo: ClusterInfoData | null;
+  initialAliases: Record<string, string>;
+}
+
+export function TopologyClientLayout({
+  initialTopology,
+  initialClusterInfo,
+  initialAliases,
+}: TopologyClientLayoutProps) {
+  useSwarmStream();
+
+  const [shards, setShards] = useState<ClusterShard[]>(initialTopology);
+  const [clusterInfo, setClusterInfo] = useState<ClusterInfoData | null>(initialClusterInfo);
+  const [selectedShard, setSelectedShard] = useState<ClusterShard | null>(null);
+
+  const setAgentAliases = useSwarmStore((state) => state.setAgentAliases);
+  const setActiveTopology = useSwarmStore((state) => state.setActiveTopology);
+  const setStoreClusterInfo = useSwarmStore((state) => state.setClusterInfo);
+  const agentAliases = useSwarmStore((state) => state.agentAliases);
+
+  useEffect(() => {
+    if (initialAliases) setAgentAliases(initialAliases);
+    if (initialClusterInfo) setStoreClusterInfo(initialClusterInfo);
+    if (initialTopology) setActiveTopology(initialTopology);
+  }, [initialAliases, initialClusterInfo, initialTopology, setAgentAliases, setStoreClusterInfo, setActiveTopology]);
+
+  // Periodic polling every 5 seconds for cluster topology updates
+  useEffect(() => {
+    const syncData = async () => {
+      try {
+        const [top, diag] = await Promise.all([
+          fetchTopology(),
+          fetchClusterDiagnostics(),
+        ]);
+        if (top) {
+          setShards(top);
+          setActiveTopology(top);
+        }
+        if (diag) {
+          setClusterInfo(diag);
+          setStoreClusterInfo(diag);
+        }
+      } catch (_e) {
+        // Quiet poll error
+      }
+    };
+
+    const interval = setInterval(syncData, 5000);
+    return () => clearInterval(interval);
+  }, [setActiveTopology, setStoreClusterInfo]);
+
+  const totalActiveAgents = Object.keys(agentAliases).length;
+
+  return (
+    <MainLayout title="Swarm Topology // Distributed CRDT Matrix">
+      <div className="flex flex-col h-full w-full bg-[#080C14] overflow-hidden p-3 gap-3">
+        {/* 1. Cluster Status Ribbon */}
+        <ClusterTelemetryRibbon
+          clusterInfo={clusterInfo}
+          shards={shards}
+          totalActiveAgents={totalActiveAgents}
+        />
+
+        {/* 2. Interactive Canvas Container (65% height) */}
+        <div className="flex-1 min-h-[420px] bg-[#0D1322] border border-slate-800 rounded-sm overflow-hidden relative shadow-xl">
+          <ReactFlowProvider>
+            <TopologyCanvas
+              shards={shards}
+              clusterInfo={clusterInfo}
+              onSelectShard={(shard) => setSelectedShard(shard)}
+            />
+          </ReactFlowProvider>
+
+          {/* Shard Forensic Detail Drawer */}
+          {selectedShard && (
+            <ShardDetailDrawer
+              shard={selectedShard}
+              onClose={() => setSelectedShard(null)}
+            />
+          )}
+        </div>
+
+        {/* 3. High-Density Agent Process Matrix */}
+        <div className="shrink-0 max-h-60 overflow-hidden">
+          <AgentProcessTable />
+        </div>
+      </div>
+    </MainLayout>
+  );
+}

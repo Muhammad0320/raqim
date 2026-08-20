@@ -1,89 +1,111 @@
-import { Handle, Position } from '@xyflow/react';
-import { useMemo } from 'react';
+'use client';
+
+import React, { memo } from 'react';
+import { Handle, Position, NodeProps } from '@xyflow/react';
+import { Bot, ShieldAlert, Zap } from 'lucide-react';
 
 const getAgentColor = (hex: string) => {
   let hash = 0;
   for (let i = 0; i < hex.length; i++) {
     hash = hex.charCodeAt(i) + ((hash << 5) - hash);
   }
-  const hues = [180, 300, 120, 45, 210];
-  const hue = hues[Math.abs(hash) % hues.length];
-  return `hsl(${hue}, 100%, 65%)`;
+  const colors = [
+    'border-cyan-500/70 bg-cyan-950/80 text-cyan-300',
+    'border-emerald-500/70 bg-emerald-950/80 text-emerald-300',
+    'border-indigo-500/70 bg-indigo-950/80 text-indigo-300',
+    'border-purple-500/70 bg-purple-950/80 text-purple-300',
+    'border-amber-500/70 bg-amber-950/80 text-amber-300',
+    'border-sky-500/70 bg-sky-950/80 text-sky-300',
+  ];
+  return colors[Math.abs(hash) % colors.length];
 };
 
-export function AgentNode({ data }: { data: any }) {
-  const isPulsing = !!data.pulseTimestamp;
-  const color = useMemo(() => getAgentColor(data.agent_hex), [data.agent_hex]);
-  
-  const hexagonClip = "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)";
+export const AgentNode = memo(function AgentNode({ data, selected }: NodeProps) {
+  const agentHex = (data?.agent_hex as string) || (data?.agentId as string) || '0xUNKNOWN';
+  const alias = (data?.alias as string) || `agent_${agentHex.slice(0, 6)}`;
+  const truncatedHex = agentHex.length > 10 ? `${agentHex.slice(0, 6)}...${agentHex.slice(-4)}` : agentHex;
+  const isQuarantined = Boolean(data?.isQuarantined);
+  const isPulsing = Boolean(data?.pulseTimestamp);
+
+  const status = isQuarantined
+    ? 'Quarantined'
+    : isPulsing
+    ? 'Active'
+    : 'Idle';
+
+  const badgeTheme = getAgentColor(agentHex);
 
   return (
-    <div className="relative flex items-center justify-center w-14 h-14 group">
-      <style>
-        {`
-          @keyframes cyanPulse {
-            0% { box-shadow: 0 0 5px #00f3ff, 0 0 10px #00f3ff; opacity: 1; transform: scale(1); }
-            100% { box-shadow: 0 0 30px #00f3ff, 0 0 60px #00f3ff; opacity: 0; transform: scale(1.5); }
-          }
-          @keyframes tooltipFade {
-            0% { opacity: 0; transform: translateY(10px) translateX(-50%); }
-            10% { opacity: 1; transform: translateY(0) translateX(-50%); }
-            80% { opacity: 1; transform: translateY(0) translateX(-50%); }
-            100% { opacity: 0; transform: translateY(-10px) translateX(-50%); }
-          }
-        `}
-      </style>
+    <div
+      className={`w-44 bg-[#070B14] border rounded-sm p-2.5 shadow-lg select-none transition-all duration-200 ${
+        isQuarantined
+          ? 'border-rose-600/80 shadow-[0_0_15px_rgba(244,63,94,0.3)]'
+          : selected
+          ? 'border-cyan-400 ring-2 ring-cyan-400/30'
+          : isPulsing
+          ? 'border-cyan-400 shadow-[0_0_15px_rgba(0,243,255,0.4)] animate-pulse'
+          : 'border-slate-800 hover:border-slate-700'
+      }`}
+    >
+      {/* Cardinal Handles */}
+      <Handle type="target" position={Position.Top} className="!w-2 !h-2 !bg-cyan-400 !border-slate-900" />
+      <Handle type="source" position={Position.Top} className="!w-2 !h-2 !bg-cyan-400 !border-slate-900" />
+      <Handle type="target" position={Position.Bottom} className="!w-2 !h-2 !bg-cyan-400 !border-slate-900" />
+      <Handle type="source" position={Position.Bottom} className="!w-2 !h-2 !bg-cyan-400 !border-slate-900" />
+      <Handle type="target" position={Position.Left} className="!w-2 !h-2 !bg-cyan-400 !border-slate-900" />
+      <Handle type="source" position={Position.Left} className="!w-2 !h-2 !bg-cyan-400 !border-slate-900" />
+      <Handle type="target" position={Position.Right} className="!w-2 !h-2 !bg-cyan-400 !border-slate-900" />
+      <Handle type="source" position={Position.Right} className="!w-2 !h-2 !bg-cyan-400 !border-slate-900" />
 
-      {/* Pulse effect (unclipped) and Tooltip */}
-      {isPulsing && (
-        <>
-          <div 
-            key={`pulse-${data.pulseTimestamp}`}
-            className="absolute inset-0 rounded-full z-0"
-            style={{ animation: 'cyanPulse 1s ease-out forwards' }}
-          />
-          {data.lastText && (
-            <div 
-              key={`text-${data.pulseTimestamp}`}
-              className="absolute -top-12 left-1/2 bg-zinc-950/90 border border-[#00f3ff]/50 rounded px-3 py-1.5 whitespace-nowrap z-50 shadow-[0_0_15px_rgba(0,243,255,0.3)] backdrop-blur-sm pointer-events-none"
-              style={{ animation: 'tooltipFade 3s ease-out forwards', transform: 'translateX(-50%)' }}
-            >
-              <div className="font-mono text-[9px] text-white">
-                <span className="text-[#00f3ff] font-bold mr-2">TX {data.lastTx}</span>
-                {data.lastText.length > 40 ? data.lastText.substring(0, 40) + '...' : data.lastText}
-              </div>
-            </div>
+      {/* Agent Header */}
+      <div className="flex items-center justify-between gap-1 mb-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {isQuarantined ? (
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+          ) : (
+            <Bot className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
           )}
-        </>
-      )}
-      
-      {/* Core Hexagon */}
-      <div 
-        className="w-12 h-12 bg-zinc-950 flex flex-col items-center justify-center z-10 transition-colors duration-300"
-        style={{ 
-          clipPath: hexagonClip,
-          backgroundColor: isPulsing ? 'rgba(0,243,255,0.2)' : '#09090b',
-        }}
-      >
-        {/* Hexagon Border Hack since clip-path cuts off borders */}
-        <div 
-           className="absolute inset-[1px] bg-zinc-950 flex flex-col items-center justify-center z-20"
-           style={{ clipPath: hexagonClip }}
-        >
-          <span className="font-mono text-[8px] font-bold tracking-widest mt-1" style={{ color: isPulsing ? '#00f3ff' : color }}>
-            {data.agent_hex.slice(0, 4)}
+          <span
+            className={`font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-xs border truncate max-w-[100px] ${badgeTheme}`}
+            title={alias}
+          >
+            [{alias}]
           </span>
-          {isPulsing && <span className="font-mono text-[6px] text-[#00f3ff] mt-0.5">TX {data.lastTx}</span>}
         </div>
+
+        {/* Live Pulse Indicator */}
+        {isPulsing && <Zap className="w-3 h-3 text-cyan-400 animate-bounce shrink-0" />}
       </div>
-      
-      <Handle type="source" position={Position.Bottom} className="opacity-0" />
-      <Handle type="target" position={Position.Top} className="opacity-0" />
-      
-      {/* Label on hover */}
-      <div className="absolute top-16 opacity-0 group-hover:opacity-100 transition-opacity bg-zinc-950 border border-zinc-800 px-2 py-1 rounded font-mono text-[9px] text-white whitespace-nowrap z-50 pointer-events-none">
-         Agent: {data.agent_hex}
+
+      {/* Identity Hex */}
+      <div className="font-mono text-[9px] text-slate-400 truncate mb-1.5" title={agentHex}>
+        ID: <span className="text-slate-300 font-semibold">{truncatedHex}</span>
+      </div>
+
+      {/* Status Pill */}
+      <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 font-mono text-[9px]">
+        <span
+          className={`flex items-center gap-1 font-semibold ${
+            isQuarantined
+              ? 'text-rose-400'
+              : status === 'Active'
+              ? 'text-emerald-400'
+              : 'text-slate-400'
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              isQuarantined
+                ? 'bg-rose-500'
+                : status === 'Active'
+                ? 'bg-emerald-400 animate-pulse'
+                : 'bg-slate-400'
+            }`}
+          />
+          <span>{status}</span>
+        </span>
+        <span className="text-slate-400 text-[8px]">ENCLAVE</span>
       </div>
     </div>
   );
-}
+});
