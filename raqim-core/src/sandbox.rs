@@ -12,7 +12,6 @@ use crate::lancedb_store::LanceEngine;
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
 use crate::state::SwarmStateRegistry;
-use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, SystemEvent};
 use crate::{AgentState, axon::AxonGateKeeper};
 use anyhow::anyhow;

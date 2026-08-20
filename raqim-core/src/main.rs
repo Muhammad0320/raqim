@@ -315,7 +315,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         while let Ok(event) = system_rx.recv().await {
             if let SystemEvent::GlobalQuarantineSync { record } = event {
-                net_clone.broadcast_quarantine_sync(record);
+                net_clone.broadcast_quarantine_sync(record).await;
             }
         }
     });
