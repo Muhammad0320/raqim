@@ -34,8 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Benchmark parameter & harware profiling
     let total_rounds: usize = 500_000;
-    let concurrency: usize = 32;
     let num_agents: usize = 50;
+    let concurrency: usize = num_agents;
     let rounds_per_worker = total_rounds / concurrency;
     let target_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080));
 
@@ -135,8 +135,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sync_barrier = Arc::new(Barrier::new(concurrency + 1));
     let mut worker_handles = Vec::with_capacity(concurrency);
 
+    println!("[SIEGE] Target endpoint: {}", target_addr);
     println!(
-        "[SIEGE] Spawing {} concurrent TCP worker streams... ",
+        "[SIEGE] Connecting {} dedicated agets sockets to kernel... ",
         concurrency
     );
 
@@ -147,6 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let handle = tokio::spawn(async move {
             // Establish persisent TCP stream to Raqim core daemon
+            let agent = &agent_ref[worker_id];
             let mut stream = match TcpStream::connect(target_addr).await {
                 Ok(s) => s,
                 Err(e) => {
@@ -160,7 +162,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Disable Nagle's algorith for low-latency packet streaming
             let _ = stream.set_nodelay(true);
-
             let mut latency_samples_micros: Vec<u64> = Vec::with_capacity(rounds_per_worker);
 
             // Sync all workers at the starting gate before benchmarking starts
@@ -168,8 +169,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for round_idx in 0..rounds_per_worker {
                 let global_idx = (worker_id * rounds_per_worker) + round_idx;
-                let agent_idx = global_idx % agent_ref.len();
-                let agent = &agent_ref[agent_idx];
 
                 // Fixed: live unix ts prevents Aegis Antireply drops
                 let now_ts = SystemTime::now()
