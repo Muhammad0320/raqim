@@ -1,6 +1,7 @@
 use rand_core::OsRng;
 use raqim_siege::{AgentState, AgentStatus, CapabilityCertificate, IngressEnvelope};
 use std::io::Write;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::{
     eprintln, format,
     fs::{self, OpenOptions},
@@ -36,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let concurrency: usize = 32;
     let num_agents: usize = 50;
     let rounds_per_worker = total_rounds / concurrency;
+    let target_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080));
 
     println!("[CONFIG] Total Ingestion Rounds: {} ", total_rounds);
     println!("[CONFIG] Concurrent TCP Workers: {}", concurrency);
@@ -145,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let handle = tokio::spawn(async move {
             // Establish persisent TCP stream to Raqim core daemon
-            let mut stream = match TcpStream::connect("127.0.0::8080").await {
+            let mut stream = match TcpStream::connect(target_addr).await {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!(
