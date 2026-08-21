@@ -71,3 +71,6 @@ postcard = "1.1.3"
 wat = "1.251.0"
  
 tower-http = { version = "0.5", features = ["cors", "catch-panic"] }
+
+[build-dependencies]
+cc = "1.0"
