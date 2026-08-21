@@ -5,6 +5,9 @@
  * Zero mock fallbacks: returns error: "DAEMON_UNREACHABLE" when daemon is offline.
  */
 
+import { formatTxIdHex } from './store/useSwarmStore';
+export { formatTxIdHex };
+
 export const RAQIM_DAEMON_BASE_URL =
   process.env.NEXT_PUBLIC_RAQIM_DAEMON_URL || 'http://127.0.0.1:8081';
 
@@ -89,9 +92,19 @@ export interface VaultTelemetry {
   densest_namespace: string;
 }
 
+export interface InclusionProof {
+  tx_id_hex: string;
+  leaf_index: number;
+  sibling_hashes_hex: string[];
+  merkle_root_hex: string;
+  parent_batch_root_hex: string;
+  batch_id: number;
+  is_active_buffer: boolean;
+}
+
 export interface StateProofResponse {
   success: boolean;
-  proof: unknown | null;
+  proof: InclusionProof | null;
   message: string;
 }
 

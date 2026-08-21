@@ -3,12 +3,17 @@
 import {
   searchVault,
   getVaultTelemetry as getCanonicalVaultTelemetry,
+  getStateProof,
 } from '../lib/api';
 
-import type { VaultSearchResult, VaultTelemetry } from '../lib/api';
+import type {
+  VaultSearchResult,
+  VaultTelemetry,
+  StateProofResponse,
+} from '../lib/api';
 
 /**
- * Server Action to run the unified semantic and lexical search.
+ * Server Action to run unified semantic and lexical search.
  */
 export async function executeUnifiedSearch({
   query,
@@ -21,7 +26,7 @@ export async function executeUnifiedSearch({
 }): Promise<VaultSearchResult[]> {
   const res = await searchVault({
     query,
-    namespace,
+    namespace: namespace === 'ALL' ? undefined : namespace,
     include_wal,
   });
 
@@ -29,6 +34,18 @@ export async function executeUnifiedSearch({
     return res.data;
   }
   return [];
+}
+
+export async function fetchVaultSearchResults(
+  query: string,
+  namespace?: string,
+  includeWal: boolean = true
+): Promise<VaultSearchResult[]> {
+  return executeUnifiedSearch({
+    query,
+    namespace: namespace || 'ALL',
+    include_wal: includeWal,
+  });
 }
 
 /**
@@ -44,5 +61,24 @@ export async function getVaultTelemetry(): Promise<VaultTelemetry> {
     index_size_mb: 0,
     wal_pending_count: 0,
     densest_namespace: 'UNKNOWN (0%)',
+  };
+}
+
+export async function fetchVaultTelemetry(): Promise<VaultTelemetry> {
+  return getVaultTelemetry();
+}
+
+/**
+ * Server Action to query Axon for an inclusion state proof for a given 32-char Hex TxID.
+ */
+export async function fetchStateProof(txIdHex: string): Promise<StateProofResponse> {
+  const res = await getStateProof(txIdHex);
+  if (res.success && res.data) {
+    return res.data;
+  }
+  return {
+    success: false,
+    proof: null,
+    message: res.error || 'Transaction ID not found in active memory batch archives.',
   };
 }
