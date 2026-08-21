@@ -149,9 +149,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let master_signing_key = SigningKey::from_bytes(&key_array);
 
     let master_public_key = master_signing_key.verifying_key().to_bytes();
-    let master_public_key_hex = hex::encode(master_public_key.clone());
-    println!("[SECURITY] Swarm Master Identity loaded into a secure kernel memory ");
-
     // ===============================
     let os_node_id = Uuid::new_v4().to_string();
     println!("[SYSTEM] Sovereign OS Node ID: {} ", os_node_id);
