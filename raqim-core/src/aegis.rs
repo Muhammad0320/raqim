@@ -2,16 +2,12 @@ use crate::SystemEvent;
 use crate::api::UiEvent;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use notify::{EventKind, RecursiveMode, Watcher};
-use rkyv::Archive;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::eprintln;
-use std::sync::mpsc::channel;
+use std::sync::atomic::AtomicU64;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, sync::Arc};
+use std::{eprintln, println};
 use tokio::sync::broadcast::Sender;
 
 /// The Internal Token packed inside every agent's SDK bundle
@@ -23,15 +19,76 @@ pub struct CapabilityCertificate {
     pub master_signature: Vec<u8>, // Signed by Swarm Master Key
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct AegisGroupPolicy {
-    pub allowed_namespaces: Vec<String>,
-    pub blocked_namespaces: Vec<String>,
+/// Atomic Token Bucket Rate Limiter
+#[derive(Serialize, Deserialize, Debug)]
+
+pub struct AtomicTokenBucket {
+    pub max_tps: u64,
+    pub burst_capacity: u64,
+    pub tokens: AtomicU64,
+    pub last_refill_nanos: AtomicU64,
 }
 
-#[derive(Deserialize, Debug)]
-pub struct AegisGroupManifest {
-    pub groups: HashMap<String, AegisGroupPolicy>,
+impl AtomicTokenBucket {
+    pub fn new(max_tps: u64, burst_capacity: u64) -> Self {
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+
+        Self {
+            max_tps,
+            burst_capacity,
+            tokens: AtomicU64::new(burst_capacity),
+            last_refill_nanos: AtomicU64::new(now_nanos),
+        }
+    }
+
+    /// Checks if a request is allowed. Returns true if permiitted asnd false if limit is exceeded.
+    pub fn check_and_consume(&self) -> bool {
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+
+        let last_refill = self
+            .last_refill_nanos
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let elapsed_nanos = now_nanos.saturating_sub(last_refill);
+
+        // Refill tokens based on elapsed nanoseconds: (elapsed_secs * max_tps)
+        let new_tokens = (elapsed_nanos as u128 * self.max_tps as u128 / 1_000_000_000) as u64;
+
+        if new_tokens > 0 {
+            // Update last refill time
+            self.last_refill_nanos
+                .store(now_nanos, std::sync::atomic::Ordering::Relaxed);
+
+            // Refill bucket but do not exceed burst_capacity
+            let current = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
+            let refilled = (current + new_tokens).min(self.burst_capacity);
+            self.tokens
+                .store(refilled, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        // Try to take 1 token from the bucket
+        let current_tokens = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
+        if current_tokens > 0 {
+            self.tokens
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            true
+        } else {
+            // Rate limit exceeded
+            false
+        }
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct GroupPolicy {
+    pub allowed_namespaces: Vec<String>,
+    pub blocked_namespaces: Vec<String>,
+    pub rate_limiter: Arc<AtomicTokenBucket>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize)]
@@ -43,102 +100,75 @@ pub struct QuarantineRecord {
     pub timestamp: u64,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GroupPolicyConfig {
+    pub allowed_namespaces: Vec<String>,
+    pub blocked_namespaces: Vec<String>,
+    pub max_tps: u64,
+    pub burst_capacity: u64,
+}
+
+/// Deserialization schema for aegis.toml
+#[derive(Deserialize, Debug, Clone, Serialize)]
+pub struct AegisConfigFile {
+    pub groups: HashMap<String, GroupPolicyConfig>,
+}
+
+impl AegisConfigFile {
+    pub fn to_group_policies(&self) -> HashMap<String, GroupPolicy> {
+        let mut map = HashMap::new();
+        for (group_name, cfg) in &self.groups {
+            map.insert(
+                group_name.clone(),
+                GroupPolicy {
+                    allowed_namespaces: cfg.allowed_namespaces.clone(),
+                    blocked_namespaces: cfg.blocked_namespaces.clone(),
+                    rate_limiter: Arc::new(AtomicTokenBucket::new(cfg.max_tps, cfg.burst_capacity)),
+                },
+            );
+        }
+
+        map
+    }
+}
+
 pub struct AegisGateKeeper {
-    pub group_policies: RwLock<HashMap<String, AegisGroupPolicy>>,
+    pub group_policies: Arc<RwLock<HashMap<String, GroupPolicy>>>,
     pub quarantine_blocklist: DashMap<String, QuarantineRecord>,
-    master_public_key: VerifyingKey,
-    tx: Sender<SystemEvent>,
-    ui_tx: Sender<UiEvent>,
+    pub master_public_key: VerifyingKey,
+    pub tx: Sender<SystemEvent>,
+    pub ui_tx: Sender<UiEvent>,
 }
 
 impl AegisGateKeeper {
     pub fn new(
-        aegis_path: &str,
-        master_pub_hex: &str,
+        initial_policies: HashMap<String, GroupPolicy>,
+        master_pub_bytes: &[u8; 32],
         tx: Sender<SystemEvent>,
         ui_tx: Sender<UiEvent>,
-    ) -> Arc<Self> {
-        let group_config = Self::parse_group_toml(aegis_path);
-
-        let pub_bytes = hex::decode(master_pub_hex).expect("Invalid Master Public Key Hex");
-        let master_public_key = VerifyingKey::from_bytes(&pub_bytes.try_into().unwrap())
+    ) -> Self {
+        let master_public_key = VerifyingKey::from_bytes(master_pub_bytes)
             .expect("FATAL: Failed to parse master public key");
 
-        let gatekeeper = Arc::new(AegisGateKeeper {
-            group_policies: RwLock::new(group_config),
+        Self {
             quarantine_blocklist: DashMap::new(),
+            group_policies: Arc::new(RwLock::new(initial_policies)),
             master_public_key,
             tx,
             ui_tx,
-        });
-
-        // Spawn a dedicated bg thread for the C-level fs watcher
-        let path_string = aegis_path.to_string();
-        let gk_clone = gatekeeper.clone();
-
-        // 3. The Async Tokio task that actually swaps the memory.
-        std::thread::spawn(move || {
-            let (tx, rx) = channel();
-            let mut watcher =
-                notify::recommended_watcher(tx).expect("Failed to bind os file to watcher");
-            watcher
-                .watch(
-                    std::path::Path::new(&path_string),
-                    RecursiveMode::NonRecursive,
-                )
-                .unwrap();
-
-            // This thread blocks efficiently until the OS sends a file modifiication event.
-            for res in rx {
-                match res {
-                    Ok(event) => {
-                        // We only care if the file content were actually modified
-                        if let EventKind::Modify(_) = event.kind {
-                            println!("[AEGIS] Modification detected. Hot reloadidng ACL...");
-
-                            // Parse the updated file
-                            let new_policies = Self::parse_group_toml(&path_string);
-
-                            //  FAIL-SAFE: Only apply if the new file actually parsed correctly
-                            if !new_policies.is_empty() {
-                                // Obtain write lock, swap the mappig, instantly release the lock
-                                let mut write_lock = gk_clone.group_policies.write().unwrap();
-                                *write_lock = new_policies;
-                                println!("[AEGIS] ACL Hot-Reloaded Successfully.")
-                            }
-                        }
-                    }
-
-                    Err(e) => eprintln!("[AEGIS] Watcher Error: {:?}", e),
-                }
-            }
-        });
-
-        gatekeeper
-    }
-
-    fn parse_group_toml(path: &str) -> HashMap<String, AegisGroupPolicy> {
-        match std::fs::read_to_string(path) {
-            Ok(content) => match toml::from_str::<AegisGroupManifest>(&content) {
-                Ok(manifest) => manifest.groups,
-                Err(e) => {
-                    eprintln!(
-                        "[AEGIS FATAL] Group Configuration parsing error: {}. Defaulting to lockdown. ",
-                        e
-                    );
-                    HashMap::new()
-                }
-            },
-
-            Err(_) => {
-                eprintln!("[AEGIS WARNING] Group policy definition not found. Access denied.");
-
-                HashMap::new()
-            }
         }
     }
 
-    #[inline(always)]
+    /// Hot-reloaded API: Override memory policy maps when file changes occur on disk
+    pub fn reload_policies(&self, new_policies: HashMap<String, GroupPolicy>) {
+        let mut guard = self.group_policies.write();
+        *guard = new_policies;
+
+        println!(
+            "[AEGIS FIREWALL] Successfully hot-reloaded policy updates from disk kernel watchers."
+        );
+    }
+
     pub fn is_quarantined(&self, agent_hex: &str) -> bool {
         self.quarantine_blocklist.contains_key(agent_hex)
     }
@@ -262,14 +292,27 @@ impl AegisGateKeeper {
             ));
         }
 
-        // 6. POLICY ENFORCEMENT: Evaluate namespace against LIVE policy rule
-        let policies_guard = self.group_policies.read().unwrap();
+        // Rate limiting & Dos interdiction (Atomic bucket token)
+        let policies_guard = self.group_policies.read();
         let live_policy = policies_guard.get(group_name).ok_or_else(|| {
             anyhow::anyhow!(
                 "Group Policy mapping '{}' not defined inside active aegis.toml ",
                 group_name
             )
         })?;
+
+        if !live_policy.rate_limiter.check_and_consume() {
+            self.trigger_quarantine(
+                agent_hex,
+                intent_path,
+                "RATE_LIMIT_EXCEDED",
+                &format!("Agent exceeded group '{}' max TPS quota", group_name),
+            );
+
+            return Err(anyhow::anyhow!(
+                "Acess Denied: Group Rate Limit Exceeded (DoS Interdiction)"
+            ));
+        }
 
         for blocked in &live_policy.blocked_namespaces {
             let match_found = if blocked.ends_with("*") {
@@ -347,7 +390,7 @@ impl AegisGateKeeper {
         }
 
         // 2. Short-circuit check if the agent is actively quarantined
-        if self.quarantine_blocklist.contains_key(&cert.agent_hex) {
+        if self.is_quarantined(&cert.agent_hex) {
             return Err(anyhow::anyhow!(
                 " Agent is expicitely locked down by firewall "
             ));
@@ -367,13 +410,13 @@ impl AegisGateKeeper {
         cert_unsigned_payload.master_signature = Vec::new();
         let serialized_raw = postcard::to_allocvec(&cert_unsigned_payload)?;
 
-        let master_sig_array: &[u8; 64] = cert
+        let master_sig_bytes: &[u8; 64] = cert
             .master_signature
             .as_slice()
             .try_into()
             .map_err(|_| anyhow::anyhow!("Invalid Master Signature block lengnth"))?;
 
-        let master_sig = Signature::from_bytes(master_sig_array);
+        let master_sig = Signature::from_bytes(master_sig_bytes);
         if self
             .master_public_key
             .verify(&serialized_raw, &master_sig)

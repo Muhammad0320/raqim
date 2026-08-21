@@ -1,12 +1,13 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Path, Query};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::{
     Json, async_trait,
     extract::{FromRequestParts, State},
     http::{StatusCode, request::Parts},
     routing::{get, post},
 };
+use tower_http::catch_panic::CatchPanicLayer;
 
 use base64::Engine;
 
@@ -24,7 +25,6 @@ use tokio_stream::wrappers::BroadcastStream;
 
 use serde::{Deserialize, Serialize};
 use std::result::Result::{Err, Ok};
-use std::sync::atomic::AtomicU64;
 use std::{collections::HashMap, sync::Arc};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::broadcast::Sender;
@@ -34,7 +34,7 @@ use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 use crate::aegis::{CapabilityCertificate, QuarantineRecord};
-use crate::axon::AxonGateKeeper;
+use crate::axon::{AxonGateKeeper, InclusionProof};
 use crate::health::SystemHealth;
 use crate::hot_memory::HotVectorBuffer;
 use crate::lancedb_store::LanceEngine;
@@ -43,12 +43,53 @@ use crate::registry::SwarmRegistry;
 use crate::state::SwarmStateRegistry;
 use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
-    network::GlobalNetworkBridge, telemetry::TelemetryEngine,
+    network::GlobalNetworkBridge,
 };
 use crate::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
 
+// Strongly typed api error system (Zero-Panic Guarantee)
+#[derive(Debug)]
+pub enum ApiError {
+    BadRequest(String),
+    Unauthorized(String),
+    Forbidden(String),
+
+    NotFound(String),
+    RateLimitExceeded(String),
+    InternalServerError(String),
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let (status, error_code, message) = match self {
+            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg),
+            ApiError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", msg),
+            ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, "FORBIDDEN", msg),
+            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg),
+            ApiError::RateLimitExceeded(msg) => {
+                (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMIT_EXCEEDED", msg)
+            }
+            ApiError::InternalServerError(msg) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", msg)
+            }
+        };
+
+        let body = Json(json!({
+
+            "success": false,
+            "error_code": error_code,
+            "message": message
+
+        }));
+
+        (status, body).into_response()
+    }
+}
+
+// Websocket Message Types & UI Event Schemas
+
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")] // Enables brilliant json parsing {"type": "AskQuestion", }
+#[serde(tag = "type")] // Enables json parsing {"type": "AskQuestion", }
 pub enum WsMessage {
     // Python -> Daemon: "I want to listen here"
     RegisterCapability {
@@ -101,6 +142,14 @@ pub enum UiEvent {
         text: String,
     },
 
+    RealityForked {
+        agent_id: String,
+        original_namespace: String,
+        phantom_namespace: String,
+        step_ordinal: u64,
+        tx_id: String,
+    },
+
     A2aMessageRouted {
         source_hex: String,
         target_hex: String,
@@ -115,31 +164,6 @@ pub enum UiEvent {
     },
 }
 
-#[derive(Serialize, Clone, Debug)]
-pub struct VaultSearchResult {
-    pub tx_id: u128,
-    pub agent_hex: String,
-    pub namespace: String,
-    pub payload: String,
-    pub timestamp: String,
-    pub source: String,
-    pub similarity_score: f32,
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct VaultTelemetry {
-    pub total_vectors: usize,
-    pub index_size_mb: f64,
-    pub wal_pending_count: usize,
-    pub densest_namespace: String,
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct ActiveAgentNode {
-    pub namespace: String,
-    pub status: String, // Active, Quarantined, Idle
-}
-
 #[derive(Clone)]
 pub struct ApiState {
     pub config: Arc<RaqimConfig>,
@@ -149,11 +173,9 @@ pub struct ApiState {
     pub brain: Arc<SwarmStateRegistry>,
     pub aegis: Arc<AegisGateKeeper>,
     pub global_net: Arc<GlobalNetworkBridge>,
-    pub telemetry: Arc<TelemetryEngine>,
     pub cortex_tx: UnboundedSender<Vec<u8>>,
     pub wal: Arc<WalEngine>,
     pub lance: Arc<LanceEngine>,
-    pub global_tx_counter: Arc<AtomicU64>,
 
     pub event_tx: Sender<SystemEvent>,
     pub ui_tx: Sender<UiEvent>,
@@ -278,8 +300,12 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                         };
 
                         // Send down to python
-                        let json = serde_json::to_string(&incoming_msg).unwrap();
-                        let _ = conn_clone.downstream_tx.blocking_send(Message::Text(json));
+                        if let Ok(json_str) = serde_json::to_string(&incoming_msg) {
+                            let tx = conn_clone.downstream_tx.clone();
+                            tokio::spawn(async move {
+                                let _ = tx.send(Message::Text(json_str)).await;
+                            });
+                        }
 
                         // ZERO CPU WAIT: Yield OS thread until Python replies. 15 seconds max wait time.
                         match tokio::runtime::Handle::current()
@@ -322,7 +348,6 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
             tokio::spawn(async move {
                 // Decode Raw bytes from Hex Containers
-
                 let cert_bytes = match hex::decode(&capability_cert) {
                     Ok(b) => b,
                     Err(_) => return,
@@ -347,31 +372,47 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     sig_bytes.copy_from_slice(&signature)
                 }
 
-                let (agent_hex, group_name) =
-                    match os_state_clone.aegis.verify_session_lineage(&cert_bytes) {
-                        Ok((agent, group)) => (agent, group),
-                        Err(_) => return (),
-                    };
+                let (agent_hex, group_name) = match os_state_clone
+                    .aegis
+                    .verify_session_lineage(&cert_bytes, &public_key_bytes)
+                {
+                    Ok((agent, group)) => (agent, group),
+                    Err(e) => {
+                        let err = WsMessage::Error {
+                            message: format!("[AEGIS LINEAGE FAILURE]: {}", e),
+                        };
 
-                let _agent_hex = match os_state_clone.aegis.authorize_packet_fast(
+                        if let Ok(json_str) = serde_json::to_string(&err) {
+                            let _ = conn_clone.downstream_tx.send(Message::Text(json_str)).await;
+                        }
+
+                        return;
+                    }
+                };
+
+                let current_ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+
+                if let Err(e) = os_state_clone.aegis.authorize_packet_fast(
                     agent_hex.as_str(),
                     group_name.as_str(),
                     &public_key_bytes,
                     &question,
                     &sig_bytes,
                     &capability,
+                    current_ts,
                 ) {
-                    Ok(hex) => hex,
-                    Err(e) => {
-                        let err = WsMessage::Error {
-                            message: format!("[AEGIS Gate block] {}  ", e),
-                        };
-                        let _ = conn_clone
-                            .downstream_tx
-                            .send(Message::Text(serde_json::to_string(&err).unwrap()))
-                            .await;
-                        return;
+                    let err = WsMessage::Error {
+                        message: format!("[AEGIS Gate block] {}  ", e),
+                    };
+
+                    if let Ok(json_str) = serde_json::to_string(&err) {
+                        let _ = conn_clone.downstream_tx.send(Message::Text(json_str)).await;
                     }
+
+                    return;
                 };
 
                 let envelope = A2AEnvelope {
@@ -382,6 +423,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                     signature: sig_bytes,
                     sender_capability_cert: cert_bytes,
+                    timestamp: current_ts,
                 };
 
                 // Start the stopwatch
@@ -389,11 +431,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                 match os_state_clone
                     .global_net
-                    .execute_a2a_rpc(
-                        envelope,
-                        os_state_clone.aegis.clone(),
-                        os_state_clone.telemetry.clone(),
-                    )
+                    .execute_a2a_rpc(envelope, os_state_clone.aegis.clone())
                     .await
                 {
                     Ok((answer, responder_hex)) => {
@@ -405,10 +443,10 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                             request_id,
                             answer: answer.clone(),
                         };
-                        let _ = conn_clone
-                            .downstream_tx
-                            .send(Message::Text(serde_json::to_string(&res).unwrap()))
-                            .await;
+
+                        if let Ok(json_str) = serde_json::to_string(&res) {
+                            let _ = conn_clone.downstream_tx.send(Message::Text(json_str)).await;
+                        }
 
                         // Fire the laser beam to the UI
                         let ui_event = UiEvent::A2aMessageRouted {
@@ -427,10 +465,9 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                         let err = WsMessage::Error {
                             message: e.to_string(),
                         };
-                        let _ = conn_clone
-                            .downstream_tx
-                            .send(Message::Text(serde_json::to_string(&err).unwrap()))
-                            .await;
+                        if let Ok(json_str) = serde_json::to_string(&err) {
+                            let _ = conn_clone.downstream_tx.send(Message::Text(json_str)).await;
+                        }
                     }
                 }
             });
@@ -440,6 +477,12 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
     }
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct ActiveAgentNode {
+    pub namespace: String,
+    pub status: String, // Active, Quarantined, Idle
+}
+
 #[derive(Serialize, Clone)]
 pub struct UiThought {
     pub agent_hex: String,
@@ -447,6 +490,8 @@ pub struct UiThought {
     pub text: String,
     pub tx_id: u64,
 }
+
+// 5. Rest & SSE route handlers.
 
 // The Firehose Route Handler
 pub async fn sse_firehose_endpoint(
@@ -459,10 +504,10 @@ pub async fn sse_firehose_endpoint(
     // Convert the Tokio Receiver into a standard async Stream.
     let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
         match msg {
-            Ok(ui_event) => {
-                let json_string = serde_json::to_string(&ui_event).unwrap();
-                Some(Ok::<Event, Infallible>(Event::default().data(json_string)))
-            }
+            Ok(ui_event) => serde_json::to_string(&ui_event)
+                .ok()
+                .map(|json| Ok(Event::default().data(json))),
+
             Err(_) => {
                 // Lagging subscribers are skipped automatically by tokio broadcast
                 None
@@ -471,7 +516,7 @@ pub async fn sse_firehose_endpoint(
     });
 
     // Return the SSE stream to the browser.
-    Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new())
+    Sse::new(stream).keep_alive(KeepAlive::new())
 }
 
 // The Observatiton deck ( Only used by the time machine UI )
@@ -483,10 +528,28 @@ pub async fn sse_phantom_endpoint(
 
     let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
         match msg {
-            Ok(p_event) => {
-                let json_string = serde_json::to_string(&p_event).unwrap();
-                Some(Ok::<Event, Infallible>(Event::default().data(json_string)))
-            }
+            Ok(p_event) => serde_json::to_string(&p_event)
+                .ok()
+                .map(|json| Ok(Event::default().data(json))),
+
+            Err(_) => None,
+        }
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::new())
+}
+
+pub async fn sse_health_endpoint(
+    _auth: crate::api::ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+    let receiver = state.health_tx.subscribe();
+
+    let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
+        match msg {
+            Ok(health_payload) => serde_json::to_string(&health_payload)
+                .ok()
+                .map(|json| Ok(Event::default().data(json))),
 
             Err(_) => None,
         }
@@ -517,11 +580,12 @@ pub async fn unified_vault_search(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
     Query(params): Query<UnifiedSearchQuery>,
-) -> Result<Json<Vec<VaultSearchResult>>, StatusCode> {
+) -> Result<Json<Vec<VaultSearchResult>>, ApiError> {
     // The Scatter: Launch both searches concurrently on different OS threads
     let lance_future = state
         .lance
         .semantic_search(&params.query, params.namespace.as_deref(), 50);
+
     let wal_future = async {
         // Only hit the disk if the user explicitely requested the WAL inclusion
         if params.include_wal.unwrap_or(true) {
@@ -570,7 +634,7 @@ pub async fn semantic_search_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
     Query(params): Query<RagQuery>,
-) -> Result<Json<Vec<String>>, StatusCode> {
+) -> Result<Json<Vec<String>>, ApiError> {
     let limit = params.limit.unwrap_or(5);
 
     match state
@@ -586,15 +650,36 @@ pub async fn semantic_search_endpoint(
         Ok(memories) => Ok(Json(memories)),
         Err(e) => {
             eprintln!("[RAG Hybrid ERROR] {}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(ApiError::InternalServerError(
+                format!("RAG search failed: {}", e).to_string(),
+            ))
         }
     }
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct VaultSearchResult {
+    pub tx_id: u128,
+    pub agent_hex: String,
+    pub namespace: String,
+    pub payload: String,
+    pub timestamp: String,
+    pub source: String,
+    pub similarity_score: f32,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct VaultTelemetry {
+    pub total_vectors: usize,
+    pub index_size_mb: f64,
+    pub wal_pending_count: usize,
+    pub densest_namespace: String,
 }
 
 pub async fn vault_telemetry_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
-) -> Result<Json<VaultTelemetry>, StatusCode> {
+) -> Result<Json<VaultTelemetry>, ApiError> {
     let wal_pending_count = state.wal.get_pending_count().await;
 
     let total_vectors = state.lance.get_total_vector_count().await.unwrap_or(0);
@@ -617,6 +702,23 @@ pub async fn vault_telemetry_endpoint(
     Ok(Json(telemetry))
 }
 
+pub async fn active_qurantine_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Json<Vec<QuarantineRecord>> {
+    let mut quarantined_agents = Vec::new();
+
+    // Iterate over Dashmap Shards safely.
+    for entry in state.aegis.quarantine_blocklist.iter() {
+        quarantined_agents.push(entry.value().clone());
+    }
+
+    // Sort by most recent first
+    quarantined_agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    Json(quarantined_agents)
+}
+
 #[derive(Deserialize)]
 struct ResurrectPayload {
     agent_hex: String,
@@ -627,7 +729,7 @@ async fn lift_qurantine_and_resurrect(
     _identity: ValidatedIdentity,
     State(state): State<ApiState>,
     Json(payload): Json<ResurrectPayload>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     // Fire the Out-of-Band Context Eviction Via Zenoh
     println!(
         "[AEGIS] Dispatching Context Eviction to: {}... ",
@@ -661,18 +763,26 @@ async fn lift_qurantine_and_resurrect(
             .boot_historical_agent(&payload.agent_hex, None, None, false, state.phantom_ui_tx)
             .await
         {
-            Ok(()) => Ok(StatusCode::OK),
+            Ok(()) => Ok(Json(
+                json!({"success": true, "message": "Quarantine lifted"}),
+            )),
 
             Err(e) => {
                 eprintln!(
                     "[TIME MACHINE FATAL] Failed to resurrect WASM state for {}: {} ",
                     &payload.agent_hex, e
                 );
-                Ok(StatusCode::INTERNAL_SERVER_ERROR)
+                Err(ApiError::InternalServerError(format!(
+                    "Resurrection failed: {}",
+                    e
+                )))
             }
         }
     } else {
-        Err(StatusCode::NOT_FOUND)
+        Err(ApiError::NotFound(format!(
+            "Agent {} not in quarantine",
+            payload.agent_hex
+        )))
     }
 }
 
@@ -692,11 +802,11 @@ struct TimeTravelRequest {
 }
 
 // THE ACTIVE DEBUGGING ROUTE HANDLER
-async fn time_travel(
+async fn time_travel_endpoint(
     _identity: ValidatedIdentity,
     State(state): State<ApiState>,
     Json(payload): Json<TimeTravelRequest>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     println!(
         "[TIME TRAVEL] Admin requested Reality Forkk for Agent {} at TxID {} ",
         payload.agent_hex, payload.target_tx_id
@@ -721,18 +831,20 @@ async fn time_travel(
             )
             .await
         {
-            Ok(()) => Ok(StatusCode::OK),
+            Ok(()) => Ok(Json(
+                json!({"success": true, "message": "Time travel initiated" }),
+            )),
 
-            Err(e) => {
-                eprintln!(
-                    "[TIME MACHINE FATAL] Failed to Determinstically Replay {}: {} ",
-                    &payload.agent_hex, e
-                );
-                Ok(StatusCode::INTERNAL_SERVER_ERROR)
-            }
+            Err(e) => Err(ApiError::InternalServerError(format!(
+                "Time travel failed: {}",
+                e
+            ))),
         }
     } else {
-        Err(StatusCode::NOT_FOUND)
+        Err(ApiError::NotFound(format!(
+            "Agent hex: {} not found in quarantine blocklist",
+            &payload.agent_hex
+        )))
     }
 }
 
@@ -740,11 +852,11 @@ pub async fn upload_wasm_endpoint(
     _auth: ValidatedIdentity,
     State(_): State<ApiState>,
     mut multipart: Multipart,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     while let Some(mut field) = multipart
         .next_field()
         .await
-        .map_err(|_| StatusCode::BAD_REQUEST)?
+        .map_err(|e| ApiError::BadRequest(format!("Multipart read failed: {}", e)))?
     {
         let file_name = field.file_name().unwrap_or("").to_string();
 
@@ -752,96 +864,97 @@ pub async fn upload_wasm_endpoint(
         let hex_str = file_name.trim_end_matches(".wasm");
         if utils::parse_agent_id(hex_str).is_err() {
             eprintln!("[SECURITY] Rejected WASM upload: Invalid Agent ID Hex");
-            return Err(StatusCode::BAD_REQUEST);
+            return Err(ApiError::BadRequest(
+                "Invalid Agent ID Hex format in file".to_string(),
+            ));
         }
 
         let filepath = format!("./plugins/{}", file_name);
         let mut file = tokio::fs::File::create(&filepath)
             .await
-            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            .map_err(|e| ApiError::InternalServerError(format!("Failed to create file: {}", e)))?;
 
         // RAM-SAFE CHUNK STREAMING
-        while let Some(chunk) = field.chunk().await.unwrap() {
-            if file.write_all(&chunk).await.is_err() {
-                let _ = tokio::fs::remove_file(&filepath).await; // Clean up the corrpted upload
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        while let Some(chunk) = field
+            .chunk()
+            .await
+            .map_err(|e| ApiError::BadRequest(format!("Chunk stream error: {}", e)))?
+        {
+            if let Err(e) = file.write_all(&chunk).await {
+                let _ = tokio::fs::remove_file(&filepath).await;
+                return Err(ApiError::InternalServerError(format!(
+                    "File write failed: {}",
+                    e
+                )));
             }
         }
-
-        println!(
-            "[SYSTEM] Securely streamed new agent binary to disk: {}",
-            filepath
-        );
     }
 
-    Ok(StatusCode::CREATED)
+    Ok(Json(
+        json!({"success": true, "message": "WASM module uploaded successfully"}),
+    ))
 }
 
 // THE ZERO-COPY HTTP INGRESS: The endpoint expects raw binary `rkyv` bytes, Not JSON.
 pub async fn http_ingress_endpoint(
     State(state): State<ApiState>,
     body: Bytes,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     // Zero copy access the IngressEnvelope
-    let ingress_envelope =
-        match rkyv::access::<<IngressEnvelope as rkyv::Archive>::Archived, rkyv::rancor::Error>(
-            &body,
-        ) {
-            Ok(valid_archived) => valid_archived,
-            Err(e) => {
-                eprintln!(
-                    "Invalid body. Malformed memory layout (IngressEnvelope): {}",
-                    e
-                );
-                return Err(StatusCode::BAD_REQUEST);
-            }
-        };
+    let archived_ingress = rkyv::access::<
+        <IngressEnvelope as rkyv::Archive>::Archived,
+        rkyv::rancor::Error,
+    >(&body)
+    .map_err(|e| ApiError::BadRequest(format!("Malformed IngressEnvelope memory layout: {}", e)))?;
 
-    let state_bytes = ingress_envelope.state_bytes.as_slice();
+    let state_bytes = archived_ingress.state_bytes.as_slice();
 
     let archived_state =
-        match rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(
-            state_bytes,
-        ) {
-            Ok(valid_state) => valid_state,
-            Err(e) => {
-                eprintln!("Invalid body. Malformed memory layout (AgentState): {}", e);
-                return Err(StatusCode::BAD_REQUEST);
-            }
-        };
+        rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(state_bytes)
+            .map_err(|e| {
+            ApiError::BadRequest(format!("Malformed AgentState inner memory layout: {}", e))
+        })?;
 
-    let path_intent = ingress_envelope.intent_path.as_str();
+    let path_intent = archived_ingress.intent_path.as_str();
+
+    let agent_pub_key: [u8; 32] = archived_ingress
+        .public_key
+        .try_into()
+        .map_err(|_| ApiError::BadRequest("Public key must be exactly 32 bytes".to_string()))?;
 
     // O(1) Aegis Policy Check.
     let mut packet_sig = [0u8; 64];
-    packet_sig.copy_from_slice(ingress_envelope.signature.as_slice());
+    if archived_ingress.signature.len() != 64 {
+        return Err(ApiError::BadRequest(
+            "Signature must be exactly 64 bytes".to_string(),
+        ));
+    }
+    packet_sig.copy_from_slice(archived_ingress.signature.as_slice());
 
-    let (agent_hex, group_name) = match state
+    let (agent_hex, group_name) = state
         .aegis
-        .verify_session_lineage(&ingress_envelope.capability_cert.as_slice())
-    {
-        Ok((agent, group)) => (agent, group),
-        Err(_) => return Err(StatusCode::UNAUTHORIZED),
-    };
+        .verify_session_lineage(&archived_ingress.capability_cert.as_slice(), &agent_pub_key)
+        .map_err(|e| ApiError::Unauthorized(format!("Lineage Verification failed: {}", e)))?;
 
-    let _agent_hex = match state.aegis.authorize_packet_fast(
-        agent_hex.as_str(),
-        group_name.as_str(),
-        &ingress_envelope.public_key,
-        &state_bytes,
-        &packet_sig,
-        &path_intent,
-    ) {
-        Ok(hex) => hex,
-        Err(_) => return Err(StatusCode::UNAUTHORIZED),
-    };
-    let task_telemetry = state.telemetry.clone();
+    let packet_timestamp: i64 = archived_state.timestamp.into();
+    state
+        .aegis
+        .authorize_packet_fast(
+            agent_hex.as_str(),
+            group_name.as_str(),
+            &agent_pub_key,
+            &state_bytes,
+            &packet_sig,
+            &path_intent,
+            packet_timestamp,
+        )
+        .map_err(|e| ApiError::Forbidden(format!("Aegis Interdiction: {}", e)))?;
+
     let task_event = state.event_tx.clone();
     let task_axon = state.axon.clone();
     let task_wal = state.wal.clone();
     let task_cortex = state.cortex_tx.clone();
     let task_net = state.global_net.clone();
-    let task_counter_tx = state.global_tx_counter.clone();
     let task_brain = state.brain.clone();
 
     let body_clone = body.clone();
@@ -867,7 +980,6 @@ pub async fn http_ingress_endpoint(
             task_event,
             Vec::new(),
             Vec::new(),
-            task_telemetry,
         )
         .await;
 
@@ -875,50 +987,14 @@ pub async fn http_ingress_endpoint(
             Ok(id) => id,
             Err(_) => {
                 eprintln!("[SECURITY FATAL] Unsigned/Anonymous payload hit the cascade. Dropped.");
-
                 return;
             }
         };
     });
 
-    Ok(StatusCode::ACCEPTED)
-}
-
-pub async fn sse_health_endpoint(
-    _auth: crate::api::ValidatedIdentity,
-    State(state): State<ApiState>,
-) -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
-    let receiver = state.health_tx.subscribe();
-
-    let stream = BroadcastStream::new(receiver).filter_map(|msg| async move {
-        match msg {
-            Ok(health_payload) => {
-                let json_string = serde_json::to_string(&health_payload).unwrap();
-
-                Some(Ok(Event::default().data(json_string)))
-            }
-            Err(_) => None,
-        }
-    });
-
-    Sse::new(stream).keep_alive(KeepAlive::new())
-}
-
-pub async fn active_qurantine_endpoint(
-    _auth: ValidatedIdentity,
-    State(state): State<ApiState>,
-) -> Result<Json<Vec<QuarantineRecord>>, StatusCode> {
-    let mut quarantined_agents = Vec::new();
-
-    // Iterate over Dashmap Shards safely.
-    for entry in state.aegis.quarantine_blocklist.iter() {
-        quarantined_agents.push(entry.value().clone());
-    }
-
-    // Sort by most recent first
-    quarantined_agents.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-    Ok(Json(quarantined_agents))
+    Ok(Json(
+        json!({"success": true, "message": "Thought accepted into cascade" }),
+    ))
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -933,7 +1009,7 @@ pub async fn fetch_agent_timeline(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
     Path(agent_hex): Path<String>,
-) -> Result<Json<Vec<TimelineNode>>, StatusCode> {
+) -> Result<Json<Vec<TimelineNode>>, ApiError> {
     // The scatter: Let the engines do their native work
     let lance_future = state.lance.fetch_historical_timeline(&agent_hex);
     let wal_future = async {
@@ -944,6 +1020,7 @@ pub async fn fetch_agent_timeline(
 
     let (lance_res, wal_res) = tokio::join!(lance_future, wal_future);
 
+    // The Gather
     let mut nodes = wal_res.unwrap_or_default();
     if let Ok(mut cold_res) = lance_res {
         nodes.append(&mut cold_res)
@@ -964,14 +1041,9 @@ pub struct DashboardCards {
 pub async fn dashboard_cards_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
-) -> Result<Json<DashboardCards>, StatusCode> {
+) -> Result<Json<DashboardCards>, ApiError> {
     // Vault capacity (Direct from lance)
     let total_vec = state.lance.get_total_vector_count().await.unwrap_or(0);
-
-    // Global Transactions (Direct from the Atomic counter)
-    let highest_tx = state
-        .global_tx_counter
-        .load(std::sync::atomic::Ordering::SeqCst);
 
     // Active agents (60s Rolling window)
     let now = SystemTime::now()
@@ -991,11 +1063,25 @@ pub async fn dashboard_cards_endpoint(
         })
         .count();
 
+    let cold_count = state.lance.get_total_vector_count().await.unwrap_or(0);
+    let hot_count = state.wal.get_pending_count().await;
+    let total_lifetime_txn = (cold_count + hot_count) as u64;
+
     Ok(Json(DashboardCards {
-        global_transactions: highest_tx,
+        global_transactions: total_lifetime_txn,
         active_agents: active_count,
         vault_capacity: total_vec,
     }))
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct GroupPolicyTelemetry {
+    pub group_name: String,
+    pub allowed_namspace: Vec<String>,
+    pub blocked_namespace: Vec<String>,
+    pub max_tps: u64,
+    pub burst_capacity: u64,
+    pub remaining_tokens: u64,
 }
 
 #[derive(Serialize)]
@@ -1004,17 +1090,21 @@ pub struct AegisMetricsData {
     pub recent_interdictions: usize,
     pub signarure_spoofs: usize,
     pub namespace_breaches: usize,
+    pub rate_limit_blocks: usize,
+    pub active_policies: Vec<GroupPolicyTelemetry>,
 }
 
 pub async fn aegis_metics_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
-) -> Result<Json<AegisMetricsData>, StatusCode> {
+) -> Result<Json<AegisMetricsData>, ApiError> {
     let mut metrics = AegisMetricsData {
         total_quarantined: 0,
         recent_interdictions: 0,
         signarure_spoofs: 0,
         namespace_breaches: 0,
+        rate_limit_blocks: 0,
+        active_policies: Vec::new(),
     };
 
     let now = SystemTime::now()
@@ -1037,8 +1127,26 @@ pub async fn aegis_metics_endpoint(
         match record.violation_type.as_str() {
             "CRYPTO_SPOOF" => metrics.signarure_spoofs += 1,
             "NAMESPACE_BREACH" => metrics.namespace_breaches += 1,
+            "RATE_LIMIT_EXCEEDED" => metrics.rate_limit_blocks += 1,
             _ => {}
         }
+    }
+
+    // Query live Atomic token bucket across active policies
+    let policies_guard = state.aegis.group_policies.read();
+    for (group_name, policy) in policies_guard.iter() {
+        let current_tokens = policy
+            .rate_limiter
+            .tokens
+            .load(std::sync::atomic::Ordering::Relaxed);
+        metrics.active_policies.push(GroupPolicyTelemetry {
+            group_name: group_name.clone(),
+            allowed_namspace: policy.allowed_namespaces.clone(),
+            blocked_namespace: policy.blocked_namespaces.clone(),
+            max_tps: policy.rate_limiter.max_tps,
+            burst_capacity: policy.rate_limiter.burst_capacity,
+            remaining_tokens: current_tokens,
+        });
     }
 
     Ok(Json(metrics))
@@ -1054,7 +1162,7 @@ pub async fn handle_ca_mint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
     Json(payload): Json<MintRequest>,
-) -> Result<Json<String>, StatusCode> {
+) -> Result<Json<String>, ApiError> {
     // Contruct the unsigned Certificate Passport
     let expiration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1070,16 +1178,16 @@ pub async fn handle_ca_mint(
     };
 
     // Serialize and sign using the master private key inside api_state
-    let serialized_raw =
-        postcard::to_allocvec(&cert).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let serialized_raw = postcard::to_allocvec(&cert)
+        .map_err(|e| ApiError::InternalServerError(format!("Serialization failed: {}", e)))?;
 
     let signature = state.master_signing_key.sign(&serialized_raw);
 
     cert.master_signature = signature.to_bytes().to_vec();
 
     // Returned the fully serialized and signed passport to the CLI
-    let final_bytes =
-        postcard::to_allocvec(&cert).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let final_bytes = postcard::to_allocvec(&cert)
+        .map_err(|e| ApiError::InternalServerError(format!("Final packing failed: {}", e)))?;
 
     Ok(Json(hex::encode(final_bytes)))
 }
@@ -1088,12 +1196,8 @@ pub async fn handle_ca_mint(
 pub async fn cluster_info_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
-) -> Result<Json<Value>, StatusCode> {
-    let highest_tx = state
-        .global_tx_counter
-        .load(std::sync::atomic::Ordering::SeqCst);
-
-    let pending_wal_items = state.wal.get_pending_count();
+) -> Result<Json<Value>, ApiError> {
+    let pending_wal_items = state.wal.get_pending_count().await;
     let wal_size = std::fs::metadata(&state.config.wal_path)
         .map(|m| m.len())
         .unwrap_or(0);
@@ -1102,7 +1206,7 @@ pub async fn cluster_info_endpoint(
 
     let payload = json!({
         "node_id": node_id,
-        "highest_tx_id": highest_tx,
+        // "highest_tx_id": highest_tx,
         "wal_bytes": wal_size,
         "buffer_load": pending_wal_items
     });
@@ -1114,7 +1218,7 @@ pub async fn cluster_info_endpoint(
 pub async fn cluster_topology_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, ApiError> {
     let mut shards = Vec::new();
 
     // Iterate through the DashMap of the active swarmbrain document
@@ -1150,6 +1254,7 @@ pub struct RecordEffectRequest {
 pub struct RecordEffectResponse {
     pub success: bool,
     pub tx_id_hex: String,
+    pub is_forked_branch: bool,
 }
 
 #[derive(Deserialize)]
@@ -1170,60 +1275,96 @@ pub struct GetEffectResponse {
 pub async fn record_effect_handler(
     State(state): State<ApiState>,
     Json(payload): Json<RecordEffectRequest>,
-) -> Result<Json<RecordEffectResponse>, StatusCode> {
-    let agent_id_bytes = hex::decode(payload.agent_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+) -> Result<Json<RecordEffectResponse>, ApiError> {
+    let agent_id_bytes = hex::decode(payload.agent_hex.clone())
+        .map_err(|e| ApiError::BadRequest("Invalid agent_hex format".to_string()))?;
+
     let agent_id: [u8; 16] = agent_id_bytes
         .try_into()
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+        .map_err(|_| ApiError::BadRequest("agent_hex must be exactly 16 bytes".to_string()))?;
 
-    let call_signature_bytes =
-        hex::decode(payload.call_signature_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let call_signature_hash: [u8; 32] = call_signature_bytes
-        .try_into()
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let call_signature_bytes = hex::decode(payload.call_signature_hex)
+        .map_err(|e| ApiError::BadRequest("Invalid call_signature_hex format".to_string()))?;
+    let call_signature_hash: [u8; 32] = call_signature_bytes.try_into().map_err(|_| {
+        ApiError::BadRequest("call_signature_hex must be eactly 32 bytes".to_string())
+    })?;
 
     let output_payload = base64::engine::general_purpose::STANDARD
         .decode(&payload.output_payload_base64)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+        .map_err(|_| ApiError::BadRequest("Invalid base64 payload".to_string()))?;
+
+    let is_forked = payload.namespace.starts_with("phantom_");
 
     match state
         .mem_router
         .record_effect(
             agent_id,
-            step_ordinal,
+            payload.step_ordinal,
             call_signature_hash,
             output_payload,
             &payload.namespace,
         )
         .await
     {
-        Ok(tx_id) => Ok(Json(RecordEffectResponse {
-            success: true,
-            tx_id_hex: format!("{:032x}", tx_id),
-        })),
+        Ok(tx_id) => {
+            if is_forked {
+                let tx_id = format!("{:032x}", tx_id);
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
 
-        Err(e) => {
-            eprintln!("[API ERROR] Failed to record effect: {} ", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+                let original_ns = payload.namespace.clone().replace("phantom_", "");
+                // Audit Trail: Emitted to System Event Bus -> Persisted to lanceDB System event table
+                let _ = state.event_tx.send(SystemEvent::RealityForked {
+                    agent_id: payload.agent_hex.clone(),
+                    original_namespace: original_ns.clone(),
+                    phantom_namespace: payload.namespace.clone(),
+                    step_ordinal: payload.step_ordinal,
+                    tx_id: tx_id.clone(),
+                    timestamp,
+                });
+
+                // Real-time Glass: Streamed to active SSE Firehose
+                let _ = state.ui_tx.send(UiEvent::RealityForked {
+                    agent_id: payload.agent_hex.clone(),
+                    original_namespace: original_ns,
+                    phantom_namespace: payload.namespace.clone(),
+                    step_ordinal: payload.step_ordinal,
+                    tx_id: tx_id.clone(),
+                });
+            }
+
+            Ok(Json(RecordEffectResponse {
+                success: true,
+                tx_id_hex: format!("{:032x}", tx_id),
+                is_forked_branch: is_forked,
+            }))
         }
+
+        Err(e) => Err(ApiError::InternalServerError(format!(
+            "Failed to record effect: {}",
+            e
+        ))),
     }
 }
 
 /// Fetches a recoorded effect for deterministic replay
-pub fn get_effect_handler(
+pub async fn get_effect_handler(
     State(state): State<ApiState>,
     Json(payload): Json<GetEffectRequest>,
-) -> Result<Json<GetEffectResponse>, StatusCode> {
-    let agent_id_bytes = hex::decode(payload.agent_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
+) -> Result<Json<GetEffectResponse>, ApiError> {
+    let agent_id_bytes = hex::decode(payload.agent_hex)
+        .map_err(|_| ApiError::BadRequest("Invalid agent_hex format".to_string()))?;
     let agent_id: [u8; 16] = agent_id_bytes
         .try_into()
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+        .map_err(|_| ApiError::BadRequest("agent_hex must be exactly 16 bytes".to_string()))?;
 
-    let call_signature_bytes =
-        hex::decode(payload.call_signature_hex).map_err(|_| StatusCode::BAD_REQUEST)?;
-    let call_signature_hash: [u8; 32] = call_signature_bytes
-        .try_into()
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let call_signature_bytes = hex::decode(payload.call_signature_hex)
+        .map_err(|_| ApiError::BadRequest("Invalid call_signature_hex format".to_string()))?;
+    let call_signature_hash: [u8; 32] = call_signature_bytes.try_into().map_err(|_| {
+        ApiError::BadRequest("call_signature_hex must be exactly 32 bytes ".to_string())
+    })?;
 
     match state
         .mem_router
@@ -1235,7 +1376,7 @@ pub fn get_effect_handler(
 
             Ok(Json(GetEffectResponse {
                 found: true,
-                output_payload_base64: b64_payload,
+                output_payload_base64: Some(b64_payload),
                 timestamp: Some(record.timestamp),
             }))
         }
@@ -1248,40 +1389,90 @@ pub fn get_effect_handler(
     }
 }
 
+#[derive(Deserialize)]
+pub struct StateProofParams {
+    pub tx_id: String,
+}
+
+#[derive(Serialize)]
+pub struct StateProofResponse {
+    pub success: bool,
+    pub proof: Option<InclusionProof>,
+    pub message: String,
+}
+
+/// Generate an 0(log N) Merkle Inclusion Proof for any tx_id
+pub async fn get_state_proof_handler(
+    State(state): State<ApiState>,
+    Query(params): Query<StateProofParams>,
+) -> Result<Json<StateProofResponse>, ApiError> {
+    // Parse u128 UUIDv7
+    let tx_id = u128::from_str_radix(&params.tx_id, 16).map_err(|_| {
+        ApiError::BadRequest("tx_id must be a valid 32-character hex string".to_string())
+    })?;
+
+    // Query Axon Gatekeeper for 0(log N) Inclusion proof
+    match state.axon.generate_proof_for_tx(tx_id) {
+        Some(proof) => Ok(Json(StateProofResponse {
+            success: true,
+            proof: Some(proof.clone()),
+            message: if proof.is_active_buffer {
+                "Proof generated against active workspace buffer (un-crystallines)".to_string()
+            } else {
+                "proof generated against immutable Markle Batch archive.".to_string()
+            },
+        })),
+
+        None => Ok(Json(StateProofResponse {
+            success: false,
+            proof: None,
+            message: format!(
+                "Transaction ID {:032x} not found in active memory batch archives.",
+                tx_id
+            ),
+        })),
+    }
+}
+
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
-        // Admin / Debugging endpoints
+        // State Proofs & Effect Recording
+        .route("/v1/state/proof", get(get_state_proof_handler))
         .route("/v1/effect/record", post(record_effect_handler))
-        .route("v1/effect/get", get(get_effect_handler))
+        .route("/v1/effect/get", post(get_effect_handler))
+        // Aegis Firewall & Governance
         .route("/v1/aegis/quarantine_list", get(active_qurantine_endpoint))
         .route(
             "/v1/admin/quarantine/lift",
             post(lift_qurantine_and_resurrect),
         )
-        .route("/v1/admin/time_travel", post(time_travel))
-        .route("/v1/time_travel/fork", post(time_travel))
-        .route("/v1/admin/time_travel/fork", post(time_travel))
+        .route("/v1/aegis/metrics", get(aegis_metics_endpoint))
+        .route("/v1/admin/ca/mint", post(handle_ca_mint))
+        // Time Machine & Reality Forking
+        .route("/v1/admin/time_travel", post(time_travel_endpoint))
+        .route("/v1/time_travel/fork", post(time_travel_endpoint))
+        .route("/v1/admin/time_travel/fork", post(time_travel_endpoint))
         .route(
             "/v1/admin/time_travel/timeline/:agent_hex",
             get(fetch_agent_timeline),
         )
+        // Cluster Observervability and Diagnostics
         .route("/v1/admin/cluster/info", get(cluster_info_endpoint))
         .route("/v1/admin/cluster/topology", get(cluster_topology_endpoint))
-        // System / Deployment endpoints
-        .route("/v1/system_boot_agent", post(upload_wasm_endpoint))
-        .route("/v1/system/health/live", get(sse_health_endpoint))
-        .route("/v1/system/agents/aliases", get(agent_alias_endpoint))
-        // Agent Swarm endpoints
-        .route("/v1/mcp/ws", post(mcp_ws_handler))
-        .route("/v1/swarm/ingress", post(http_ingress_endpoint))
-        .route("/v1/swarm/memory", get(semantic_search_endpoint))
-        // UI endpoints
         .route("/v1/dashboard/cards", get(dashboard_cards_endpoint))
+        // System & Agent Deployment endpoints
+        .route("/v1/system/boot_agent", post(upload_wasm_endpoint))
+        .route("/v1/system/health/live", get(sse_health_endpoint))
         .route("/v1/system/firehose", get(sse_firehose_endpoint))
         .route("/v1/time-travel/stream", get(sse_phantom_endpoint))
-        .route("/v1/vault/search", post(unified_vault_search))
-        .route("/v1/vault/tellemetry", get(vault_telemetry_endpoint))
-        .route("/v1/aegis/metrics", get(aegis_metics_endpoint))
+        .route("/v1/system/agents/aliases", get(agent_alias_endpoint))
+        // Swarm & A2A Ingress
+        .route("/v1/mcp/ws", get(mcp_ws_handler))
+        .route("/v1/swarm/ingress", post(http_ingress_endpoint))
+        .route("/v1/swarm/memory", get(semantic_search_endpoint))
+        .route("/v1/vault/search", get(unified_vault_search))
+        .route("/v1/vault/telemetry", get(vault_telemetry_endpoint))
+        .layer(CatchPanicLayer::new())
         .with_state(state)
 }

@@ -1,109 +1,84 @@
 'use server';
 
-import { cookies } from 'next/headers';
+import {
+  searchVault,
+  getVaultTelemetry as getCanonicalVaultTelemetry,
+  getStateProof,
+} from '../lib/api';
 
-export interface SearchResult {
-    tx_id: number;
-    agent_hex: string;
-    namespace: string;
-    similarity_score: number;
-    source: "HOT_WAL" | "LANCEDB";
-    payload: string;
-    timestamp: string;
-}
-
-export interface VaultTelemetry {
-    total_vectors: number;
-    index_size_mb: number;
-    wal_pending_count: number;
-    densest_namespace: string;
-}
+import type {
+  VaultSearchResult,
+  VaultTelemetry,
+  StateProofResponse,
+} from '../lib/api';
 
 /**
- * Server Action to run the unified semantic and lexical search.
+ * Server Action to run unified semantic and lexical search.
  */
 export async function executeUnifiedSearch({
-    query,
-    namespace,
-    include_wal
+  query,
+  namespace,
+  include_wal,
 }: {
-    query: string;
-    namespace: string;
-    include_wal: boolean;
-}): Promise<SearchResult[]> {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('raqim_license')?.value;
+  query: string;
+  namespace: string;
+  include_wal: boolean;
+}): Promise<VaultSearchResult[]> {
+  const res = await searchVault({
+    query,
+    namespace: namespace === 'ALL' ? undefined : namespace,
+    include_wal,
+  });
 
-    if (!token) {
-        throw new Error('Unauthorized: No raqim_license cookie present.');
-    }
+  if (res.success && res.data) {
+    return res.data;
+  }
+  return [];
+}
 
-    const params = new URLSearchParams();
-    params.append('query', query);
-    if (namespace && namespace !== 'ALL') {
-        params.append('namespace', namespace);
-    }
-    params.append('include_wal', include_wal.toString());
-
-    try {
-        const res = await fetch(`http://127.0.0.1:8081/v1/vault/search?${params.toString()}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-            },
-            cache: 'no-store',
-        });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Unified search failed (${res.status}): ${errText}`);
-        }
-
-        const data = await res.json();
-        return data as SearchResult[];
-    } catch (err) {
-        console.error('Error in executeUnifiedSearch server action:', err);
-        throw err;
-    }
+export async function fetchVaultSearchResults(
+  query: string,
+  namespace?: string,
+  includeWal: boolean = true
+): Promise<VaultSearchResult[]> {
+  return executeUnifiedSearch({
+    query,
+    namespace: namespace || 'ALL',
+    include_wal: includeWal,
+  });
 }
 
 /**
- * Fetch telemetry metrics from the Vault backend.
+ * Server Action to fetch Vault Index Vitals & Telemetry.
  */
 export async function getVaultTelemetry(): Promise<VaultTelemetry> {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('raqim_license')?.value;
+  const res = await getCanonicalVaultTelemetry();
+  if (res.success && res.data) {
+    return res.data;
+  }
+  return {
+    total_vectors: 0,
+    index_size_mb: 0,
+    wal_pending_count: 0,
+    densest_namespace: 'UNKNOWN (0%)',
+  };
+}
 
-    const fallback: VaultTelemetry = {
-        total_vectors: 0,
-        index_size_mb: 0.0,
-        wal_pending_count: 0,
-        densest_namespace: 'UNKNOWN (0%)',
-    };
+export async function fetchVaultTelemetry(): Promise<VaultTelemetry> {
+  return getVaultTelemetry();
+}
 
-    if (!token) {
-        console.warn('getVaultTelemetry: No raqim_license token found. Returning fallback.');
-        return fallback;
-    }
-
-    try {
-        const res = await fetch('http://127.0.0.1:8081/v1/vault/telemetry', {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-            },
-            cache: 'no-store',
-        });
-
-        if (!res.ok) {
-            console.warn(`getVaultTelemetry failed with status: ${res.status}`);
-            return fallback;
-        }
-
-        const data = await res.json();
-        return data as VaultTelemetry;
-    } catch (err) {
-        console.error('Error fetching vault telemetry:', err);
-        return fallback;
-    }
+/**
+ * Server Action to query Axon for an inclusion state proof for a given 32-char Hex TxID.
+ */
+export async function fetchStateProof(txIdHex: string): Promise<StateProofResponse> {
+  const res = await getStateProof(txIdHex);
+  if (res.success && res.data) {
+    return res.data;
+  }
+  return {
+    success: false,
+    proof: null,
+    message: res.error || 'Transaction ID not found in active memory batch archives.',
+  };
 }

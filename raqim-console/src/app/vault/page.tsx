@@ -1,16 +1,26 @@
-import { MainLayout } from '@/components/Layout/MainLayout';
-import { getVaultTelemetry } from '@/actions/vault';
-import { fetchAgentAliases } from '@/actions/aliases';
-import { VaultClientLayout } from '@/components/Vault/VaultClientLayout';
+import { fetchVaultTelemetry } from '../../actions/vault';
+import { fetchTopology } from '../../actions/admin';
+import { VaultClientLayout } from '../../components/Vault/VaultClientLayout';
 
-export default async function VaultPage() {
-    // Fetch initial telemetry and agent aliases server-side
-    const telemetry = await getVaultTelemetry();
-    const aliases = await fetchAgentAliases();
+interface VaultPageProps {
+  searchParams: Promise<{ tx_id?: string }>;
+}
 
-    return (
-        <MainLayout title="Audit Vault">
-            <VaultClientLayout telemetry={telemetry} initialAliases={aliases} />
-        </MainLayout>
-    );
+export default async function VaultPage({ searchParams }: VaultPageProps) {
+  const resolvedParams = await searchParams;
+  const initialTxId = resolvedParams?.tx_id || null;
+
+  const [telemetry, topology] = await Promise.all([
+    fetchVaultTelemetry().catch(() => null),
+    fetchTopology().catch(() => []),
+  ]);
+
+  return (
+    <VaultClientLayout
+      initialTelemetry={telemetry}
+      initialResults={[]}
+      initialTxId={initialTxId}
+      initialTopology={topology}
+    />
+  );
 }

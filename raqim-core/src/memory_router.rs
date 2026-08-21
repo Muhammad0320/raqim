@@ -38,7 +38,6 @@ use crate::network::GlobalNetworkBridge;
 use crate::sandbox::SandboxContent;
 use crate::sandbox::WasmEngine;
 use crate::state::SwarmStateRegistry;
-use crate::telemetry::TelemetryEngine;
 use crate::{
     OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
 };
@@ -50,7 +49,6 @@ pub enum RebuildMode {
 
 pub struct MemoryRouter {
     config: Arc<RaqimConfig>,
-    telemetry: Arc<TelemetryEngine>,
     aegis: Arc<AegisGateKeeper>,
     axon: Arc<AxonGateKeeper>,
     brain: Arc<SwarmStateRegistry>,
@@ -78,7 +76,6 @@ pub struct UnifiedSearchResult {
 impl MemoryRouter {
     pub fn new(
         config: Arc<RaqimConfig>,
-        telemetry: Arc<TelemetryEngine>,
         aegis: Arc<AegisGateKeeper>,
         axon: Arc<AxonGateKeeper>,
         brain: Arc<SwarmStateRegistry>,
@@ -93,7 +90,6 @@ impl MemoryRouter {
     ) -> Self {
         Self {
             config,
-            telemetry,
             aegis,
             axon,
             brain,
@@ -239,8 +235,6 @@ impl MemoryRouter {
         target_tx_id: u128,
         wal_engine: Arc<WalEngine>,
     ) -> Result<(Vec<u8>, Vec<OpLog>, u128, u64), anyhow::Error> {
-        self.telemetry.record_time_travel();
-
         // RESOLVE THE TARGET INFINITY HACK
         // Find the highest known tx_id for this agent.
         let actual_target_transaction = if target_tx_id == u128::MAX {
@@ -674,7 +668,6 @@ impl MemoryRouter {
             event_tx: actual_tx.clone(),
             wasi: wasi_ctx,
             lance: self.lance_engine.clone(),
-            telemetry: self.telemetry.clone(),
             agent_hex: sandbox_agent_hex.clone().to_string(),
 
             agent_private_key,

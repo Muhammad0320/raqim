@@ -1,6 +1,6 @@
+use blake3::Hasher;
 use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
-use md5::{Digest, Md5};
 use rand::rngs::OsRng;
 use reqwest::Client;
 use serde_json::json;
@@ -136,7 +136,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut success_count = 0;
 
             for i in 1..=*count {
-                let agent_alias = if *count > 1 {
+                let agent_alias: String = if *count > 1 {
                     format!("{}_{:02}", name.clone(), i)
                 } else {
                     name.clone()
@@ -145,13 +145,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Local cryptographic generation
                 let mut csprng = OsRng;
                 let signing_key = SigningKey::generate(&mut csprng);
-                let public_key = signing_key.verifying_key().to_bytes();
+                let public_key_bytes = signing_key.verifying_key().to_bytes();
 
                 // Identity Hash Derivation
-                let mut hasher = Md5::new();
-                hasher.update(public_key);
-                let agent_id_bytes: [u8; 16] = hasher.finalize().into();
-                let agent_hex = hex::encode(agent_id_bytes);
+                let mut hasher = Hasher::new_derive_key("raqim.agent.v1.identity");
+                hasher.update(&public_key_bytes);
+
+                let mut derived_16_bytes = [0u8; 16];
+                hasher.finalize_xof().fill(&mut derived_16_bytes);
+                let agent_hex = hex::encode(derived_16_bytes);
 
                 // Request Capability passport from the Daemon Control Plane
                 let payload = json!({"agent_hex": agent_hex.clone(), "group": group.clone() });
@@ -315,7 +317,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .header("Authorization", format!("Bearer {}", get_auth()))
                 .send()
                 .await?;
-            
+
             if res.status().is_success() {
                 let info: serde_json::Value = res.json().await?;
                 println!("🌐 Raqim Core Kernel Metrics:");

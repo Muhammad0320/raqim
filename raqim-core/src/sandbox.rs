@@ -12,7 +12,6 @@ use crate::lancedb_store::LanceEngine;
 use crate::network::GlobalNetworkBridge;
 use crate::nucleus::WalEngine;
 use crate::state::SwarmStateRegistry;
-use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, SystemEvent};
 use crate::{AgentState, axon::AxonGateKeeper};
 use anyhow::anyhow;
@@ -32,7 +31,6 @@ pub struct SandboxContent {
     pub event_tx: Sender<SystemEvent>,
     pub wasi: WasiP1Ctx,
     pub lance: Arc<LanceEngine>,
-    pub telemetry: Arc<TelemetryEngine>,
 
     // Agent credentials
     pub agent_hex: String,
@@ -85,7 +83,7 @@ impl WasmEngine {
         }
     }
 
-    /// TRUE ENTERPRISE CHECKPOINTING: Captures only the active memory pages, not the entire 50MB void.
+    /// TRUE  CHECKPOINTING: Captures only the active memory pages, not the entire 50MB void.
     pub fn create_checkpoint(store: &mut Store<SandboxContent>, memory: Memory) -> Vec<u8> {
         // memory.data_size() returns the exact number of active bytes currently in use,
         // preventing the massive data reduplication of saving the entire 50MB capacity!
@@ -175,7 +173,6 @@ impl WasmEngine {
                 let event_tx_clone = layers.event_tx.clone();
                 let seeds_to_save = layers.live_seeds.clone();
                 let network_to_save = layers.replay_responses.clone();
-                let telemetry_clone = layers.telemetry.clone();
                 let shard_clone = layers.shard.clone();
 
                 // Clear the live queues for the next thought cycle
@@ -217,7 +214,6 @@ impl WasmEngine {
                         event_tx_clone,
                         seeds_to_save,
                         network_to_save,
-                        telemetry_clone,
                     )
                     .await;
 
@@ -362,6 +358,10 @@ impl WasmEngine {
                         sender_id.copy_from_slice(&id_bytes);
                     }
                 }
+                let now_ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
 
                 // Construct the Envelope
                 let envelope = A2AEnvelope {
@@ -371,19 +371,16 @@ impl WasmEngine {
                     payload: payload_bytes,
                     sender_capability_cert: content.capability_cert_bytes.clone(),
                     signature: packet_signature.to_bytes(),
+                    timestamp: now_ts,
                 };
 
                 // Execute the actual RPC call (block_in_place because WASM calls are sync)
                 let net_clone = content.global_net.clone();
                 let aegis_clone = content.aegis.clone();
-                let telemetry_clone = content.telemetry.clone();
 
                 let (response_bytes, _responder_hex) = tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(net_clone.execute_a2a_rpc(
-                        envelope,
-                        aegis_clone,
-                        telemetry_clone,
-                    ))
+                    tokio::runtime::Handle::current()
+                        .block_on(net_clone.execute_a2a_rpc(envelope, aegis_clone))
                 })
                 .unwrap_or_else(|e| (e.to_string().into_bytes(), "SYSTEM_ERROR".to_string()));
 

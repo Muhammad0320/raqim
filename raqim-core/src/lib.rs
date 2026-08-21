@@ -18,6 +18,7 @@ pub mod telemetry;
 pub mod utils;
 
 pub mod hot_memory;
+pub mod witness;
 
 use blake3::Hasher;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -31,11 +32,12 @@ use tokio::sync::broadcast::Sender;
 use crate::aegis::QuarantineRecord;
 use crate::axon::MarkleBatch;
 use crate::state::SwarmStateRegistry;
-use crate::telemetry::TelemetryEngine;
 use crate::{axon::AxonGateKeeper, network::GlobalNetworkBridge, nucleus::WalEngine};
 
 // The fundamental unit of our Flight Recorder.
-#[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(
+    Archive, Deserialize, Serialize, Debug, PartialEq, Clone, SerdeDeserialize, SerdeSerialize,
+)]
 pub struct AgentState {
     pub agent_id: Option<[u8; 16]>,
     pub transaction_id: u128,
@@ -48,7 +50,9 @@ pub struct AgentState {
 }
 
 // The current execution state of the agent in the swarm.
-#[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(
+    Archive, Deserialize, Serialize, Debug, PartialEq, Clone, SerdeDeserialize, SerdeSerialize,
+)]
 pub enum AgentStatus {
     Idle,
     Reasoning,     // Waiting on LLM token generation
@@ -57,7 +61,9 @@ pub enum AgentStatus {
 }
 
 // Every thought and action is an Op.
-#[derive(Archive, Deserialize, Serialize, Debug, PartialEq, Clone)]
+#[derive(
+    Archive, Deserialize, Serialize, Debug, PartialEq, Clone, SerdeDeserialize, SerdeSerialize,
+)]
 pub struct OpLog {
     pub agent_id: [u8; 16],
     pub state: AgentState,
@@ -81,6 +87,7 @@ pub struct A2AEnvelope {
     pub payload: Vec<u8>,
     pub signature: [u8; 64],
     pub sender_capability_cert: Vec<u8>,
+    pub timestamp: i64,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -142,7 +149,6 @@ pub async fn execute_raqim_cascade(
     tx: Sender<SystemEvent>,
     seeds: Vec<u64>,
     responses: Vec<String>,
-    telemetry: Arc<TelemetryEngine>,
 ) -> Result<u128, anyhow::Error> {
     // Security: Validate or generate agent_id
     let empty_id = [0u8; 16];
@@ -239,6 +245,15 @@ pub enum SystemEvent {
         agent_id: String,
         reason: String,
         culprit_text: String,
+    },
+
+    RealityForked {
+        agent_id: String,
+        original_namespace: String,
+        phantom_namespace: String,
+        step_ordinal: u64,
+        tx_id: String,
+        timestamp: i64,
     },
 
     AegisInterdiction {

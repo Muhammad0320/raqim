@@ -11,6 +11,7 @@
   "dependencies": {
     "@microsoft/fetch-event-source": "^2.0.1",
     "@monaco-editor/react": "^4.7.0",
+    "@noble/hashes": "^2.3.0",
     "@xyflow/react": "^12.10.2",
     "framer-motion": "^11.13.1",
     "lucide-react": "^1.11.0",

@@ -14,6 +14,7 @@ struct RaqimTomlProxy {
 struct DaemonSection {
     topic: String,
     wal_path: String,
+    witness_path: String,
     aegis_path: String,
     port: Option<u16>,
     dims: Option<i32>,
@@ -43,6 +44,9 @@ pub struct CliArgs {
 
     #[arg(short, long)]
     pub wal_path: Option<String>,
+
+    #[arg(long)]
+    pub witnes_path: Option<String>,
 
     #[arg(short, long)]
     pub lance_path: Option<String>,
@@ -80,6 +84,7 @@ pub struct RaqimConfig {
     pub topic: String,
     pub wal_path: String,
     pub lance_path: String,
+    pub witness_path: String,
     pub aegis_path: String,
     pub table_name: String,
     pub tenant_id: String,
@@ -97,6 +102,7 @@ impl Default for RaqimConfig {
         Self {
             topic: "raqim_default".to_string(),
             wal_path: "./production.wal".to_string(),
+            witness_path: "./vault/witnesses".to_string(),
             lance_path: "./production_semantic.lancedb".to_string(),
             aegis_path: "./aegis.toml".to_string(),
             table_name: "agent_history".to_string(),
@@ -131,6 +137,7 @@ impl RaqimConfig {
             RaqimConfig {
                 topic: proxy.daemon.topic,
                 wal_path: proxy.daemon.wal_path,
+                witness_path: proxy.daemon.witness_path,
                 lance_path: proxy
                     .storage
                     .lance_path
@@ -173,11 +180,14 @@ impl RaqimConfig {
         if let Some(w) = args.wal_path {
             config.wal_path = w;
         }
+        if let Some(w_path) = args.witnes_path {
+            config.witness_path = w_path;
+        }
 
         if let Some(p_key) = args.node_public_key_hex {
             config.node_public_key_hex = p_key;
         }
-
+        
         if let Some(e_type) = args.embedder_type {
             config.embedder_type = e_type
         }

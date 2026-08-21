@@ -1,6 +1,7 @@
 use ed25519_dalek::SigningKey;
+use notify::{Event, Watcher};
 use rand_core::OsRng;
-use raqim_core::aegis::AegisGateKeeper;
+use raqim_core::aegis::{AegisConfigFile, AegisGateKeeper};
 use raqim_core::api::{ApiState, UiEvent, build_admin_router};
 use raqim_core::axon::AxonGateKeeper;
 
@@ -10,7 +11,7 @@ use raqim_core::config::RaqimConfig;
 use raqim_core::cortex::CortexDataPlane;
 use raqim_core::embedding::{EmbeddingProvider, LocalBgeProvider, OpenAIProvider};
 use raqim_core::health::{HealthMonitor, SystemHealth};
-use raqim_core::hot_memory::HotVectorBuffer;
+use raqim_core::hot_memory::{HotVectorBuffer, HotVectorEntry};
 use raqim_core::lancedb_store::LanceEngine;
 use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
@@ -18,17 +19,18 @@ use raqim_core::nucleus::WalEngine;
 use raqim_core::registry::SwarmRegistry;
 use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
-use raqim_core::telemetry::TelemetryEngine;
+use raqim_core::witness::WormWitnessEngine;
 use raqim_core::{
-    AgentState, IngressEnvelope, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
+    AgentState, IngressEnvelope, OpLog, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
+    generate_uuidv7_txid,
 };
 use tower_http::cors::{Any, CorsLayer};
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::{fs, println};
+use std::{eprintln, fs, println};
 
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
@@ -39,13 +41,13 @@ use uuid::Uuid;
 use wasmtime_wasi::WasiCtxBuilder;
 
 #[tokio::main]
-async fn main() {
-    let config = Arc::new(RaqimConfig::load_or_bootstrap());
-
-    println!("Bismillah. Booting Raqim Daemon on port {}...", config.port);
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("==================================================================");
+    println!("Bismillah. Booting Hardened Raqim Sovereign Core Daemon v.1.0.0");
+    println!("==================================================================");
 
     // =================================
-    // SIGNAL INTERCEPTION (K8s SIGTERM)
+    // SIGNAL INTERCEPTION (Graceful OS shutdown Handlers)
     // ================================
     let cancel_token = CancellationToken::new();
     let ct_clone = cancel_token.clone();
@@ -63,14 +65,16 @@ async fn main() {
         ct_clone.cancel();
     });
 
-    // BOOT TELEMETRY SINKER
-    // let telemetry = TelemetryEngine::new(&config.tenant_id);
-    // TelemetryEngine::start_sinker_daemon(telemetry.clone());
+    let config = Arc::new(RaqimConfig::load_or_bootstrap());
+    println!(
+        "[CONFIG] Active Port: {} | WAL Path: {} ",
+        &config.port, &config.wal_path,
+    );
 
     // THE INTERNAL EVENT BUS
-    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(5000);
+    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(50_000);
+    let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(10_000);
 
-    let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(5000);
     let registry = Arc::new(SwarmRegistry::new());
     let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
     let (phantom_ui_tx, _phanom_ui_rx) = broadcast::channel::<UiEvent>(100);
@@ -111,37 +115,7 @@ async fn main() {
 
     let security_flags = RuntimeSecurityFlags::new();
 
-    // Spawning a dynamic hot swap listener
-    let decoding_key_clone = decoding_key.clone();
-    let mut license_rx = event_tx.subscribe();
-    let flag_worker = security_flags.clone();
-
     let allow_wan = Arc::new(AtomicBool::new(false));
-
-    // let allow_wan_clone = allow_wan.clone();
-    // tokio::spawn(async move {
-    //     println!("[SYSTEM] Ingess security claim listener spawned successfully. ");
-    //     while let Ok(event) = license_rx.recv().await {
-    //         if let SystemEvent::LicenseUpdated { new_jwt } = event {
-    //             flag_worker.evaluate_jwt(&new_jwt, &decoding_key_clone);
-    //         }
-
-    //         let allow_global_a2a = flag_worker.allow_global_a2a.clone().load(Ordering::Relaxed);
-    //         let allow_global_aegis = flag_worker
-    //             .allow_global_aegis
-    //             .clone()
-    //             .load(Ordering::Relaxed);
-    //         let allow_global_crdt = flag_worker
-    //             .allow_global_crdt
-    //             .clone()
-    //             .load(Ordering::Relaxed);
-
-    //         // Determine if Zenoh needs to connect to the cloud router at all.
-    //         let allow_wan_bool = allow_global_a2a || allow_global_aegis || allow_global_crdt;
-
-    //         allow_wan_clone.store(allow_wan_bool, Ordering::SeqCst);
-    //     }
-    // });
 
     // Securely loads the swarm key from disk. Generate it if it doesn't exist/
     let key_dir = Path::new("./ca-keys");
@@ -184,14 +158,120 @@ async fn main() {
 
     // 1. BOOT SEQUENCE: INIITIALIZE ALL LAYERS (Wrapped in Arc for fearless concurrency)
     let brain_shard = Arc::new(SwarmStateRegistry::new());
-
     let axon = Arc::new(AxonGateKeeper::new());
-    let aegis = AegisGateKeeper::new(
-        &config.aegis_path,
-        master_public_key_hex.as_str(),
+
+    // LEAK-PROOF BROADCAST RECEIVER LOOP: Spawn consumer loop to detect lagging and evict slow readers automatically
+    let mut system_events_subscriber = event_tx.subscribe();
+    tokio::spawn(async move {
+        loop {
+            match system_events_subscriber.recv().await {
+                Ok(event) => {
+                    // Normal ingestion processing
+                    if let SystemEvent::SystemBoot { message } = event {
+                        println!("[BUS PROCESSING] Ingested boot message: {}", message);
+                    }
+                }
+
+                Err(broadcast::error::RecvError::Lagged(skipped_count)) => {
+                    // Memory Safeguard: Clear internal lags forcefully to protect RAM
+                    eprintln!(
+                        "[MEMORY WARNING] Subscriber loop lagged behind channel sequence! \n Forcefully skipped {} events to prevent heap memory growth",
+                        skipped_count
+                    );
+                }
+
+                Err(broadcast::error::RecvError::Closed) => {
+                    println!("[SYSTEM] Event bus channel closed cleanly. ");
+                    break;
+                }
+            }
+        }
+    });
+
+    // THE KERNEL AEGIS.TOML HOT-RELOAD WATCHER
+    let policy_path_str = "aegis.toml";
+
+    // Ensure policy manifest target exists beofre running file watcher
+    if !Path::new(policy_path_str).exists() {
+        let default_toml = r#"
+        # Default Raqim Aegis Policy Manifest (Auto-Generated)
+        [groups.admin_group]
+        allowed_namespaces = ["*"]
+        blocked_namespaces = []
+        max_tps = 10000
+        burst_capacity = 1000
+
+        [groups.default_group]
+        allowed_namespaces = ["/default/*"]
+        blocked_namespaces = ["/admin/*", "/system/*"]
+        max_tps = 100
+        burst_capacity = 20
+        "#;
+        fs::write(policy_path_str, default_toml)?;
+        println!("[AEGIS] Auto-generated default aegis.toml configuration file.");
+    }
+
+    let initial_content = fs::read_to_string(policy_path_str)?;
+    let parsed_cfg = toml::from_str::<AegisConfigFile>(&initial_content)
+        .expect("FATAL: Failed to parse initial aegis.toml configuration file");
+
+    let initial_policies = parsed_cfg.to_group_policies();
+
+    let aegis = Arc::new(AegisGateKeeper::new(
+        initial_policies,
+        &master_public_key,
         event_tx.clone(),
         ui_tx.clone(),
-    );
+    ));
+
+    let aegis_clone = aegis.clone();
+    let (watch_tx, mut watch_rx) = tokio::sync::mpsc::channel::<Result<Event, notify::Error>>(10);
+
+    // Spawn synchronous notify loop hooked directly to OS virtual filesystem events
+    let mut watcher = notify::recommended_watcher(move |res| {
+        let _ = watch_tx.blocking_send(res);
+    })?;
+    watcher.watch(
+        Path::new(policy_path_str),
+        notify::RecursiveMode::NonRecursive,
+    )?;
+
+    //  Async task consuming events transmitted out of the notify bridge loop
+    tokio::spawn(async move {
+        println!(
+            "[KERNEL WATCHER] Listening for direct kernel modification on: {}... ",
+            policy_path_str
+        );
+
+        while let Some(Ok(event)) = watch_rx.recv().await {
+            // Check if modification contains a data close op (File update commit complete)
+            if event.kind.is_modify() {
+                println!("[KERNEL WATCHER] Change detected on policy file. Re-parsing metrics... ");
+
+                // Read and re-parse file delta safely
+                if let Ok(content) = fs::read_to_string("aegis.toml") {
+                    match toml::from_str::<AegisConfigFile>(&content) {
+                        Ok(parsed_cfg) => {
+                            let fresh_policies = parsed_cfg.to_group_policies();
+                            aegis_clone.reload_policies(fresh_policies);
+                        }
+                        Err(e) => {
+                            // FAIL-SAFE
+                            eprintln!(
+                                "[AEGIS CONFIG ERROR] Invalid aegis.toml syntax: {}. Retaining previous security policies in RAM.",
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Emit Initial system boot signal
+    let _ = event_tx.send(SystemEvent::SystemBoot {
+        message: "Raqim Sovereign Core Active.".to_string(),
+    });
 
     let (wal, handle) = WalEngine::start(config.wal_path.clone()).await;
     let global_net = Arc::new(
@@ -209,21 +289,21 @@ async fn main() {
     let wasm_engine = Arc::new(WasmEngine::new());
     let hot_buffer = Arc::new(HotVectorBuffer::new(10_0000));
 
-    let embedder: Box<dyn EmbeddingProvider> = match config.embedder_type.as_str() {
+    let embedder: Arc<dyn EmbeddingProvider> = match config.embedder_type.as_str() {
         "openai" => {
             let key =
                 std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| config.openai_api_key.clone());
             if key.is_empty() {
                 panic!("OPENAI_API_KEY environment variable or config entry is required");
             }
-            Box::new(OpenAIProvider::new(key))
+            Arc::new(OpenAIProvider::new(key))
         }
 
-        _ => Box::new(LocalBgeProvider::new()),
+        _ => Arc::new(LocalBgeProvider::new()),
     };
 
     let lance_engine =
-        Arc::new(LanceEngine::new(&config.lance_path, &config.table_name, embedder).await);
+        Arc::new(LanceEngine::new(&config.lance_path, &config.table_name, embedder.clone()).await);
 
     // 1. Boot global Quarantine network subscriber
     global_net.listen_for_global_quarantine(aegis.clone()).await;
@@ -235,33 +315,70 @@ async fn main() {
     tokio::spawn(async move {
         while let Ok(event) = system_rx.recv().await {
             if let SystemEvent::GlobalQuarantineSync { record } = event {
-                net_clone.broadcast_quarantine_sync(record);
+                net_clone.broadcast_quarantine_sync(record).await;
             }
         }
     });
 
-    // THE BOOTSTRAP PROTOCOL
-    // let (lance_highest_tx, _valut_capacity) =
-    //     lance_engine.get_vault_metrics().await.unwrap_or((0, 0));
-    // let wal_highest_tx = wal.get_highest_tx_id(&config.wal_path);
-
-    // // The abs truth is the highest number found in either store.
-    // let starting_tx_id = std::cmp::max(lance_highest_tx, wal_highest_tx);
-    // let tx_counter = Arc::new(AtomicU64::new(starting_tx_id + 1));
-
-    // println!(
-    //     "[SYSTEM] Bootstrapped Tx Counter at TxID: {} ",
-    //     starting_tx_id + 1
-    // );
-
     // ============================
     // THE PHOENIX HYDRATION PROTOCOL: Reconstructs in-memory Axon Merkle trees from uncompacted WAL frames on boot.
     // ============================
-    println!("[INITIALIIZATION] Phoenix protocol: Hydrating Axon state from active WAL...");
+
+    println!(
+        "[INITIALIIZATION] Phoenix protocol: Commencing state rehydration scanning from active WAL frame sequences..."
+    );
+    let manifest_path = "compaction.manifest.json";
+    let mut files_to_scan = Vec::new();
+
+    // 2PC MANIFEST CHECK
+    if Path::new(&manifest_path).exists() {
+        if let Ok(content) = fs::read_to_string(manifest_path) {
+            if let Ok(json_manifest) = serde_json::from_str::<serde_json::Value>(&content) {
+                let state = json_manifest["state"].as_str().unwrap_or("");
+                let target_file = json_manifest["target_file"].as_str().unwrap_or("");
+
+                if state == "Committed" {
+                    // Prevent Schizophrenia (Duplication): Data is in LanceDB, but WAL wasn't deleted.
+                    println!(
+                        "[PHONIX] Ghost WAL '{}' detected in COMMITTED state. Erasing to prevent Duplicate RAG Ingestion ",
+                        &target_file
+                    );
+                    let _ = fs::remove_file(target_file);
+                    let _ = fs::remove_file(manifest_path);
+                } else if state == "PENDING" {
+                    // Prevent Amnesia (Data Loss): File was rotated but never made it to lancedb
+                    println!(
+                        "[PHOENIX] Orphaned WAL '{}' detected in PENDING state. Queuing for RAM Hydration",
+                        &target_file
+                    );
+                    if Path::new(&target_file).exists() {
+                        files_to_scan.push(target_file.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Scans the active WAL last so temporal order is preserved
     if Path::new(&config.wal_path).exists() {
-        if let Ok(wal_bytes) = fs::read(&config.wal_path) {
+        files_to_scan.push(config.wal_path.clone())
+    }
+
+    let witness_engine = Arc::new(WormWitnessEngine::new(
+        &config.witness_path,
+        master_signing_key.clone(),
+        None,
+    ));
+
+    let mut recovered_logs: Vec<OpLog> = Vec::new();
+    let mut uncompacted_count = 0;
+
+    // Execute assembled scanning over the assembled timeline array
+    for file_path in files_to_scan {
+        println!("[PHOENIX] Scanning {} ...", file_path);
+
+        if let Ok(wal_bytes) = fs::read(&file_path) {
             let mut offset = 0;
-            let mut recovered_count = 0;
 
             while offset < wal_bytes.len() {
                 if offset + 4 > wal_bytes.len() {
@@ -273,75 +390,109 @@ async fn main() {
                 let entry_len = u32::from_le_bytes(len_bytes) as usize;
                 offset += 4;
 
-                if offset + entry_len > len_bytes.len() {
+                // Check for 4-byte CRC header boundary
+                if offset + 4 > wal_bytes.len() {
+                    break;
+                }
+                offset += 4;
+
+                if offset + entry_len > wal_bytes.len() {
                     break;
                 }
 
                 let entry_slice = &wal_bytes[offset..offset + entry_len];
 
-                if let Ok(archived_log) =
-                    rkyv::access::<<OpLog as rkyv::Archive>::Archived>(entry_slice)
+                if let Ok(archived_log) = rkyv::access::<
+                    <OpLog as rkyv::Archive>::Archived,
+                    rkyv::rancor::Error,
+                >(entry_slice)
                 {
                     if let Ok(recovered_log) =
                         rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
                     {
-                        axon.hydrate_from_recoverey(&recovered_log);
-                        recovered_count += 1;
+                        axon.hydrate_from_recovery(&recovered_log);
+
+                        // Fetch crdt shard for this namespace and apply historical delta
+                        let brain = brain_shard.get_or_create_brain(&recovered_log.state.namespace);
+                        if let Err(e) = brain.assimilate_foreign_thought(&recovered_log.delta) {
+                            eprintln!(
+                                "[PHOENIX WARN] Failed to assimilate CRDT delta during recovery: {},",
+                                e
+                            );
+                        }
+
+                        recovered_logs.push(recovered_log);
+                        uncompacted_count += 1
                     }
                 }
 
                 offset += entry_len;
             }
+        }
+    }
 
+    println!(
+        "[PHOENIX] Rehydrated {} un-crystallized log frames into Axon buffer ",
+        uncompacted_count
+    );
 
-            if !recovered_logs.is_empty() {
-                // Batch embed all recovered WAL texts to restore hot vector memory
-                // Batch-embed all recovered WAL texts to restore hot vector memory
-                let texts: Vec<String> = recovered_logs
-                    .iter()
-                    .map(|l| format!("[{:?}] Agent in {} stated {}", l.state.status, l.state.namespace, l.state.text))
-                    .collect();
+    if !recovered_logs.is_empty() {
+        // Batch embed all recovered WAL texts to restore hot vector memory
+        let texts: Vec<String> = recovered_logs
+            .iter()
+            .map(|l| {
+                format!(
+                    "[{:?}] Agent in {} stated {}",
+                    l.state.status, l.state.namespace, l.state.text
+                )
+            })
+            .collect();
 
-                if let Ok(vectors) = embedder.embed_batch(&texts).await {
-                    let mut hot_entries = Vec::with_capacity(recovered_logs.len());
-                    for (i, log) in recovered_logs.into_iter().enumerate() {
-                        hot_entries.push(HotVectorEntry {
-                            tx_id: log.state.transaction_id,
-                            agent_hex: hex::encode(log.agent_id),
-                            namespace: log.state.namespace,
-                            text: log.state.text,
-                            timestamp: log.state.timestamp,
-                            vector: vectors[i].clone(),
-                        });
-                    }
-                    hot_buffer.push_batch(hot_entries);
-                    println!("[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.", hot_buffer.len());
-                }                
+        // Recompute the vector space asynchronouly to bypass short-term amnesia gaps
+        // Simulated blocks, maps out directly to fastembed / OpenAI endpoints
+        // let mock_embed_vectors = vec![vec![0.0f32; 768]; recovered_logs.len()];
 
+        if let Ok(vectors) = embedder.embed_batch(&texts).await {
+            let mut hot_entries = Vec::with_capacity(recovered_logs.len());
+            for (i, log) in recovered_logs.into_iter().enumerate() {
+                hot_entries.push(HotVectorEntry {
+                    tx_id: log.state.transaction_id,
+                    agent_hex: hex::encode(log.agent_id),
+                    namespace: log.state.namespace,
+                    text: log.state.text,
+                    timestamp: log.state.timestamp,
+                    vector: vectors[i].clone(),
+                });
             }
-
+            let entry_count = hot_entries.len();
+            hot_buffer.push_batch(hot_entries);
             println!(
-                "[INITIALIIZATION] Phoenix protocol Complete. Hydrated {} log frames into Axon DAG memory. ",
-                recovered_count
+                "[INITIALIZATION] Phoenix Boot Hydration complete. Restored {} hot vectors in RAM.",
+                entry_count
             );
         }
     }
 
+    // Load un-tamperable chronological WORM roots and assert execution matrix match
+    let anchored_witness = witness_engine.load_local_witness();
+    if !anchored_witness.is_empty() {
+        axon.execute_forensic_boot_audit(&anchored_witness, &witness_engine.clone())
+            .await?;
+    }
 
-    // ---  COMPACTION EVENT LISTENENR  (Watermark eviction) ---- 
+    // ---  COMPACTION EVENT LISTENENR  (Watermark eviction) ----
     let mut system_rx = event_tx.subscribe();
     let hot_buffer_clone = hot_buffer.clone();
 
     tokio::spawn(async move {
-
-            while let Ok(event) = system_rx.recv().await {
-
-                if let SystemEvent::CompactionTriggered { .., max_compacted_tx } = event {
-                    hot_buffer_clone.evits_compacted_up_to(max_compacted_tx);
-                }
-
+        while let Ok(event) = system_rx.recv().await {
+            if let SystemEvent::CompactionTriggered {
+                max_compacted_tx, ..
+            } = event
+            {
+                hot_buffer_clone.evict_compacted_up_to(max_compacted_tx);
             }
-
+        }
     });
 
     // We spawn the Audit Vault Sinker. This OS thread's ONLY job is to listen to the internal event bus
@@ -384,7 +535,6 @@ async fn main() {
 
     let mem_router = Arc::new(MemoryRouter::new(
         config.clone(),
-        telemetry.clone(),
         aegis.clone(),
         axon.clone(),
         brain_shard.clone(),
@@ -408,10 +558,8 @@ async fn main() {
     let w_cortex_tx = cortex_tx.clone();
     let w_global_net = global_net.clone();
     let w_wasm_engine = wasm_engine.clone();
-    let w_tx_couter = tx_counter.clone();
     let w_event_tx = event_tx.clone();
     let w_aegis = aegis.clone();
-    let w_telemetry = telemetry.clone();
     let w_brain_shard = brain_shard.clone();
 
     // Spawns a dedicated background thread to monitor the plugins folder
@@ -500,7 +648,6 @@ async fn main() {
                         let tx_clone = w_event_tx.clone();
                         let lance_clone = w_lance.clone();
                         let ae_clone = w_aegis.clone();
-                        let tele_clone = w_telemetry.clone();
                         let shard_clone = w_brain_shard.clone();
 
                         // When an agent connects or boots, we retreive or initialize its specific tracker
@@ -525,7 +672,6 @@ async fn main() {
                             replay_responses: Vec::new(),
                             replay_seeds: Vec::new(),
                             replay_timestamps: Vec::new(),
-                            telemetry: tele_clone,
                             a2a_response_cache: Vec::new(),
                             http_response_cache: Vec::new(),
                             a2a_incoming_cache: Vec::new(),
@@ -535,7 +681,6 @@ async fn main() {
                         };
 
                         // Mutex lifetime enforcement
-
                         let mut tracker_lock = global_tracker.lock().unwrap();
 
                         // Extract an owned, independent clone of the tracker out of the map boundary
@@ -551,7 +696,7 @@ async fn main() {
                         drop(tracker_lock);
 
                         // Get the exact current Transaction ID
-                        let current_tx = w_tx_couter.load(std::sync::atomic::Ordering::SeqCst);
+                        let current_tx = generate_uuidv7_txid();
                         let w_engine_clone = w_wasm_engine.clone();
                         let wasm_bytes_clone = wasm_bytes.clone();
 
@@ -624,12 +769,10 @@ async fn main() {
         aegis: aegis.clone(),
         mem_router: mem_router.clone(),
         global_net: global_net.clone(),
-        telemetry: telemetry.clone(),
         axon: axon.clone(),
         brain: brain_shard.clone(),
         lance: lance_engine.clone(),
         cortex_tx: cortex_tx.clone(),
-        global_tx_counter: tx_counter.clone(),
         wal: wal.clone(),
         event_tx: event_tx.clone(),
 
@@ -676,26 +819,23 @@ async fn main() {
 
                 // Otherwise, Accept connections normally.
                 accpet_res = listener.accept() => {
-
                     let (socket, addr) = match accpet_res {
                         Ok(res) => res,
                         Err(_) => continue
                     };
 
-
                 println!("External Agent connected from: {}", addr);
 
-                let task_telemetry = telemetry.clone();
                 let task_axon = axon.clone();
                 let task_cortex_tx = cortex_tx.clone();
                 let task_wal = wal.clone();
                 let global_publisher = global_net.clone();
-                let task_tx_couter = tx_counter.clone();
                 let task_event_tx = event_tx.clone();
                 let task_aegis = aegis.clone();
                 let task_ui_tx = ui_tx.clone();
                 let task_registry = registry.clone();
                 let task_brain = brain_shard.clone();
+                let task_mem_router = mem_router.clone();
 
                 // Spawn into the joinset
                  tcp_workers.spawn(async move {
@@ -798,12 +938,10 @@ async fn main() {
                     }
 
                     // Perform ultrafast packet audit for each packet.
-                    let packet_timestamp = archived_state.timestamp.as_slice() ;
+                    let packet_timestamp = archived_state.timestamp.into();
                     if let  Err(e) = task_aegis.authorize_packet_fast(&cached_agent_hex, &cached_group_name, &agent_pub_key, state_slice, &packet_sig, path_intent, packet_timestamp) {
-
                         eprintln!("[AEGIS INTERDICTION] Fast Audit failed: {} ", e);
                         break;
-
                     }
 
                     let agent_hex = cached_agent_hex.clone();
@@ -816,6 +954,27 @@ async fn main() {
                             let alias = text.replace("ALIAS=", "").trim().to_string();
                             // We do not execute a cascade for handshake. We just register and drop
                             task_registry.touch_agent(&agent_hex, &path_intent, "Connected", &alias);
+
+                            // ==============================
+                            // JIT COLD-START HYDRATION
+                            // ==============================
+                            let agent_hex_clone = agent_hex.clone();
+                            let wal_clone = task_wal.clone();
+                            let router_clone = task_mem_router.clone();
+
+                            // spawn the heave lancedb/wal lookup in the bg os thread
+                            tokio::spawn(async move {
+
+                                println!("[JIT HYDRATION] Waking up agent {} from cold storage.", agent_hex_clone);
+
+                                if let Err(e) = router_clone.rebuild_agent_timeline(&agent_hex_clone, u128::MAX, wal_clone).await {
+
+                                        eprintln!(" [JIT HYDRATION ERROR] Failed to wake up agent {}: {} ", agent_hex_clone, e);
+
+                                } else {
+                                    println!("[JIT HYDRATION] Agent {} fully synchronized with historical reality.", agent_hex_clone);
+                                }
+                            });
 
                             continue;
                         }
@@ -838,7 +997,6 @@ async fn main() {
                         task_event_tx.clone(),
                         Vec::new(),
                         Vec::new(),
-                        task_telemetry.clone(),
                     )
                     .await;
 
@@ -900,10 +1058,9 @@ async fn main() {
     drop(wal);
     println!("[WAL] Senders dropped. Awaiting final io_uring fsync to NVMe... ");
 
-    // Block the main thread from exiting until the disk thread physically joins
-    handle
-        .join()
-        .expect("FATAL: WAL thread panicked during shutdown.");
+    let _ = handle.await;
 
-    println!("[SYSTEM] Raqim OS terminated cleanly. Zero data loss. Alhamdullilah.");
+    println!("[SYSTEM] Raqim OS terminated cleanly. Zero data loss. AlhamdulliLah.");
+
+    Ok(())
 }

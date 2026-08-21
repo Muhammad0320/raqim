@@ -1,6 +1,7 @@
 [daemon]
 topic = "seige_swarm_mesh"
 wal_path = "production.wal"
+witness_path = "witness.json"
 aegis_path = "aegis.toml"
 
 [storage]
@@ -11,5 +12,4 @@ table_name = "agent_history"
 tenant_id = "tenant_unilorin_optometry_01"
 node_pub_key_hex = "f9a2e75e921d7b6a43d9281a8cb9219323ef45a2d98412e7cf849201bdca74ff"
 
-# A valid structurally structured claim payload that bypasses open-core restrictions
 license_key = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZW5hbnRfdW5pbG9yaW5fb3B0b21ldHJ5XzAxIiwiZmVhdHVyZXMiOlsiZ2xvYmFsX2NyZHQiLCJnbG9iYWxfYTJhIiwidGltZV90cmF2ZWwiLCJhZWdpcyJdLCJleHAiOjE4OTM0NTYwMDB9.SignatureBypassedForLocalDevProfile"

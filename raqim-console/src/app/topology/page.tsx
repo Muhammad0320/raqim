@@ -1,16 +1,19 @@
-'use client';
+import { fetchTopology, fetchClusterDiagnostics } from '../../actions/admin';
+import { fetchAgentAliases } from '../../actions/aliases';
+import { TopologyClientLayout } from '../../components/Topology/TopologyClientLayout';
 
-import React from 'react';
-import { MainLayout } from '../../components/Layout/MainLayout';
-import { ReactFlowProvider } from '@xyflow/react';
-import { TopologyCanvas } from '../../components/TopologyCanvas';
+export default async function TopologyPage() {
+  const [topology, clusterInfo, aliases] = await Promise.all([
+    fetchTopology().catch(() => []),
+    fetchClusterDiagnostics().catch(() => null),
+    fetchAgentAliases().catch(() => ({})),
+  ]);
 
-export default function TopologyPage() {
   return (
-    <MainLayout title="Swarm Topology">
-      <ReactFlowProvider>
-        <TopologyCanvas />
-      </ReactFlowProvider>
-    </MainLayout>
+    <TopologyClientLayout
+      initialTopology={topology}
+      initialClusterInfo={clusterInfo}
+      initialAliases={aliases}
+    />
   );
 }

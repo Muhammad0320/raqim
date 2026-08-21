@@ -22,7 +22,7 @@ impl SwarmState {
 
         // --- THE CRDT EVENT LISTENER ---
         // We attach a deep listener to the Loro Doc. Whenever the math resolves a conflict, this closure fires syncronously
-        doc.subscribe_root(Arc::new(move |event: loro::event::DiffEvent| {
+        let _ = doc.subscribe_root(Arc::new(move |event: loro::event::DiffEvent| {
             // event.events contains the precise diffs (what was added, deleted, updated)
             for diff in &event.events {
                 println!(

@@ -5,7 +5,6 @@ use std::{eprintln, format, println};
 
 use crate::axon::AxonGateKeeper;
 use crate::state::SwarmStateRegistry;
-use crate::telemetry::TelemetryEngine;
 use crate::{A2AEnvelope, OpLog, SystemEvent};
 use rkyv::{Archive, to_bytes};
 use tokio::sync::broadcast::Sender;
@@ -125,7 +124,6 @@ impl GlobalNetworkBridge {
         &self,
         envelope: A2AEnvelope,
         aegis: Arc<AegisGateKeeper>,
-        telemetry: Arc<TelemetryEngine>,
     ) -> Result<(Vec<u8>, String), anyhow::Error> {
         let sender_hex = hex::encode(envelope.sender_id.clone());
 
@@ -136,9 +134,10 @@ impl GlobalNetworkBridge {
         let mut sender_pub_bytes: [u8; 32] = [0; 32];
         sender_pub_bytes.copy_from_slice(envelope.sender_public_key.as_slice());
 
-        let (agent_hex, group_name) = match aegis
-            .verify_session_lineage(envelope.sender_capability_cert.as_slice())
-        {
+        let (agent_hex, group_name) = match aegis.verify_session_lineage(
+            envelope.sender_capability_cert.as_slice(),
+            &sender_pub_bytes,
+        ) {
             Ok((agent, group)) => (agent, group),
             Err(e) => {
                 eprintln!(
@@ -157,6 +156,7 @@ impl GlobalNetworkBridge {
             &envelope.payload,
             &packet_sig,
             &envelope.target_capability,
+            envelope.timestamp,
         ) {
             return Err(anyhow::anyhow!(
                 "[AEGIS INTERDICTION]: A2A Transmission Violation: {} ",
@@ -181,9 +181,6 @@ impl GlobalNetworkBridge {
             self.workspace_prefix, envelope.target_capability
         );
 
-        // Billing: Record the outbound request size
-        telemetry.record_a2a_bytes(bytes.len() as u64);
-
         // 3. Zenoh GET request (The RPC )
         // We broadcast the question and wait for the authoritative answer to reply.
         let replies = self
@@ -201,7 +198,6 @@ impl GlobalNetworkBridge {
             if let Ok(sample) = reply.result() {
                 // Return the answer bytes back to the caller
                 let res_bytes: Vec<u8> = sample.payload().to_bytes().to_vec();
-                telemetry.record_a2a_bytes(res_bytes.len() as u64);
 
                 // Attempt to parse the pythons SDK's envelope to extract the true responder and answer
                 if let Ok(json_val) = serde_json::from_slice::<serde_json::Value>(&res_bytes) {
@@ -400,9 +396,10 @@ impl GlobalNetworkBridge {
 
                 // UNIFIED PERIMETER AUDIT: Validates lineage token, proved the signature authenticity and checks path
 
-                let (agent_hex, group_name) = match aegis
-                    .verify_session_lineage(&archievd_envelope.sender_capability_cert.as_slice())
-                {
+                let (agent_hex, group_name) = match aegis.verify_session_lineage(
+                    &archievd_envelope.sender_capability_cert.as_slice(),
+                    &agent_public_key,
+                ) {
                     Ok((agent, group)) => (agent, group),
                     Err(e) => {
                         eprintln!(
@@ -414,6 +411,8 @@ impl GlobalNetworkBridge {
                     }
                 };
 
+                let packet_timestamp: i64 = archievd_envelope.timestamp.into();
+
                 match aegis.authorize_packet_fast(
                     agent_hex.as_str(),
                     group_name.as_str(),
@@ -421,6 +420,7 @@ impl GlobalNetworkBridge {
                     question_payload,
                     &packet_signature,
                     &archievd_envelope.target_capability.as_str(),
+                    packet_timestamp,
                 ) {
                     Ok(_) => {
                         // Execution approved. Invoke the inner WASM guest application runtime logic.
