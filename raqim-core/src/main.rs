@@ -28,7 +28,6 @@ use tower_http::cors::{Any, CorsLayer};
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::{eprintln, fs, println};
 
@@ -114,8 +113,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let security_flags = RuntimeSecurityFlags::new();
-
-    let allow_wan = Arc::new(AtomicBool::new(false));
 
     // Securely loads the swarm key from disk. Generate it if it doesn't exist/
     let key_dir = Path::new("./ca-keys");
@@ -277,9 +274,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &config.topic,
             aegis.clone(),
             os_node_id,
-            allow_wan.clone(),
-            security_flags.allow_global_a2a.clone(),
-            security_flags.allow_global_aegis.clone(),
         )
         .await,
     );

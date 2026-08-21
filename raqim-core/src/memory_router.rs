@@ -575,9 +575,6 @@ impl MemoryRouter {
                 format!("phamtom_{}", sandbox_agent_hex).as_str(),
                 self.aegis.clone(),
                 format!("phantom_{}", sandbox_agent_hex).to_string(),
-                Arc::new(AtomicBool::new(false)),
-                Arc::new(AtomicBool::new(false)),
-                Arc::new(AtomicBool::new(false)),
             )
             .await,
         );

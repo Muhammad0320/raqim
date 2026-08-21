@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{eprintln, format, println};
 
@@ -20,11 +19,6 @@ pub struct GlobalNetworkBridge {
     aegis: Arc<AegisGateKeeper>,
     pub os_node_id: String,
     egress_tx: mpsc::Sender<Vec<u8>>,
-
-    // Thread-safe atomic feature switches
-    allow_wan: Arc<AtomicBool>,
-    allow_global_a2a: Arc<AtomicBool>,
-    allow_global_aegis: Arc<AtomicBool>,
 }
 
 impl GlobalNetworkBridge {
@@ -34,36 +28,18 @@ impl GlobalNetworkBridge {
         swarm_name: &str,
         aegis: Arc<AegisGateKeeper>,
         os_node_id: String,
-        allow_wan: Arc<AtomicBool>,
-        allow_global_a2a: Arc<AtomicBool>,
-        allow_global_aegis: Arc<AtomicBool>,
     ) -> Self {
         println!("Bismillah. Initialializing Zenoh Global Network Bridge with Dynamic Atomic...");
 
         let mut config = zenoh::Config::default();
 
-        // Boot-time configuration handles structural scaffolding: We listen globally by default;
-        config
-            .insert_json5("listen/endpoints", r#"["tcp/0.0.0.0:7447"]"#)
-            .unwrap();
         config
             .insert_json5("scouting/multicast/enabled", "true")
             .unwrap();
 
-        // If the initial evaluation allows WAN, we register the cloud router endpoint immediately
-        if allow_wan.load(Ordering::SeqCst) {
-            config
-                .insert_json5("connect/endpoints", r#"["tcp/router.raqim.cloud:7447"]"#)
-                .unwrap();
-
-            println!(" [NETWORK INITIALIZATION] Cloud WAN routing pipeline is established ");
-        } else {
-            println!(
-                "[NETWORK INITIALIZATION] Local Open Core mode active .Cloud endpoints unconfigured."
-            );
-        }
-
-        let session = zenoh::open(config).await.expect("Failed to start zenoh");
+        let session = zenoh::open(config.clone())
+            .await
+            .expect("Failed to start zenoh");
         let workspace_prefix = format!("raqim/{}/{}", tenant_id, swarm_name);
 
         // Bounded Egress funnel
@@ -73,7 +49,6 @@ impl GlobalNetworkBridge {
         let topic_clone = format!("{}/thoughts/{}", workspace_prefix.clone(), os_node_id);
 
         // Dynamic wan state tracker inside the background egress task
-        let allow_wan_clone = allow_wan.clone();
 
         tokio::spawn(async move {
             println!(
@@ -82,18 +57,7 @@ impl GlobalNetworkBridge {
             );
 
             while let Some(bytes) = egress_rx.recv().await {
-                // HARD CIRCUITING: If a patient's subscription fails mid-operation the egress loop immediately kills the outbound traffic.
-
-                if !allow_wan_clone.load(Ordering::Relaxed) {
-                    eprintln!(
-                        "[SECURITY WARNING] Outbound WAN trasnmission blocked: License invalid or expired."
-                    );
-                    continue;
-                }
-
-                if let Err(e) = session_clone.put(&topic_clone, bytes).await {
-                    eprintln!("[NETWORK WARN] Zenoh Egress Dropped a packet: {}", e);
-                }
+                let _ = session_clone.put(&topic_clone, bytes).await;
             }
         });
 
@@ -103,9 +67,6 @@ impl GlobalNetworkBridge {
             aegis,
             os_node_id,
             egress_tx,
-            allow_wan,
-            allow_global_a2a,
-            allow_global_aegis,
         }
     }
 
@@ -165,12 +126,7 @@ impl GlobalNetworkBridge {
         }
 
         // CRITICAL: Dynamic atomic load disctated whther query propagates across the globak mesh or stays on the LAN
-        let query_target = if self.allow_global_a2a.load(Ordering::Relaxed) {
-            zenoh::query::QueryTarget::All
-        } else {
-            // Force routing restriction to immediate local topologies
-            zenoh::query::QueryTarget::BestMatching
-        };
+        let query_target = zenoh::query::QueryTarget::All;
 
         // 2. Zero-Copy Serializarion of envelope
         let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope)
@@ -229,10 +185,6 @@ impl GlobalNetworkBridge {
 
     /// Broadcasts local quarantine to the global swarm over Zenoh
     pub async fn broadcast_quarantine_sync(&self, record: QuarantineRecord) {
-        if !self.allow_global_aegis.load(Ordering::Relaxed) {
-            return;
-        }
-
         let key_expr = format!("{}/system/quarantine", self.workspace_prefix);
         let bytes = postcard::to_allocvec(&record).unwrap();
         if let Err(e) = self.session.put(key_expr, bytes).await {
@@ -247,7 +199,6 @@ impl GlobalNetworkBridge {
     pub async fn listen_for_global_quarantine(&self, aegis: Arc<AegisGateKeeper>) {
         let key_exp = format!("{}/system/quarantine", self.workspace_prefix);
         let session_clone = self.session.clone();
-        let allow_aegis = self.allow_global_aegis.clone();
 
         println!(
             "[NETWORK CORE] Aegis Global Quarantine subscriber active on: {} ",
@@ -267,10 +218,6 @@ impl GlobalNetworkBridge {
             };
 
             while let Ok(sample) = subscriber.recv_async().await {
-                if !allow_aegis.load(Ordering::Relaxed) {
-                    return;
-                }
-
                 let payload_bytes = sample.payload().to_bytes();
 
                 // Deserialize incoming quarantine record
