@@ -102,8 +102,8 @@ pub struct QuarantineRecord {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GroupPolicyConfig {
-    pub allowed_namespace: Vec<String>,
-    pub blocked_namespace: Vec<String>,
+    pub allowed_namespaces: Vec<String>,
+    pub blocked_namespaces: Vec<String>,
     pub max_tps: u64,
     pub burst_capacity: u64,
 }
@@ -121,8 +121,8 @@ impl AegisConfigFile {
             map.insert(
                 group_name.clone(),
                 GroupPolicy {
-                    allowed_namespaces: cfg.allowed_namespace.clone(),
-                    blocked_namespaces: cfg.blocked_namespace.clone(),
+                    allowed_namespaces: cfg.allowed_namespaces.clone(),
+                    blocked_namespaces: cfg.blocked_namespaces.clone(),
                     rate_limiter: Arc::new(AtomicTokenBucket::new(cfg.max_tps, cfg.burst_capacity)),
                 },
             );
