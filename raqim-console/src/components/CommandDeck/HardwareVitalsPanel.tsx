@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { useHardwareVitals } from '../../lib/hooks/useHardwareVitals';
@@ -10,10 +10,14 @@ import { Cpu, HardDrive, Shield, Activity, ArrowUpRight, Flame } from 'lucide-re
 export function HardwareVitalsPanel() {
   const vitalsHistory = useSwarmStore((state) => state.vitalsHistory);
   const clusterInfo = useSwarmStore((state) => state.clusterInfo);
-  const vaultTelemetry = useSwarmStore((state) => state.vaultTelemetry);
   const quarantinedAgents = useSwarmStore((state) => state.quarantinedAgents);
   const aegisAlerts = useSwarmStore((state) => state.aegisAlerts);
-  const daemonOnline = useSwarmStore((state) => state.daemonOnline);
+
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const vitals = useHardwareVitals();
 
@@ -43,39 +47,45 @@ export function HardwareVitalsPanel() {
         </div>
 
         <div className="flex-1 w-full min-h-[90px] h-[90px] min-w-0 relative mt-1">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={80}>
-            <AreaChart data={vitalsHistory}>
-              <defs>
-                <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="time" hide />
-              <YAxis domain={[0, 100]} hide />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#090E1A',
-                  borderColor: '#1E293B',
-                  borderRadius: '2px',
-                  fontFamily: 'monospace',
-                  fontSize: '11px',
-                }}
-                itemStyle={{ color: '#00f3ff' }}
-                labelStyle={{ color: '#94a3b8' }}
-              />
-              <Area
-                type="monotone"
-                dataKey="cpu_load_percent"
-                name="CPU Load"
-                stroke="#06b6d4"
-                strokeWidth={1.5}
-                fillOpacity={1}
-                fill="url(#cpuGradient)"
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          {isMounted ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={80}>
+              <AreaChart data={vitalsHistory}>
+                <defs>
+                  <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="time" hide />
+                <YAxis domain={[0, 100]} hide />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#090E1A',
+                    borderColor: '#1E293B',
+                    borderRadius: '2px',
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                  }}
+                  itemStyle={{ color: '#00f3ff' }}
+                  labelStyle={{ color: '#94a3b8' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="cpu_load_percent"
+                  name="CPU Load"
+                  stroke="#06b6d4"
+                  strokeWidth={1.5}
+                  fillOpacity={1}
+                  fill="url(#cpuGradient)"
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-slate-950/40 rounded-xs border border-slate-900 font-mono text-[9px] text-slate-600">
+              [ SAMPLING KERNEL TELEMETRY ]
+            </div>
+          )}
         </div>
       </div>
 
