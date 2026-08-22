@@ -118,14 +118,12 @@ impl WalEngine {
                     // Path C: Segment Rotation Command
                     cmd = cmd_rx.recv() => {
                         match cmd {
-
                         Some(WalCommand::Shutdown) => {
                             let _ = active_file.sync_all().await;
                             break;
                         }
 
                         Some(WalCommand::Rotate(reply_tx)) => {
-
                             println!("[WAL_ENGINE] Halting I/O. Rotating WAL segment...");
 
                             // 1. Force final hardware flush
@@ -137,10 +135,8 @@ impl WalEngine {
 
                             // Async File rename (non-blocking)
                             if let Err(e) = tokio::fs::rename(&fp_clone, &archived_name).await {
-
                                 eprintln!("[WAL_ENGINE ERROR] Rotation rename failed: {} ", e);
                                 continue;
-
                             }
 
                             // Open a fresh active file & reset offset

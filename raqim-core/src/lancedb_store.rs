@@ -14,6 +14,7 @@ use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use std::collections::HashMap;
 use std::format;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -207,7 +208,7 @@ impl LanceEngine {
                 .downcast_ref::<Int64Array>()
                 .unwrap();
             let tx_id_col = batch
-                .column_by_name("transaction_id")
+                .column_by_name("tx_id")
                 .unwrap()
                 .as_any()
                 .downcast_ref::<StringArray>()
@@ -812,6 +813,10 @@ impl LanceEngine {
     pub async fn get_index_size_mb(&self) -> f64 {
         let table_dir = format!("{}/{}.lance", &self.storage_path, &self.history_table);
 
+        if !Path::new(&table_dir).exists() {
+            return 0.0;
+        }
+
         match fs_extra::dir::get_size(&table_dir) {
             Ok(bytes) => bytes as f64 / (1024.0 * 1024.0),
             Err(e) => {
@@ -847,7 +852,7 @@ impl LanceEngine {
                 .downcast_ref::<StringArray>()
                 .unwrap();
             let tx_col = batch
-                .column_by_name("transaction_id")
+                .column_by_name("tx_id")
                 .unwrap()
                 .as_any()
                 .downcast_ref::<StringArray>()

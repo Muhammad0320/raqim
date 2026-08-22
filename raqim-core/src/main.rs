@@ -378,26 +378,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let entry_slice = &wal_bytes[offset..offset + entry_len];
 
                 if let Ok(archived_log) = rkyv::access::<
-                    <OpLog as rkyv::Archive>::Archived,
+                    <Vec<OpLog> as rkyv::Archive>::Archived,
                     rkyv::rancor::Error,
                 >(entry_slice)
                 {
-                    if let Ok(recovered_log) =
-                        rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log)
+                    if let Ok(batch) =
+                        rkyv::deserialize::<Vec<OpLog>, rkyv::rancor::Error>(archived_log)
                     {
-                        axon.hydrate_from_recovery(&recovered_log);
+                        for recovered_log in batch {
+                            axon.hydrate_from_recovery(&recovered_log);
 
-                        // Fetch crdt shard for this namespace and apply historical delta
-                        let brain = brain_shard.get_or_create_brain(&recovered_log.state.namespace);
-                        if let Err(e) = brain.assimilate_foreign_thought(&recovered_log.delta) {
-                            eprintln!(
-                                "[PHOENIX WARN] Failed to assimilate CRDT delta during recovery: {},",
-                                e
-                            );
+                            // Fetch crdt shard for this namespace and apply historical delta
+                            let brain =
+                                brain_shard.get_or_create_brain(&recovered_log.state.namespace);
+                            if let Err(e) = brain.assimilate_foreign_thought(&recovered_log.delta) {
+                                eprintln!(
+                                    "[PHOENIX WARN] Failed to assimilate CRDT delta during recovery: {},",
+                                    e
+                                );
+                            }
+
+                            recovered_logs.push(recovered_log);
+                            uncompacted_count += 1
                         }
-
-                        recovered_logs.push(recovered_log);
-                        uncompacted_count += 1
                     }
                 }
 
