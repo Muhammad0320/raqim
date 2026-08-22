@@ -374,8 +374,10 @@ impl WalEngine {
             }
 
             // TRUE ZERO-COPY: Inspects Vec<OpLog> pointer directly in kernel mmap page
-            if let Ok(archived_batch) =
-                rkyv::access::<<Vec<OpLog> as rkyv::Archive>::Archived, RkyvError>(payload)
+            if let Ok(archived_batch) = rkyv::access::<
+                <Vec<OpLog> as rkyv::Archive>::Archived,
+                rkyv::rancor::Error,
+            >(payload)
             {
                 for archived_log in archived_batch.as_slice() {
                     let text = archived_log.state.text.as_str();
@@ -408,6 +410,67 @@ impl WalEngine {
 
         results.reverse();
         Ok(results)
+    }
+
+    pub fn fetch_hot_timeline(
+        &self,
+        agent_hex: &str,
+        wal_path: &str,
+    ) -> Result<Vec<TimelineNode>, anyhow::Error> {
+        let mut nodes = Vec::new();
+
+        let file = match File::open(wal_path) {
+            Ok(f) => f,
+            Err(_) => return Ok(nodes),
+        };
+
+        // Page WAL into memory
+        let mmap = unsafe { MmapOptions::new().map(&file)? };
+        let mut cursor = 0;
+        let target_bytes = hex::decode(agent_hex).unwrap_or(vec![0; 16]);
+
+        while cursor + 8 <= mmap.len() {
+            let len = u32::from_le_bytes(mmap[cursor..cursor + 4].try_into().unwrap()) as usize;
+            let expected_crc = u32::from_le_bytes(mmap[cursor + 4..cursor + 8].try_into().unwrap());
+            cursor += 8;
+
+            if cursor + len > mmap.len() {
+                break;
+            }
+
+            let payload = &mmap[cursor..cursor + len];
+            cursor += len;
+
+            if crc32fast::hash(payload) != expected_crc {
+                continue;
+            }
+
+            if let Ok(archived_batch) = rkyv::access::<
+                <Vec<OpLog> as rkyv::Archive>::Archived,
+                rkyv::rancor::Error,
+            >(payload)
+            {
+                for archived_log in archived_batch.as_slice() {
+                    if archived_log.agent_id.as_slice() == target_bytes.as_slice() {
+                        let status_str = match &archived_log.state.status {
+                            rkyv::Archived::<AgentStatus>::Idle => "Idle",
+                            rkyv::Archived::<AgentStatus>::Reasoning => "Reasoning",
+                            rkyv::Archived::<AgentStatus>::Halted => "Halted",
+                            rkyv::Archived::<AgentStatus>::ToolExecution => "ToolExecution",
+                        };
+
+                        nodes.push(TimelineNode {
+                            tx_id: archived_log.state.transaction_id.to_native(),
+                            timestamp: archived_log.state.timestamp.to_string(),
+                            agent_status: status_str.to_string(),
+                            payload_preview: archived_log.state.text.as_str().to_string(),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(nodes)
     }
 
     /// Scans the raw WAL file to find the highest TxID it contains.
@@ -460,56 +523,5 @@ impl WalEngine {
         }
 
         highest_tx
-    }
-
-    pub fn fetch_hot_timeline(
-        &self,
-        agent_hex: &str,
-        wal_path: &str,
-    ) -> Result<Vec<TimelineNode>, anyhow::Error> {
-        let mut nodes = Vec::new();
-
-        let file = match File::open(wal_path) {
-            Ok(f) => f,
-            Err(_) => return Ok(nodes),
-        };
-
-        // Page WAL into memory
-        let mmap = unsafe { MmapOptions::new().map(&file)? };
-        let mut cursor = 0;
-        let target_bytes = hex::decode(agent_hex).unwrap_or(vec![0; 16]);
-
-        while cursor < mmap.len() {
-            if cursor + 4 > mmap.len() {
-                break;
-            }
-
-            let len = u32::from_le_bytes(mmap[cursor..cursor + 4].try_into().unwrap()) as usize;
-            cursor += 4;
-
-            let payload = &mmap[cursor..cursor + len];
-            cursor += len;
-
-            let archived_bytes =
-                unsafe { rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload) };
-
-            let current_bytes = archived_bytes.agent_id;
-
-            if current_bytes.as_slice() == target_bytes.as_slice() {
-                let native_status = rkyv::deserialize::<AgentStatus, rkyv::rancor::Error>(
-                    &archived_bytes.state.status,
-                )
-                .unwrap();
-
-                nodes.push(TimelineNode {
-                    tx_id: archived_bytes.state.transaction_id.into(),
-                    timestamp: archived_bytes.state.timestamp.to_string(),
-                    agent_status: format!("{:?}", native_status),
-                    payload_preview: archived_bytes.state.text.to_string(),
-                });
-            }
-        }
-
-        Ok(nodes)
     }
 }
