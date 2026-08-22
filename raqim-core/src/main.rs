@@ -998,7 +998,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         text,
                     });
 
-                }
+                 }
 
                 });
 
@@ -1027,7 +1027,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("[SYSTEM] All active thoughts processed and sealed.");
 
     // Sever the Global Mesh
-
     global_net.shutdown().await;
     let _ = wal.cmd_sender.send(WalCommand::Shutdown).await;
     // Seal the WAL safely to nvme
