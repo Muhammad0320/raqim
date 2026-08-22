@@ -166,18 +166,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                Err(broadcast::error::RecvError::Lagged(skipped_count)) => {
-                    // Memory Safeguard: Clear internal lags forcefully to protect RAM
-                    eprintln!(
-                        "[MEMORY WARNING] Subscriber loop lagged behind channel sequence! \n Forcefully skipped {} events to prevent heap memory growth",
-                        skipped_count
-                    );
-                }
+                // Memory Safeguard: Clear internal lags forcefully to protect RAM
+                Err(broadcast::error::RecvError::Lagged(_)) => {}
 
-                Err(broadcast::error::RecvError::Closed) => {
-                    println!("[SYSTEM] Event bus channel closed cleanly. ");
-                    break;
-                }
+                Err(broadcast::error::RecvError::Closed) => break,
             }
         }
     });
