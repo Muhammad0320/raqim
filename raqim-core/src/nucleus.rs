@@ -348,11 +348,8 @@ impl WalEngine {
         wal_path: &str,
     ) -> Result<Vec<VaultSearchResult>, anyhow::Error> {
         let file = File::open(wal_path)?;
-
-        // Page the WAL directly into virtual memory. Zero read() syscall overhead
         let mmap = unsafe { MmapOptions::new().map(&file)? };
 
-        // Compile the search automaton (case-insensitive)
         let ac = AhoCorasick::builder()
             .ascii_case_insensitive(true)
             .build(vec![query])
@@ -361,49 +358,54 @@ impl WalEngine {
         let mut results = Vec::new();
         let mut cursor = 0;
 
-        while cursor < mmap.len() && results.len() < limit {
-            if cursor + 4 > mmap.len() {
-                break;
-            }
+        while cursor + 8 <= mmap.len() && results.len() < limit {
             let len = u32::from_le_bytes(mmap[cursor..cursor + 4].try_into().unwrap()) as usize;
-            cursor += 4;
-
-            // skip 4-byte Crc32
-            let _crc = u32::from_le_bytes(mmap[cursor..cursor + 4].try_into().unwrap());
-            cursor += 4;
+            let expected_crc = u32::from_le_bytes(mmap[cursor + 4..cursor + 8].try_into().unwrap());
+            cursor += 8; // FIXED: Advance past [4B Length] + [4B CRC32]
 
             if cursor + len > mmap.len() {
                 break;
             }
-
             let payload = &mmap[cursor..cursor + len];
             cursor += len;
 
-            // Zero-copy rkyv extraction
-            let archived_log =
-                unsafe { rkyv::access_unchecked::<<OpLog as rkyv::Archive>::Archived>(payload) };
-            let text = archived_log.state.text.as_str();
-            let ns = archived_log.state.namespace.as_str();
+            if crc32fast::hash(payload) != expected_crc {
+                continue;
+            }
 
-            if let Some(filter) = namespace_filter {
-                if !filter.is_empty() && filter != ns {
-                    continue;
+            // TRUE ZERO-COPY: Inspects Vec<OpLog> pointer directly in kernel mmap page
+            if let Ok(archived_batch) =
+                rkyv::access::<<Vec<OpLog> as rkyv::Archive>::Archived, RkyvError>(payload)
+            {
+                for archived_log in archived_batch.as_slice() {
+                    let text = archived_log.state.text.as_str();
+                    let ns = archived_log.state.namespace.as_str();
+
+                    if let Some(filter) = namespace_filter {
+                        if !filter.is_empty() && filter != ns {
+                            continue;
+                        }
+                    }
+
+                    if ac.is_match(text) {
+                        results.push(VaultSearchResult {
+                            agent_hex: hex::encode(archived_log.agent_id.as_slice()),
+                            tx_id: archived_log.state.transaction_id.to_native(),
+                            namespace: ns.to_string(),
+                            payload: text.to_string(),
+                            timestamp: archived_log.state.timestamp.to_string(),
+                            source: "HOT_WAL".to_string(),
+                            similarity_score: 1.0,
+                        });
+
+                        if results.len() >= limit {
+                            break;
+                        }
+                    }
                 }
             }
-
-            //  SIMD-accelerated search over the exact text slice
-            if ac.is_match(text) {
-                results.push(VaultSearchResult {
-                    agent_hex: hex::encode(archived_log.state.agent_id.unwrap()),
-                    tx_id: archived_log.state.transaction_id.into(),
-                    namespace: archived_log.state.namespace.to_string(),
-                    payload: text.to_string(),
-                    timestamp: archived_log.state.timestamp.to_string(),
-                    source: "HOT_WAL".to_string(),
-                    similarity_score: 1.0,
-                });
-            }
         }
+
         results.reverse();
         Ok(results)
     }
@@ -442,13 +444,17 @@ impl WalEngine {
             }
 
             // Bounds-checked zero-copy pointer access
-            if let Ok(archived_log) =
-                rkyv::access::<<OpLog as rkyv::Archive>::Archived, rkyv::rancor::Error>(&payload)
+            if let Ok(batch) = rkyv::access::<
+                <Vec<OpLog> as rkyv::Archive>::Archived,
+                rkyv::rancor::Error,
+            >(&payload)
             {
-                let tx_id = archived_log.state.transaction_id.to_native();
+                for archived_log in batch.as_slice() {
+                    let tx_id = archived_log.state.transaction_id.to_native();
 
-                if tx_id > highest_tx {
-                    highest_tx = tx_id;
+                    if tx_id > highest_tx {
+                        highest_tx = tx_id;
+                    }
                 }
             }
         }

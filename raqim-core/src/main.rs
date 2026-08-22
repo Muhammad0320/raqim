@@ -356,34 +356,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut offset = 0;
 
             while offset < wal_bytes.len() {
-                if offset + 4 > wal_bytes.len() {
+                let entry_len =
+                    u32::from_le_bytes(wal_bytes[offset..offset + 4].try_into().unwrap()) as usize;
+                let expected_crc =
+                    u32::from_le_bytes(wal_bytes[offset + 4..offset + 8].try_into().unwrap());
+                let frame_total = 8 + entry_len;
+
+                if offset + frame_total < wal_bytes.len() {
+                    eprinln!("[PHOENIX WARN] Truncateed tail frame in {}. Halting scan");
                     break;
                 }
 
-                let mut len_bytes = [0u8; 4];
-                len_bytes.copy_from_slice(&wal_bytes[offset..offset + 4]);
-                let entry_len = u32::from_le_bytes(len_bytes) as usize;
-                offset += 4;
-
-                // Check for 4-byte CRC header boundary
-                if offset + 4 > wal_bytes.len() {
-                    break;
-                }
-
-                let mut crc_bytes = [0u8; 4];
-                crc_bytes.copy_from_slice(&wal_bytes[offset..offset + 4]);
-                let expected_crc = u32::from_le_bytes(crc_bytes);
-                offset += 4;
-
-                if offset + entry_len > wal_bytes.len() {
-                    eprintln!(
-                        "[PHOENIX WARN] Truncateed tail frame in {}. Halting scan",
-                        file_path
-                    );
-                    break;
-                }
-
-                let entry_slice = &wal_bytes[offset..offset + entry_len];
+                let entry_slice = &wal_bytes[offset + 8..offset + frame_total];
 
                 if crc32fast::hash(entry_slice) != expected_crc {
                     eprintln!(
@@ -401,6 +385,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(batch) =
                         rkyv::deserialize::<Vec<OpLog>, rkyv::rancor::Error>(archived_log)
                     {
+                        println!(
+                            "===== IF the error occured before the deserialization, I'm not see this line ====="
+                        );
                         for recovered_log in batch {
                             axon.hydrate_from_recovery(&recovered_log);
 
