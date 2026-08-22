@@ -15,7 +15,7 @@ use raqim_core::hot_memory::{HotVectorBuffer, HotVectorEntry};
 use raqim_core::lancedb_store::LanceEngine;
 use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
-use raqim_core::nucleus::WalEngine;
+use raqim_core::nucleus::{WalCommand, WalEngine};
 use raqim_core::registry::SwarmRegistry;
 use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
@@ -103,14 +103,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-
-    // BOOT-TIME LICENSE_VERIFIICATION
-    const RAQIM_PUBLIC_KEY: &[u8] = include_bytes!("../../keys/raqim_public.pem");
-
-    let decoding_key = Arc::new(
-        jsonwebtoken::DecodingKey::from_rsa_pem(RAQIM_PUBLIC_KEY)
-            .expect("FATAL: Invalid RSA PEM format"),
-    );
 
     let security_flags = RuntimeSecurityFlags::new();
 
@@ -1035,12 +1027,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("[SYSTEM] All active thoughts processed and sealed.");
 
     // Sever the Global Mesh
-    global_net.shutdown().await;
 
+    global_net.shutdown().await;
+    let _ = wal.cmd_sender.send(WalCommand::Shutdown).await;
     // Seal the WAL safely to nvme
     drop(wal);
     println!("[WAL] Senders dropped. Awaiting final io_uring fsync to NVMe... ");
-
     let _ = handle.await;
 
     println!("[SYSTEM] Raqim OS terminated cleanly. Zero data loss. AlhamdulliLah.");

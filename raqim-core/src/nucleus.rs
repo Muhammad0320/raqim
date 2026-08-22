@@ -32,6 +32,7 @@ pub struct WalEngine {
 
 pub enum WalCommand {
     Rotate(oneshot::Sender<String>),
+    Shutdown,
 }
 
 impl WalEngine {
@@ -117,6 +118,12 @@ impl WalEngine {
                     // Path C: Segment Rotation Command
                     cmd = cmd_rx.recv() => {
                         match cmd {
+
+                        Some(WalCommand::Shutdown) => {
+                            let _ = active_file.sync_all().await;
+                            break;
+                        }
+
                         Some(WalCommand::Rotate(reply_tx)) => {
 
                             println!("[WAL_ENGINE] Halting I/O. Rotating WAL segment...");
@@ -187,7 +194,7 @@ impl WalEngine {
         let payload_bytes = to_bytes::<rkyv::rancor::Error>(&batch.to_vec())
             .expect("Failed to serialize batch")
             .into_vec();
-        
+
         // Compute CRC32 checksums over payload bytes
         let payload_len = payload_bytes.len() as u32;
         let checksum = crc32fast::hash(&payload_bytes);
@@ -308,7 +315,7 @@ impl WalEngine {
 
             offset += 4 + 4 + payload_len as u64;
         }
-        
+
         // Truncate file back to the last 100% valid checksum-verified boundary
         if let Err(e) = file.set_len(offset) {
             eprintln!(
