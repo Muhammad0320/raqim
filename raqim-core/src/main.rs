@@ -369,13 +369,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if offset + 4 > wal_bytes.len() {
                     break;
                 }
+
+                let mut crc_bytes = [0u8; 4];
+                crc_bytes.copy_from_slice(&wal_bytes[offset..offset + 4]);
+                let expected_crc = u32::from_le_bytes(crc_bytes);
                 offset += 4;
 
                 if offset + entry_len > wal_bytes.len() {
+                    eprintln!(
+                        "[PHOENIX WARN] Truncateed tail frame in {}. Halting scan",
+                        file_path
+                    );
                     break;
                 }
 
                 let entry_slice = &wal_bytes[offset..offset + entry_len];
+
+                if crc32fast::hash(entry_slice) != expected_crc {
+                    eprintln!(
+                        "[PHOENIX CORRUPTION] CRC32 mismatch in {}. Trncating tail.",
+                        file_path
+                    );
+                    break;
+                }
 
                 if let Ok(archived_log) = rkyv::access::<
                     <Vec<OpLog> as rkyv::Archive>::Archived,

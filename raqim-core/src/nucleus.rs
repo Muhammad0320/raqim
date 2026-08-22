@@ -368,6 +368,14 @@ impl WalEngine {
             let len = u32::from_le_bytes(mmap[cursor..cursor + 4].try_into().unwrap()) as usize;
             cursor += 4;
 
+            // skip 4-byte Crc32
+            let _crc = u32::from_le_bytes(mmap[cursor..cursor + 4].try_into().unwrap());
+            cursor += 4;
+
+            if cursor + len > mmap.len() {
+                break;
+            }
+
             let payload = &mmap[cursor..cursor + len];
             cursor += len;
 
@@ -416,10 +424,16 @@ impl WalEngine {
 
         let mut highest_tx: u128 = 0;
         let mut len_buf = [0u8; 4];
+        let mut crc_buf = [0u8; 4];
 
-        // PHYSICS: Iterate throught the append-only binary log.
+        // Iterate throught the append-only binary log.
         while file.read_exact(&mut len_buf).is_ok() {
             let payload_len = u32::from_le_bytes(len_buf) as usize;
+
+            if file.read_exact(&mut crc_buf).is_err() {
+                break;
+            }
+
             let mut payload = vec![0u8; payload_len];
 
             if file.read_exact(&mut payload).is_err() {
