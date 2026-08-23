@@ -23,13 +23,23 @@ export interface DashboardCardsData {
   global_transactions: number;
   active_agents: number;
   vault_capacity: number;
+  latest_tx_hex?: string | null;
+  cold_thoughts_count?: number;
+  hot_thoughts_count?: number;
+  embedder_name?: string;
+  embedder_dims?: number;
+  ingress_paused?: boolean;
 }
 
 export interface SystemHealthPayload {
   cpu_load_percent: number;
-  wasm_memory_mb: number;
-  core_temp_celcius: number;
-  mesh_latency_ms: number;
+  wasm_memory_mb?: number;
+  process_memory_mb?: number;
+  process_rss_mb?: number;
+  host_used_memory_mb?: number;
+  host_total_memory_mb?: number;
+  core_temp_celcius?: number;
+  mesh_latency_ms?: number;
 }
 
 export interface GroupPolicyTelemetry {
@@ -61,28 +71,29 @@ export interface QuarantineRecord {
   timestamp: number;
 }
 
+export interface ClusterShard {
+  namespace: string;
+  total_crdt_operation: number;
+  total_crdt_operations?: number;
+  active_timelines: number;
+}
+
 export interface ClusterInfoData {
   node_id: string;
-  highest_tx_id?: number | string;
   wal_bytes: number;
   buffer_load: number;
 }
 
-export interface ClusterShard {
-  namespace: string;
-  active_timelines: number;
-  total_crdt_operation: number;
-  total_crdt_operations?: number;
-}
-
 export interface VaultSearchResult {
-  tx_id: number | string;
-  agent_hex: string;
-  namespace: string;
-  payload: string;
-  timestamp: string;
-  source: string;
-  similarity_score: number;
+  tx_id: number;
+  agent_id?: string;
+  agent_hex?: string;
+  score?: number;
+  similarity_score?: number;
+  text?: string;
+  payload?: string;
+  namespace?: string;
+  source: 'HOT_WAL' | 'COLD_LANCEDB' | string;
 }
 
 export interface VaultTelemetry {
@@ -201,6 +212,13 @@ async function request<T>(
 /** GET /v1/dashboard/cards */
 export async function getDashboardCards(): Promise<ApiResponse<DashboardCardsData>> {
   return request<DashboardCardsData>('/v1/dashboard/cards', { method: 'GET' });
+}
+
+/** POST /v1/admin/ingress/toggle */
+export async function toggleIngress(): Promise<ApiResponse<{ is_ingress_paused: boolean }>> {
+  return request<{ is_ingress_paused: boolean }>('/v1/admin/ingress/toggle', {
+    method: 'POST',
+  });
 }
 
 /** GET /v1/system/agents/aliases */

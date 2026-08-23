@@ -2,11 +2,20 @@
 
 import React, { useState } from 'react';
 import { VaultSearchResult, formatTxIdHex } from '../../lib/api';
-import { Search, Database, Zap, Copy, Check, Filter, ChevronRight, ShieldCheck } from 'lucide-react';
+import {
+  Search,
+  Filter,
+  Zap,
+  Database,
+  ShieldCheck,
+  Copy,
+  Check,
+  ChevronRight,
+} from 'lucide-react';
 
 interface UnifiedSearchWorkbenchProps {
   results: VaultSearchResult[];
-  onSearch: (query: string, namespace: string, includeWal: boolean) => void;
+  onSearch: (query: string, namespace: string, includeWal: boolean) => Promise<void>;
   onSelectTxId: (txIdHex: string) => void;
   selectedTxIdHex: string | null;
   isLoading: boolean;
@@ -16,39 +25,47 @@ interface UnifiedSearchWorkbenchProps {
 const getScoreColor = (score: number) => {
   if (score >= 0.85) {
     return {
-      text: 'text-emerald-400',
-      bg: 'bg-emerald-950/80 border-emerald-800/80',
-      bar: 'bg-emerald-500 shadow-[0_0_8px_#10b981]',
+      bg: 'bg-emerald-950/70 border-emerald-700/80',
+      text: 'text-emerald-300',
+      bar: 'bg-emerald-400',
     };
   }
-  if (score >= 0.70) {
+  if (score >= 0.7) {
     return {
-      text: 'text-amber-400',
-      bg: 'bg-amber-950/80 border-amber-800/80',
-      bar: 'bg-amber-500 shadow-[0_0_8px_#f59e0b]',
+      bg: 'bg-amber-950/70 border-amber-700/80',
+      text: 'text-amber-300',
+      bar: 'bg-amber-400',
     };
   }
   return {
-    text: 'text-slate-400',
-    bg: 'bg-slate-900 border-slate-800',
+    bg: 'bg-slate-900 border-slate-700',
+    text: 'text-slate-300',
     bar: 'bg-slate-500',
   };
 };
 
-const renderPayloadWithTags = (text: string) => {
-  const parts = text.split(/(\[[A-Z_]+\])/g);
+const renderPayloadWithTags = (payload: string) => {
+  const parts = payload.split(/(\[[A-Z_]+(?::\s*[^\]]+)?\])/g);
+
   return parts.map((part, i) => {
     if (part.startsWith('[') && part.endsWith(']')) {
-      let tagStyle = 'bg-cyan-950/80 text-cyan-300 border-cyan-800';
-      if (part.includes('REASONING')) tagStyle = 'bg-purple-950/80 text-purple-300 border-purple-800';
-      if (part.includes('TOOL')) tagStyle = 'bg-amber-950/80 text-amber-300 border-amber-800';
-      if (part.includes('INJECT') || part.includes('EVICTION')) tagStyle = 'bg-rose-950/80 text-rose-300 border-rose-800';
-      if (part.includes('COMMITTED') || part.includes('RESOLVED')) tagStyle = 'bg-emerald-950/80 text-emerald-300 border-emerald-800';
+      const tagContent = part.slice(1, -1);
+      let tagClass = 'bg-slate-800 text-slate-300 border-slate-700';
+
+      if (tagContent.includes('REASONING')) {
+        tagClass = 'bg-purple-950/80 text-purple-300 border-purple-800/80';
+      } else if (tagContent.includes('TOOL_EXEC') || tagContent.includes('SQL')) {
+        tagClass = 'bg-amber-950/80 text-amber-300 border-amber-800/80';
+      } else if (tagContent.includes('HALT') || tagContent.includes('ERROR')) {
+        tagClass = 'bg-rose-950/80 text-rose-300 border-rose-800/80';
+      } else if (tagContent.includes('INJECT') || tagContent.includes('SYS')) {
+        tagClass = 'bg-cyan-950/80 text-cyan-300 border-cyan-800/80';
+      }
 
       return (
         <span
           key={i}
-          className={`inline-block px-1 py-0.5 rounded-xs border text-[10px] font-mono font-bold mr-1.5 ${tagStyle}`}
+          className={`inline-block px-1.5 py-0.2 rounded-xs border font-mono text-[10px] font-bold mx-0.5 ${tagClass}`}
         >
           {part}
         </span>
@@ -67,12 +84,12 @@ export function UnifiedSearchWorkbench({
   namespaces,
 }: UnifiedSearchWorkbenchProps) {
   const [query, setQuery] = useState('');
-  const [namespace, setNamespace] = useState('ALL');
+  const [namespace, setNamespace] = useState<string>('ALL');
   const [includeWal, setIncludeWal] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSearchSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!query.trim()) return;
     onSearch(query.trim(), namespace, includeWal);
   };
@@ -86,14 +103,14 @@ export function UnifiedSearchWorkbench({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-[#0D1322] border border-slate-800 rounded-sm overflow-hidden shadow-lg">
-      {/* Search Controls Header */}
+      {/* Search Header Controls */}
       <form
-        onSubmit={handleFormSubmit}
-        className="bg-[#080C14] border-b border-slate-800 p-3 space-y-2.5 shrink-0 select-none"
+        onSubmit={handleSearchSubmit}
+        className="bg-[#080C14] border-b border-slate-800 p-3 space-y-3 shrink-0"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Search className="w-3.5 h-3.5 text-cyan-400" />
+            <Search className="w-4 h-4 text-cyan-400" />
             <span className="font-sans text-xs uppercase tracking-wider font-bold text-white">
               Unified RAG &amp; Forensic Vault Search
             </span>
@@ -184,9 +201,12 @@ export function UnifiedSearchWorkbench({
           results.map((item, idx) => {
             const txHex = formatTxIdHex(item.tx_id);
             const isSelected = selectedTxIdHex === txHex;
-            const score = item.similarity_score;
+            const score = item.similarity_score ?? item.score ?? 0;
             const scoreColor = getScoreColor(score);
             const isHotWal = item.source === 'HOT_WAL';
+            const agentHex = item.agent_hex || item.agent_id || '0xUNKNOWN';
+            const payloadContent = item.payload || item.text || '';
+            const itemNamespace = item.namespace || '/rqm_core';
 
             return (
               <div
@@ -223,14 +243,14 @@ export function UnifiedSearchWorkbench({
                   </div>
 
                   {/* Namespace */}
-                  <span className="text-emerald-400 font-bold truncate max-w-xs" title={item.namespace}>
-                    {item.namespace}
+                  <span className="text-emerald-400 font-bold truncate max-w-xs" title={itemNamespace}>
+                    {itemNamespace}
                   </span>
                 </div>
 
                 {/* Payload Preview */}
                 <div className="text-slate-200 text-xs font-mono leading-relaxed bg-slate-950/60 p-2 rounded-xs border border-slate-900">
-                  {renderPayloadWithTags(item.payload)}
+                  {renderPayloadWithTags(payloadContent)}
                 </div>
 
                 {/* Result Footer: TxID + Timestamp + Inspect Prompt */}
@@ -250,7 +270,7 @@ export function UnifiedSearchWorkbench({
                       )}
                     </button>
 
-                    <span>AGENT: {item.agent_hex.slice(0, 6)}...</span>
+                    <span>AGENT: {agentHex.slice(0, 6)}...</span>
                   </div>
 
                   <div className="flex items-center gap-1.5 text-slate-400 group-hover:text-cyan-300 transition-colors">

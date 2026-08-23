@@ -1,179 +1,199 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { useHardwareVitals } from '../../lib/hooks/useHardwareVitals';
-import { Zap, Cpu, HardDrive, Shield, Activity } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import { Cpu, HardDrive, Shield, Activity, ArrowUpRight, Flame, Layers } from 'lucide-react';
 
 export function HardwareVitalsPanel() {
-  const currentTps = useSwarmStore((state) => state.currentTps);
-  const tpsHistory = useSwarmStore((state) => state.tpsHistory);
+  const vitalsHistory = useSwarmStore((state) => state.vitalsHistory);
   const clusterInfo = useSwarmStore((state) => state.clusterInfo);
   const quarantinedAgents = useSwarmStore((state) => state.quarantinedAgents);
   const aegisAlerts = useSwarmStore((state) => state.aegisAlerts);
 
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const vitals = useHardwareVitals();
 
-  // Dynamic memory & CPU calculations
-  const cpuUsage = vitals?.cpu_percent ?? 0;
-  const processRssMb = vitals?.ram_mb ?? (clusterInfo ? Math.round(clusterInfo.wal_bytes / (1024 * 1024 * 2)) : 124);
-  const totalRamGb = (vitals as any)?.total_ram_gb ?? 24.0;
+  // Dynamic process & host memory parsing
+  const processMemoryMb = vitals?.process_memory_mb ?? vitals?.wasm_memory_mb ?? 0;
+  const hostTotalMb = vitals?.host_total_memory_mb ?? 24576;
+  const hostTotalGb = (hostTotalMb / 1024).toFixed(1);
+  const memoryPercent = Math.min((processMemoryMb / hostTotalMb) * 100, 100);
 
   const walBytes = clusterInfo?.wal_bytes ?? 0;
   const walMb = (walBytes / (1024 * 1024)).toFixed(1);
+  const bufferLoad = clusterInfo?.buffer_load ?? 0;
 
-  const totalQuarantined = quarantinedAgents.length + aegisAlerts.length;
-  const isAllSecure = totalQuarantined === 0;
-
-  // Build SVG sparkline path from last 30 data points of TPS history
-  const sparklineData = useMemo(() => {
-    const points = tpsHistory.slice(-30);
-    if (points.length < 2) return '';
-
-    const width = 280;
-    const height = 32;
-    const maxTps = Math.max(...points.map((p) => p.tps), 10);
-    const minTps = 0;
-
-    const coords = points.map((pt, idx) => {
-      const x = (idx / (points.length - 1)) * width;
-      const y = height - ((pt.tps - minTps) / (maxTps - minTps)) * (height - 4) - 2;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    });
-
-    return coords.join(' ');
-  }, [tpsHistory]);
-
-  const peakTps = Math.max(...tpsHistory.map((p) => p.tps), 0);
+  const totalQuarantined = quarantinedAgents.length;
+  const hasInterdictions = totalQuarantined > 0 || aegisAlerts.length > 0;
 
   return (
-    <div className="flex flex-col gap-3 w-full h-full select-none">
-      {/* ── 1. Ingress Velocity Card (Rolling 1s + Sparkline) ── */}
-      <div className="bg-[#090D16] border border-[#1E293B] rounded-lg p-3.5 flex flex-col justify-between shrink-0 shadow-sm">
-        <div className="flex justify-between items-center text-xs text-slate-400 mb-1.5">
-          <span className="font-mono text-cyan-400 flex items-center gap-1 font-bold text-xs">
-            <Zap className="w-3.5 h-3.5 text-cyan-400 fill-cyan-400" />
-            <span>INGRESS VELOCITY</span>
-          </span>
-          <span className="font-mono text-[10px] text-slate-500">ROLLING 1S</span>
-        </div>
-
-        <div className="flex items-baseline justify-between my-1">
-          <div className="text-2xl font-mono text-amber-400 font-bold tracking-tight">
-            {currentTps.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}{' '}
-            <span className="text-xs text-slate-500 font-normal">TPS</span>
+    <aside className="flex flex-col gap-3 h-full overflow-y-auto select-none scrollbar-thin scrollbar-thumb-zinc-800">
+      {/* ── 1. CPU Load Area Chart (60s) ── */}
+      <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-sm p-3 flex flex-col justify-between shadow-sm">
+        <div className="flex items-center justify-between text-zinc-400 mb-1">
+          <div className="flex items-center gap-1.5 font-sans text-xs uppercase tracking-wider font-semibold">
+            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+            <span>CPU Allocation (60s)</span>
           </div>
-          <span className="text-[10px] font-mono text-slate-400">
-            PEAK: <strong className="text-amber-300">{peakTps.toFixed(0)}</strong> TPS
+          <span className="font-mono text-xs font-bold text-cyan-400">
+            {vitals ? `${vitals.cpu_percent.toFixed(1)}%` : '--%'}
           </span>
         </div>
 
-        {/* Dynamic SVG Sparkline */}
-        <div className="h-8 mt-1 w-full bg-slate-950/60 border border-slate-800/80 rounded-xs p-1 flex items-center justify-center overflow-hidden">
-          {sparklineData ? (
-            <svg viewBox="0 0 280 32" className="w-full h-full preserve-3d">
-              <polyline
-                fill="none"
-                stroke="#f59e0b"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={sparklineData}
-              />
-            </svg>
+        <div className="w-full h-[84px] min-w-0 relative mt-1">
+          {isMounted ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={70}>
+              <AreaChart data={vitalsHistory}>
+                <defs>
+                  <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="time" hide />
+                <YAxis domain={[0, 100]} hide />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#09090b',
+                    borderColor: '#27272a',
+                    borderRadius: '2px',
+                    fontFamily: 'monospace',
+                    fontSize: '11px',
+                  }}
+                  itemStyle={{ color: '#00f3ff' }}
+                  labelStyle={{ color: '#a1a1aa' }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="cpu_load_percent"
+                  name="CPU Load"
+                  stroke="#06b6d4"
+                  strokeWidth={1.5}
+                  fillOpacity={1}
+                  fill="url(#cpuGradient)"
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           ) : (
-            <span className="font-mono text-[9px] text-slate-600 tracking-widest">[ AWAITING INGRESS FRAMES ]</span>
+            <div className="w-full h-full flex items-center justify-center bg-zinc-900/40 rounded-xs border border-zinc-800 font-mono text-[9px] text-zinc-500">
+              [ SAMPLING KERNEL TELEMETRY ]
+            </div>
           )}
         </div>
       </div>
 
-      {/* ── 2. 2x2 Grid for Health & Footprint Metrics ── */}
-      <div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
-        {/* CPU Card */}
-        <div className="bg-[#090D16] border border-[#1E293B] rounded-lg p-3 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-              <Cpu className="w-3 h-3 text-cyan-400" />
-              <span>CPU USAGE</span>
-            </span>
+      {/* ── 2. Process Memory Meter & Host Total Ceiling ── */}
+      <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-sm p-3 flex flex-col gap-2 shadow-sm">
+        <div className="flex items-center justify-between text-zinc-400">
+          <div className="flex items-center gap-1.5 font-sans text-xs uppercase tracking-wider font-semibold">
+            <Activity className="w-3.5 h-3.5 text-indigo-400" />
+            <span>Process Memory Meter</span>
           </div>
+          <span className="font-mono text-xs text-indigo-300 font-bold">
+            {processMemoryMb.toFixed(0)} MB
+          </span>
+        </div>
 
-          <div className="text-lg font-mono text-cyan-300 font-bold my-1">
-            {cpuUsage.toFixed(1)}%
+        <div className="space-y-1.5 my-auto">
+          <div className="flex items-center justify-between font-mono text-[10px] text-zinc-400">
+            <span>PROCESS RSS: {processMemoryMb.toFixed(0)} MB</span>
+            <span>HOST CEILING: {hostTotalGb} GB</span>
           </div>
-
-          <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden border border-slate-800">
+          <div className="w-full h-2 bg-zinc-900 rounded-xs overflow-hidden border border-zinc-800">
             <div
-              className="bg-cyan-400 h-full transition-all duration-300 shadow-[0_0_6px_#22d3ee]"
-              style={{ width: `${Math.min(cpuUsage, 100)}%` }}
+              className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 shadow-[0_0_8px_#6366f1] transition-all duration-300"
+              style={{ width: `${Math.max(memoryPercent, 1.5)}%` }}
             />
           </div>
         </div>
 
-        {/* Memory RSS Card */}
-        <div className="bg-[#090D16] border border-[#1E293B] rounded-lg p-3 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-              <Activity className="w-3 h-3 text-indigo-400" />
-              <span>PROCESS RSS</span>
-            </span>
-          </div>
+        <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80 font-mono text-[10px] text-zinc-500">
+          <span>HOST MEMORY FOOTPRINT</span>
+          <span className="text-indigo-400 font-semibold">{memoryPercent.toFixed(1)}%</span>
+        </div>
+      </div>
 
-          <div className="text-lg font-mono text-indigo-300 font-bold my-1">
-            {processRssMb.toFixed(0)} <span className="text-xs font-normal text-slate-400">MB</span>
+      {/* ── 3. WAL NVMe Footprint ── */}
+      <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-sm p-3 flex flex-col justify-between shadow-sm">
+        <div className="flex items-center justify-between text-zinc-400">
+          <div className="flex items-center gap-1.5 font-sans text-xs uppercase tracking-wider font-semibold">
+            <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+            <span>WAL NVMe Footprint</span>
           </div>
-
-          <span className="text-[9px] text-slate-500 font-mono truncate">
-            HOST: <strong className="text-slate-300">{totalRamGb.toFixed(0)} GB</strong>
+          <span className="font-mono text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
+            GROUP COMMIT
           </span>
         </div>
 
-        {/* WAL NVMe Footprint Card */}
-        <div className="bg-[#090D16] border border-[#1E293B] rounded-lg p-3 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-              <HardDrive className="w-3 h-3 text-emerald-400" />
-              <span>WAL FOOTPRINT</span>
-            </span>
-          </div>
-
-          <div className="text-lg font-mono text-emerald-400 font-bold my-1">
-            {walMb} <span className="text-xs font-normal text-slate-400">MB</span>
-          </div>
-
-          <span className="text-[9px] text-emerald-500 font-mono font-medium">
-            NVMe DIRECT SYNC
+        <div className="my-1.5 flex items-baseline justify-between">
+          <span className="font-mono text-xl font-bold text-white tracking-tight">
+            {walMb} <span className="text-xs font-normal text-zinc-400">MB</span>
+          </span>
+          <span className="font-mono text-xs text-emerald-400 font-bold">
+            {bufferLoad} BUFFER FRAMES
           </span>
         </div>
 
-        {/* Aegis Perimeter Status Card */}
-        <div className="bg-[#090D16] border border-[#1E293B] rounded-lg p-3 flex flex-col justify-between shadow-sm">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-              <Shield className="w-3 h-3 text-cyan-400" />
-              <span>AEGIS STATUS</span>
-            </span>
-          </div>
+        <div className="flex items-center justify-between pt-1.5 border-t border-zinc-800/80 font-mono text-[10px] text-zinc-400">
+          <span>ZERO-COPY RING</span>
+          <span className="text-emerald-400 font-semibold">O_DIRECT SYNC</span>
+        </div>
+      </div>
 
-          <div className="my-1 flex items-center gap-1.5 font-mono text-xs font-bold">
-            {isAllSecure ? (
-              <span className="text-emerald-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
-                <span>ALL SECURE</span>
-              </span>
+      {/* ── 4. Aegis Security Perimeter Status ── */}
+      <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-sm p-3 flex flex-col justify-between shadow-sm">
+        <div className="flex items-center justify-between text-zinc-400">
+          <div className="flex items-center gap-1.5 font-sans text-xs uppercase tracking-wider font-semibold">
+            <Shield className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Aegis Security Perimeter</span>
+          </div>
+          <Link
+            href="/aegis"
+            className="flex items-center gap-0.5 text-cyan-400 hover:text-cyan-300 font-mono text-[10px] uppercase font-bold"
+          >
+            <span>SOC</span>
+            <ArrowUpRight className="w-3 h-3" />
+          </Link>
+        </div>
+
+        <div className="my-1.5">
+          <span
+            className={`font-mono text-xs font-bold px-2 py-0.5 rounded-xs border inline-flex items-center gap-1.5 ${
+              hasInterdictions
+                ? 'bg-rose-950/80 text-rose-400 border-rose-800'
+                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+            }`}
+          >
+            {hasInterdictions ? (
+              <>
+                <Flame className="w-3 h-3 text-rose-400" />
+                <span>INTERDICTIONS DETECTED ({totalQuarantined})</span>
+              </>
             ) : (
-              <span className="text-rose-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-                <span>INTERDICTIONS</span>
-              </span>
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>ALL GATES SECURE</span>
+              </>
             )}
-          </div>
+          </span>
+        </div>
 
-          <span className="text-[9px] text-slate-500 font-mono">
-            {totalQuarantined} INTERDICTIONS
+        <div className="flex items-center justify-between pt-1.5 border-t border-zinc-800/80 font-mono text-[10px] text-zinc-400">
+          <span>QUARANTINE JAIL</span>
+          <span className={totalQuarantined > 0 ? 'text-rose-400 font-bold' : 'text-zinc-400'}>
+            {totalQuarantined} ENCLAVES
           </span>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }
