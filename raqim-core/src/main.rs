@@ -354,15 +354,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let Ok(wal_bytes) = fs::read(&file_path) {
             let mut offset = 0;
+            let mut aligned_buf = rkyv::util::AlignedVec::<16>::new();
 
-            while offset + 8 < wal_bytes.len() {
+            while offset + 8 <= wal_bytes.len() {
                 let entry_len =
                     u32::from_le_bytes(wal_bytes[offset..offset + 4].try_into().unwrap()) as usize;
                 let expected_crc =
                     u32::from_le_bytes(wal_bytes[offset + 4..offset + 8].try_into().unwrap());
                 let frame_total = 8 + entry_len;
 
-                if offset + frame_total < wal_bytes.len() {
+                if offset + frame_total > wal_bytes.len() {
                     eprintln!(
                         "[PHOENIX WARN] Truncateed tail frame in {}. Halting scan",
                         file_path
@@ -380,17 +381,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     break;
                 }
 
+                // Force 16-byte alignment for u128 uuidv7 zero-copy validation
+                aligned_buf.clear();
+                aligned_buf.extend_from_slice(entry_slice);
+
                 if let Ok(archived_log) = rkyv::access::<
                     <Vec<OpLog> as rkyv::Archive>::Archived,
                     rkyv::rancor::Error,
-                >(entry_slice)
+                >(&aligned_buf)
                 {
                     if let Ok(batch) =
                         rkyv::deserialize::<Vec<OpLog>, rkyv::rancor::Error>(archived_log)
                     {
-                        println!(
-                            "===== IF the error occured before the deserialization, I'm not see this line ====="
-                        );
                         for recovered_log in batch {
                             axon.hydrate_from_recovery(&recovered_log);
 
@@ -410,7 +412,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                offset += entry_len;
+                offset += frame_total;
             }
         }
     }
@@ -421,6 +423,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if !recovered_logs.is_empty() {
+        // Trailing 1000 thoughts
+        let cache_limit = 1000.min(recovered_logs.len());
+        let recent_logs_slice = &recovered_logs[recovered_log.len() - cache_limit..];
+
+        println!(
+            " [PHOENIX] Batch-embedding trailing {} thoughts to warm uo HotVectorBuffer...",
+            recent_logs_slice.len()
+        );
+
         // Batch embed all recovered WAL texts to restore hot vector memory
         let texts: Vec<String> = recovered_logs
             .iter()
