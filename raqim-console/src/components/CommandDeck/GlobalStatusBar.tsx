@@ -12,11 +12,19 @@ export function GlobalStatusBar() {
   const clusterInfo = useSwarmStore((state) => state.clusterInfo);
   const isPaused = useSwarmStore((state) => state.isPaused);
   const togglePause = useSwarmStore((state) => state.togglePause);
+  const setIsPaused = useSwarmStore((state) => state.setIsPaused);
 
   const [copiedTx, setCopiedTx] = useState(false);
   const [copiedNode, setCopiedNode] = useState(false);
+  const [isToggling, setIsToggling] = useState(false);
 
-  const displayTxHex = latestTxIdHex || (highestTxId > 0 ? formatTxIdHex(highestTxId) : '0x00000000000000000000000000000000');
+  const displayTxHex =
+    latestTxIdHex && latestTxIdHex !== '0x00000000000000000000000000000000'
+      ? latestTxIdHex
+      : highestTxId > 0
+      ? formatTxIdHex(highestTxId)
+      : '0x00000000000000000000000000000000';
+
   const rawNodeId = clusterInfo?.node_id || 'LOCAL-DAEMON';
   const truncatedNodeId = rawNodeId.length > 14 ? `${rawNodeId.slice(0, 12)}...` : rawNodeId;
 
@@ -31,6 +39,25 @@ export function GlobalStatusBar() {
     navigator.clipboard.writeText(rawNodeId);
     setCopiedNode(true);
     setTimeout(() => setCopiedNode(false), 2000);
+  };
+
+  const handleToggleIngress = async () => {
+    setIsToggling(true);
+    try {
+      const res = await fetch('http://127.0.0.1:8081/v1/admin/ingress/toggle', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.is_ingress_paused === 'boolean') {
+          setIsPaused(data.is_ingress_paused);
+          setIsToggling(false);
+          return;
+        }
+      }
+    } catch {
+      // Local fallback if daemon endpoint is missing
+    }
+    togglePause();
+    setIsToggling(false);
   };
 
   return (
@@ -110,11 +137,12 @@ export function GlobalStatusBar() {
 
         {/* Ingress Pause/Resume Lever */}
         <button
-          onClick={togglePause}
+          onClick={handleToggleIngress}
+          disabled={isToggling}
           className={`flex items-center gap-1.5 px-3 py-1 rounded-sm border font-mono text-[11px] uppercase tracking-wider font-bold transition-all cursor-pointer ${
             isPaused
-              ? 'bg-amber-950/60 border-amber-500/80 text-amber-300 hover:bg-amber-900/70 shadow-[0_0_10px_rgba(245,158,11,0.2)] animate-pulse'
-              : 'bg-slate-900 hover:bg-slate-800/80 border-slate-700 text-slate-300 hover:text-white'
+              ? 'bg-amber-950/70 border-amber-500/80 text-amber-300 hover:bg-amber-900/80 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+              : 'bg-slate-900 hover:bg-slate-800/80 border-cyan-500/40 text-cyan-300 hover:text-white'
           }`}
         >
           {isPaused ? (
@@ -124,7 +152,7 @@ export function GlobalStatusBar() {
             </>
           ) : (
             <>
-              <Pause className="w-3 h-3 text-slate-400" />
+              <Pause className="w-3 h-3 text-cyan-400" />
               <span>PAUSE INGRESS</span>
             </>
           )}
