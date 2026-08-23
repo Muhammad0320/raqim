@@ -355,7 +355,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(wal_bytes) = fs::read(&file_path) {
             let mut offset = 0;
 
-            while offset < wal_bytes.len() {
+            while offset + 8 < wal_bytes.len() {
                 let entry_len =
                     u32::from_le_bytes(wal_bytes[offset..offset + 4].try_into().unwrap()) as usize;
                 let expected_crc =
@@ -363,7 +363,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let frame_total = 8 + entry_len;
 
                 if offset + frame_total < wal_bytes.len() {
-                    eprinln!("[PHOENIX WARN] Truncateed tail frame in {}. Halting scan");
+                    eprintln!(
+                        "[PHOENIX WARN] Truncateed tail frame in {}. Halting scan",
+                        file_path
+                    );
                     break;
                 }
 
