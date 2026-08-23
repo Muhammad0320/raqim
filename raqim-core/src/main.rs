@@ -424,8 +424,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !recovered_logs.is_empty() {
         // Trailing 1000 thoughts
-        let cache_limit = 1000.min(recovered_logs.len());
-        let recent_logs_slice = &recovered_logs[recovered_log.len() - cache_limit..];
+        let cache_limit = 250.min(recovered_logs.len());
+        let recent_logs_slice = &recovered_logs[recovered_logs.len() - cache_limit..];
 
         println!(
             " [PHOENIX] Batch-embedding trailing {} thoughts to warm uo HotVectorBuffer...",
@@ -433,7 +433,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         // Batch embed all recovered WAL texts to restore hot vector memory
-        let texts: Vec<String> = recovered_logs
+        let texts: Vec<String> = recent_logs_slice
             .iter()
             .map(|l| {
                 format!(
@@ -445,16 +445,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Recompute the vector space asynchronouly to bypass short-term amnesia gaps
         // Simulated blocks, maps out directly to fastembed / OpenAI endpoints
-        // let mock_embed_vectors = vec![vec![0.0f32; 768]; recovered_logs.len()];
+        // let mock_embed_vectors = vec![vec![0.0f32; 768]; recent_logs_slice.len()];
 
         if let Ok(vectors) = embedder.embed_batch(&texts).await {
-            let mut hot_entries = Vec::with_capacity(recovered_logs.len());
-            for (i, log) in recovered_logs.into_iter().enumerate() {
+            let mut hot_entries = Vec::with_capacity(recent_logs_slice.len());
+            for (i, log) in recent_logs_slice.into_iter().enumerate() {
                 hot_entries.push(HotVectorEntry {
                     tx_id: log.state.transaction_id,
                     agent_hex: hex::encode(log.agent_id),
-                    namespace: log.state.namespace,
-                    text: log.state.text,
+                    namespace: log.state.namespace.clone(),
+                    text: log.state.text.clone(),
                     timestamp: log.state.timestamp,
                     vector: vectors[i].clone(),
                 });

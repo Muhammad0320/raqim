@@ -1204,9 +1204,11 @@ pub async fn cluster_info_endpoint(
 
     let node_id = state.global_net.os_node_id.clone();
 
+    let highest_tx = state.wal.get_highest_tx_id(&state.config.wal_path);
+
     let payload = json!({
         "node_id": node_id,
-        // "highest_tx_id": highest_tx,
+        "highest_tx_id": highest_tx,
         "wal_bytes": wal_size,
         "buffer_load": pending_wal_items
     });
