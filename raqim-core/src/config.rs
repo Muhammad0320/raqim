@@ -113,7 +113,7 @@ impl Default for RaqimConfig {
 
             embedder_type: "bge".to_string(),
             openai_api_key: "".to_string(),
-            dims: 384,
+            dims: 768,
             limit: 5,
             port: 8080,
         }
