@@ -115,9 +115,16 @@ export interface VaultSearchResult {
 
 export interface VaultTelemetry {
   total_vectors: number;
+  indexed_vectors?: number;
   index_size_mb: number;
+  cold_storage_size_mb?: number;
   wal_pending_count: number;
+  hot_wal_buffer_count?: number;
   densest_namespace: string;
+  densest_partition?: string;
+  embedder_name?: string;
+  embeder_dim?: number;
+  embedder_dims?: number;
 }
 
 export interface InclusionProof {

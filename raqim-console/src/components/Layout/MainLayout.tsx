@@ -22,6 +22,13 @@ export function MainLayout({
   const daemonOnline = useSwarmStore((state) => state.daemonOnline);
   const currentVitals = useSwarmStore((state) => state.currentVitals);
 
+  const ramMb = Math.round(
+    currentVitals?.process_memory_mb ??
+    currentVitals?.wasm_memory_mb ??
+    currentVitals?.process_rss_mb ??
+    0
+  );
+
   return (
     <div className="bg-surface text-on-surface antialiased h-screen w-screen overflow-hidden flex flex-col selection:bg-primary-container/30">
       {/* ── Disconnected Banner ── */}
@@ -114,7 +121,7 @@ export function MainLayout({
                   <div className="h-3 w-px bg-zinc-800 shrink-0"></div>
                   <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-secondary">
                     {currentVitals
-                      ? `CPU: ${currentVitals.cpu_load_percent.toFixed(1)}% | RAM: ${currentVitals.wasm_memory_mb.toFixed(0)}MB`
+                      ? `CPU: ${currentVitals.cpu_load_percent.toFixed(1)}% | RAM: ${ramMb}MB`
                       : 'STANDALONE MODE'}
                   </span>
                 </div>
