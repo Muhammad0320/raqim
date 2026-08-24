@@ -7,8 +7,8 @@ import { ClusterTelemetryRibbon } from './ClusterTelemetryRibbon';
 import { TopologyCanvas } from './TopologyCanvas';
 import { ShardDetailDrawer } from './ShardDetailDrawer';
 import { AgentProcessTable } from './AgentProcessTable';
-import { ClusterShard, ClusterInfoData } from '../../lib/api';
-import { fetchTopology, fetchClusterDiagnostics } from '../../actions/admin';
+import { ClusterShard, ClusterInfoData, ClusterEnclave } from '../../lib/api';
+import { fetchTopology, fetchClusterDiagnostics, fetchClusterEnclaves } from '../../actions/admin';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
 
@@ -16,17 +16,20 @@ interface TopologyClientLayoutProps {
   initialTopology: ClusterShard[];
   initialClusterInfo: ClusterInfoData | null;
   initialAliases: Record<string, string>;
+  initialEnclaves: ClusterEnclave[];
 }
 
 export function TopologyClientLayout({
   initialTopology,
   initialClusterInfo,
   initialAliases,
+  initialEnclaves = [],
 }: TopologyClientLayoutProps) {
   useSwarmStream();
 
   const [shards, setShards] = useState<ClusterShard[]>(initialTopology);
   const [clusterInfo, setClusterInfo] = useState<ClusterInfoData | null>(initialClusterInfo);
+  const [enclaves, setEnclaves] = useState<ClusterEnclave[]>(initialEnclaves);
   const [selectedShard, setSelectedShard] = useState<ClusterShard | null>(null);
 
   const setAgentAliases = useSwarmStore((state) => state.setAgentAliases);
@@ -44,9 +47,10 @@ export function TopologyClientLayout({
   useEffect(() => {
     const syncData = async () => {
       try {
-        const [top, diag] = await Promise.all([
+        const [top, diag, enc] = await Promise.all([
           fetchTopology(),
           fetchClusterDiagnostics(),
+          fetchClusterEnclaves(),
         ]);
         if (top) {
           setShards(top);
@@ -55,6 +59,9 @@ export function TopologyClientLayout({
         if (diag) {
           setClusterInfo(diag);
           setStoreClusterInfo(diag);
+        }
+        if (enc) {
+          setEnclaves(enc);
         }
       } catch (_e) {
         // Quiet poll error
@@ -65,7 +72,7 @@ export function TopologyClientLayout({
     return () => clearInterval(interval);
   }, [setActiveTopology, setStoreClusterInfo]);
 
-  const totalActiveAgents = Object.keys(agentAliases).length;
+  const totalActiveAgents = enclaves.length > 0 ? enclaves.length : Object.keys(agentAliases).length;
 
   return (
     <MainLayout title="Swarm Topology // Distributed CRDT Matrix">
@@ -99,7 +106,7 @@ export function TopologyClientLayout({
 
         {/* 3. High-Density Agent Process Matrix */}
         <div className="shrink-0 max-h-60 overflow-hidden">
-          <AgentProcessTable agentAliases={agentAliases} />
+          <AgentProcessTable enclaves={enclaves} agentAliases={agentAliases} />
         </div>
       </div>
     </MainLayout>

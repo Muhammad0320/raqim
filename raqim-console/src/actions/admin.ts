@@ -9,6 +9,7 @@ import {
   getClusterInfo,
   mintCaCertificate,
   toggleIngress,
+  getClusterEnclaves,
 } from '../lib/api';
 
 import type {
@@ -17,6 +18,7 @@ import type {
   ForkConfigPayload,
   TimelineNode,
   ClusterInfoData,
+  ClusterEnclave,
 } from '../lib/api';
 
 /**
@@ -153,4 +155,15 @@ export async function toggleIngressAction(): Promise<{
     return { success: true, is_ingress_paused: res.data.is_ingress_paused };
   }
   return { success: false, error: res.error || 'Failed to toggle ingress' };
+}
+
+/**
+ * 10. Fetch Cluster Enclaves
+ */
+export async function fetchClusterEnclaves(): Promise<ClusterEnclave[]> {
+  const res = await getClusterEnclaves();
+  if (res.success && res.data) {
+    return res.data;
+  }
+  return [];
 }

@@ -19,7 +19,6 @@ use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
 use serde_json::{Value, json};
 use std::convert::Infallible;
-use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{eprintln, format, println};
@@ -1241,7 +1240,12 @@ pub async fn cluster_info_endpoint(
 
     let highest_tx = state.axon.get_latest_tx_id();
 
-    let cumulative_crdt_ops: usize = state.brain.shards.iter().map(|e| e.value().doc.read().len_ops() ).sum();
+    let cumulative_crdt_ops: usize = state
+        .brain
+        .shards
+        .iter()
+        .map(|e| e.value().doc.read().len_ops())
+        .sum();
 
     let total_shards = state.brain.shards.len();
 
@@ -1251,8 +1255,8 @@ pub async fn cluster_info_endpoint(
         "wal_bytes": wal_size,
         "wal_size_mb": (wal_size as f64 ) / (1024.0 * 1024.0),
         "buffer_load": pending_wal_items,
-        "allocated_shards": total_shards, 
-        "cumulative_crdt_ops": cumulative_crdt_ops, 
+        "allocated_shards": total_shards,
+        "cumulative_crdt_ops": cumulative_crdt_ops,
         "active_timelines": state.brain.shards.len(),
     });
 
@@ -1279,12 +1283,20 @@ pub async fn cluster_topology_endpoint(
 
         // we measure the length of the underlying operations log.
         let ops_count = doc_lock.len_ops();
-        // Calculate dynamic in-memoy footprint for this CRDT shard
-        let snapshot_bytes = brain.export_snapshot().len();
-        let estimated_ram_mb = ((snapshot_bytes + (ops_count * 64)) as f64) / (1024.0 * 1024.0);
 
-        // Fetch agents associated with this namespace 
-        let attached_agents: Vec<String> = state.swarm_registry.active_agents.iter().filter(|a| a.intent_path == *namespace).map(|a| a.key().clone() ).collect();
+        // Calculate dynamic in-memoy footprint for this CRDT shard
+
+        let estimated_ram_kb = (ops_count * 64) as f64 / 1024.0;
+        let estimated_ram_mb = estimated_ram_kb / 1024.0;
+
+        // Fetch agents associated with this namespace
+        let attached_agents: Vec<String> = state
+            .swarm_registry
+            .active_agents
+            .iter()
+            .filter(|a| a.namespace == *namespace)
+            .map(|a| a.agent_hex().clone())
+            .collect();
 
         shards.push(json!({ "namespace": namespace, "active_timelines": active_timelines, "total_crdt_operation": ops_count, "estimated_ram_mb": (estimated_ram_mb * 100.0).round() / 100.0, "attached_agents": attached_agents, "status": "ACTIVE"  }));
     }
@@ -1292,20 +1304,20 @@ pub async fn cluster_topology_endpoint(
     Ok(Json(json!(shards)))
 }
 
-pub async fn cluster_enclaves_endpoint(_auth: ValidatedIdentity, State(state): State<ApiState>) -> Result<Json<Value>, ApiError> {
-
+pub async fn cluster_enclaves_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, ApiError> {
     let mut enclaves = Vec::new();
 
     // Collect currently active connected agents
     for entry in state.swarm_registry.active_agents.iter() {
-
-        let agent = entry.value(); 
+        let agent = entry.value();
         enclaves.push(json!({
-            "alias": agent.alias, 
-            "identity_hex": entry.key(), 
-            "home_shard": agent.intent_path,
-            "committed_tx": 0,
-            "status": agent.status, 
+            "alias": agent.alias,
+            "identity_hex": entry.agent_hex.clone(),
+            "home_shard": agent.namespace.clone(),
+            "status": agent.status,
             "last_seen_ts": agent.last_seen_ts
 
         }));
@@ -1313,20 +1325,17 @@ pub async fn cluster_enclaves_endpoint(_auth: ValidatedIdentity, State(state): S
 
     // If no live agents are connected, populate from indexed shard namespace
     if enclaves.is_empty() {
-        for (i, entry) in state.brian.shard.iter().enumerate() {
+        for (i, entry) in state.brain.shards.iter().enumerate() {
             let namespace = entry.key();
-            let ops = entry.value().doc.read().len_ops();
             enclaves.push(json!({
                 "alias": format!("agent_shard_{:02}", i),
-                "identity_hex": format!("0x{:032x}", i + 1), 
-                "home_shard": namespace, 
-                "committed_tx": ops, 
-                "status:" "IDLE_IN_RAM", 
+                "identity_hex": format!("0x{:032x}", i + 1),
+                "home_shard": namespace,
+                "status": "IDLE_IN_RAM",
                 "last_seen_ts": 0
             }));
         }
     }
-
 
     Ok(Json(json!(enclaves)))
 }
@@ -1367,14 +1376,14 @@ pub async fn record_effect_handler(
     Json(payload): Json<RecordEffectRequest>,
 ) -> Result<Json<RecordEffectResponse>, ApiError> {
     let agent_id_bytes = hex::decode(payload.agent_hex.clone())
-        .map_err(|e| ApiError::BadRequest("Invalid agent_hex format".to_string()))?;
+        .map_err(|_| ApiError::BadRequest("Invalid agent_hex format".to_string()))?;
 
     let agent_id: [u8; 16] = agent_id_bytes
         .try_into()
         .map_err(|_| ApiError::BadRequest("agent_hex must be exactly 16 bytes".to_string()))?;
 
     let call_signature_bytes = hex::decode(payload.call_signature_hex)
-        .map_err(|e| ApiError::BadRequest("Invalid call_signature_hex format".to_string()))?;
+        .map_err(|_| ApiError::BadRequest("Invalid call_signature_hex format".to_string()))?;
     let call_signature_hash: [u8; 32] = call_signature_bytes.try_into().map_err(|_| {
         ApiError::BadRequest("call_signature_hex must be eactly 32 bytes".to_string())
     })?;
@@ -1431,8 +1440,6 @@ pub async fn record_effect_handler(
                 is_forked_branch: is_forked,
             }))
         }
-
-        
 
         Err(e) => Err(ApiError::InternalServerError(format!(
             "Failed to record effect: {}",

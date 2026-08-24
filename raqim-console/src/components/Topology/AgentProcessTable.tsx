@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { useSwarmStore, formatTxIdHex } from '../../lib/store/useSwarmStore';
-import { Bot, Search, Copy, Check, ShieldAlert, Shield } from 'lucide-react';
+import { ClusterEnclave } from '../../lib/api';
+import { useSwarmStore } from '../../lib/store/useSwarmStore';
+import { Bot, Search, Copy, Check, ShieldAlert, Radio } from 'lucide-react';
 
 interface AgentProcessTableProps {
-  agentAliases: Record<string, string>;
+  enclaves: ClusterEnclave[];
+  agentAliases?: Record<string, string>;
 }
 
 const getAgentColor = (hex: string) => {
@@ -24,77 +26,50 @@ const getAgentColor = (hex: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
-export function AgentProcessTable({ agentAliases }: AgentProcessTableProps) {
+export function AgentProcessTable({ enclaves, agentAliases = {} }: AgentProcessTableProps) {
   const quarantinedAgents = useSwarmStore((state) => state.quarantinedAgents);
   const agentLastSeen = useSwarmStore((state) => state.agentLastSeen);
-  const thoughts = useSwarmStore((state) => state.thoughts);
-  const thoughtOrder = useSwarmStore((state) => state.thoughtOrder);
-  const activeTopology = useSwarmStore((state) => state.activeTopology);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Map known agents with home shard
-  const agentList = useMemo(() => {
-    const map = new Map<
-      string,
-      { hex: string; alias: string; namespace: string; lastSeen: number; txCount: number }
-    >();
-
-    const aliasEntries = Object.entries(agentAliases);
-
-    aliasEntries.forEach(([hex, alias], index) => {
-      // Resolve home shard from topology if available
-      const shardNs =
-        activeTopology.length > 0
-          ? activeTopology[index % activeTopology.length].namespace
-          : `/siege/shard_${String(index).padStart(2, '0')}`;
-
-      map.set(hex, {
-        hex,
-        alias: alias === 'Unknown' ? `agent_shard_${String(index).padStart(2, '0')}` : alias,
-        namespace: shardNs,
-        lastSeen: agentLastSeen[hex] || 0,
-        txCount: 50001,
+  // Reconcile enclaves with live aliases and last seen states
+  const enclaveList = useMemo(() => {
+    if (enclaves && enclaves.length > 0) {
+      return enclaves.map((enc) => {
+        const isQuarantined = quarantinedAgents.includes(enc.identity_hex);
+        const resolvedAlias =
+          agentAliases[enc.identity_hex] ||
+          (enc.alias === 'Unknown' ? enc.alias : enc.alias);
+        return {
+          ...enc,
+          alias: resolvedAlias,
+          isQuarantined,
+        };
       });
-    });
-
-    // Merge latest data from thoughts stream
-    for (const id of thoughtOrder) {
-      const t = thoughts[id];
-      if (t) {
-        const existing = map.get(t.agent_hex);
-        if (existing) {
-          existing.namespace = t.intent_path;
-          existing.txCount++;
-          if (t.timestamp && t.timestamp > existing.lastSeen) {
-            existing.lastSeen = t.timestamp;
-          }
-        } else {
-          map.set(t.agent_hex, {
-            hex: t.agent_hex,
-            alias: agentAliases[t.agent_hex] || `agent_${t.agent_hex.slice(0, 6)}`,
-            namespace: t.intent_path,
-            lastSeen: t.timestamp || agentLastSeen[t.agent_hex] || Date.now(),
-            txCount: 1,
-          });
-        }
-      }
     }
 
-    return Array.from(map.values());
-  }, [agentAliases, agentLastSeen, thoughts, thoughtOrder, activeTopology]);
+    // Fallback if enclaves array is empty
+    return Object.entries(agentAliases).map(([hex, alias], idx) => ({
+      alias: alias === 'Unknown' ? `agent_shard_${String(idx).padStart(2, '0')}` : alias,
+      identity_hex: hex,
+      home_shard: `/siege/shard_${String(idx).padStart(2, '0')}`,
+      status: 'IDLE_IN_RAM',
+      last_seen_ts: agentLastSeen[hex] || 0,
+      isQuarantined: quarantinedAgents.includes(hex),
+    }));
+  }, [enclaves, agentAliases, quarantinedAgents, agentLastSeen]);
 
-  const filteredAgents = useMemo(() => {
-    if (!searchQuery.trim()) return agentList;
+  const filteredEnclaves = useMemo(() => {
+    if (!searchQuery.trim()) return enclaveList;
     const q = searchQuery.toLowerCase().trim();
-    return agentList.filter(
-      (a) =>
-        a.alias.toLowerCase().includes(q) ||
-        a.hex.toLowerCase().includes(q) ||
-        a.namespace.toLowerCase().includes(q)
+    return enclaveList.filter(
+      (e) =>
+        e.alias.toLowerCase().includes(q) ||
+        e.identity_hex.toLowerCase().includes(q) ||
+        e.home_shard.toLowerCase().includes(q)
     );
-  }, [agentList, searchQuery]);
+  }, [enclaveList, searchQuery]);
 
   const handleCopyHex = (hex: string) => {
     const fullHex = hex.startsWith('0x') ? hex : `0x${hex}`;
@@ -113,7 +88,7 @@ export function AgentProcessTable({ agentAliases }: AgentProcessTableProps) {
             Swarm Enclave Matrix &amp; CRDT Peer Processes
           </span>
           <span className="px-1.5 py-0.5 rounded-xs bg-zinc-800 border border-zinc-700 font-mono text-[10px] text-cyan-400 font-bold">
-            {agentList.length} PEERS
+            {enclaveList.length} PEERS
           </span>
         </div>
 
@@ -135,50 +110,51 @@ export function AgentProcessTable({ agentAliases }: AgentProcessTableProps) {
         <table className="w-full text-left border-collapse font-mono text-[11px]">
           <thead className="sticky top-0 z-10 bg-zinc-900 border-b border-zinc-800 text-zinc-400 font-sans text-[10px] uppercase tracking-wider select-none">
             <tr>
-              <th className="py-2 px-3 w-40">AGENT ALIAS</th>
-              <th className="py-2 px-3 w-48">IDENTITY HEX</th>
+              <th className="py-2 px-3 w-44">AGENT ALIAS</th>
+              <th className="py-2 px-3 w-56">IDENTITY HEX</th>
               <th className="py-2 px-3">HOME CRDT SHARD</th>
-              <th className="py-2 px-3 w-32">COMMITTED TX</th>
               <th className="py-2 px-3 w-36 text-right">STATUS</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800/50">
-            {filteredAgents.length === 0 ? (
+            {filteredEnclaves.length === 0 ? (
               <tr>
-                <td colSpan={5} className="text-center py-8 text-zinc-500 text-xs font-mono uppercase">
-                  {agentList.length === 0
+                <td colSpan={4} className="text-center py-8 text-zinc-500 text-xs font-mono uppercase">
+                  {enclaveList.length === 0
                     ? '[ ZERO AGENT ENCLAVES DEPLOYED ]'
                     : `NO AGENTS MATCH FILTER "${searchQuery}"`}
                 </td>
               </tr>
             ) : (
-              filteredAgents.map((ag) => {
-                const isQuarantined = quarantinedAgents.includes(ag.hex);
-                const isLive = Date.now() - ag.lastSeen < 60000;
-                const badgeColor = getAgentColor(ag.hex);
-                const fullHex = ag.hex.startsWith('0x') ? ag.hex : `0x${ag.hex}`;
-                const truncatedHex = `${fullHex.slice(0, 6)}...${fullHex.slice(-4)}`;
+              filteredEnclaves.map((enc) => {
+                const badgeColor = getAgentColor(enc.identity_hex);
+                const fullHex = enc.identity_hex.startsWith('0x') ? enc.identity_hex : `0x${enc.identity_hex}`;
+                const truncatedHex = `${fullHex.slice(0, 16)}...`;
+
+                const isQuarantined = enc.isQuarantined;
+                const statusNormalized = enc.status?.toUpperCase() || 'IDLE_IN_RAM';
+                const isActive = statusNormalized === 'ACTIVE' || statusNormalized === 'LIVE';
 
                 return (
-                  <tr key={ag.hex} className="hover:bg-zinc-900/60 transition-colors">
+                  <tr key={enc.identity_hex} className="hover:bg-zinc-900/60 transition-colors">
                     {/* 1. AGENT ALIAS */}
                     <td className="py-2 px-3 whitespace-nowrap">
                       <span
                         className={`inline-block px-1.5 py-0.5 rounded-xs border text-[10px] font-bold font-mono ${badgeColor}`}
                       >
-                        [{ag.alias}]
+                        [{enc.alias}]
                       </span>
                     </td>
 
                     {/* 2. IDENTITY HEX */}
                     <td className="py-2 px-3 whitespace-nowrap">
                       <button
-                        onClick={() => handleCopyHex(ag.hex)}
+                        onClick={() => handleCopyHex(enc.identity_hex)}
                         title={`Copy Hex ID: ${fullHex}`}
                         className="flex items-center gap-1.5 text-cyan-400 hover:text-cyan-300 font-bold transition-colors"
                       >
                         <span>{truncatedHex}</span>
-                        {copiedId === ag.hex ? (
+                        {copiedId === enc.identity_hex ? (
                           <Check className="w-3 h-3 text-emerald-400" />
                         ) : (
                           <Copy className="w-3 h-3 text-zinc-500 hover:text-zinc-300" />
@@ -189,22 +165,17 @@ export function AgentProcessTable({ agentAliases }: AgentProcessTableProps) {
                     {/* 3. HOME CRDT SHARD */}
                     <td className="py-2 px-3 whitespace-nowrap">
                       <span className="inline-block px-1.5 py-0.5 rounded-xs bg-zinc-900 border border-zinc-800 text-emerald-400 font-bold text-[10px]">
-                        {ag.namespace}
+                        {enc.home_shard}
                       </span>
                     </td>
 
-                    {/* 4. COMMITTED TX */}
-                    <td className="py-2 px-3 whitespace-nowrap text-zinc-300">
-                      {ag.txCount.toLocaleString()}
-                    </td>
-
-                    {/* 5. STATUS */}
+                    {/* 4. STATUS */}
                     <td className="py-2 px-3 whitespace-nowrap text-right">
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-xs border text-[9px] font-bold uppercase tracking-wider ${
                           isQuarantined
                             ? 'bg-rose-950/70 border-rose-700/60 text-rose-300'
-                            : isLive
+                            : isActive
                             ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
                             : 'bg-zinc-900 border-zinc-800 text-zinc-400'
                         }`}
@@ -214,7 +185,7 @@ export function AgentProcessTable({ agentAliases }: AgentProcessTableProps) {
                             <ShieldAlert className="w-2.5 h-2.5 text-rose-400" />
                             <span>Quarantined</span>
                           </>
-                        ) : isLive ? (
+                        ) : isActive ? (
                           <>
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                             <span>Active</span>

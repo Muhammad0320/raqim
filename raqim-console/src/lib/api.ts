@@ -76,12 +76,29 @@ export interface ClusterShard {
   total_crdt_operation: number;
   total_crdt_operations?: number;
   active_timelines: number;
+  estimated_ram_mb?: number;
+  attached_agents?: string[];
+  status?: string;
 }
 
 export interface ClusterInfoData {
   node_id: string;
+  highest_tx_id?: number;
   wal_bytes: number;
+  wal_size_mb?: number;
   buffer_load: number;
+  allocated_shards?: number;
+  cumulative_crdt_ops?: number;
+  active_timelines?: number;
+}
+
+export interface ClusterEnclave {
+  alias: string;
+  identity_hex: string;
+  home_shard: string;
+  status: string;
+  last_seen_ts: number;
+  committed_tx?: number;
 }
 
 export interface VaultSearchResult {
@@ -275,6 +292,13 @@ export async function getClusterInfo(): Promise<ApiResponse<ClusterInfoData>> {
 /** GET /v1/admin/cluster/topology */
 export async function getClusterTopology(): Promise<ApiResponse<ClusterShard[]>> {
   return request<ClusterShard[]>('/v1/admin/cluster/topology', { method: 'GET' });
+}
+
+/** GET /v1/cluster/enclaves */
+export async function getClusterEnclaves(): Promise<ApiResponse<ClusterEnclave[]>> {
+  const res = await request<ClusterEnclave[]>('/v1/cluster/enclaves', { method: 'GET' });
+  if (res.success) return res;
+  return request<ClusterEnclave[]>('/v1/admin/cluster/enclaves', { method: 'GET' });
 }
 
 /**
