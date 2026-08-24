@@ -19,10 +19,10 @@ use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
 use serde_json::{Value, json};
 use std::convert::Infallible;
-use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{eprintln, format};
+use std::{eprintln, format, println};
 use tokio_stream::wrappers::BroadcastStream;
 
 use serde::{Deserialize, Serialize};
@@ -1053,11 +1053,8 @@ pub async fn dashboard_cards_endpoint(
 ) -> Result<Json<DashboardCards>, ApiError> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
-
-    // Vault capacity (Direct from lance)
-    let total_vec = state.lance.get_total_vector_count().await.unwrap_or(0);
 
     // Iterate through the Dashmap
     let active_count = state
@@ -1090,8 +1087,26 @@ pub async fn dashboard_cards_endpoint(
         latest_tx_hex: latest_tx_hex,
         embedder_dims: state.lance.dims,
         embedder_name: state.config.embedder_type.clone(),
-        ingress_pause: state.ingress_paused.load(Relaxed),
+        ingress_pause: state.ingress_paused.load(Ordering::Relaxed),
     }))
+}
+
+pub async fn toggle_ingress_endpoint(
+    _auth: ValidatedIdentity,
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let prev = state.ingress_paused.fetch_xor(true, Ordering::SeqCst);
+    let new_state = !prev;
+
+    println!(
+        "[SYSTEM] Ingress State Switched: {} ",
+        if new_state { "PAUSED" } else { "ACTIVE" }
+    );
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "ingress_paused": new_state
+    })))
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -1129,7 +1144,7 @@ pub async fn aegis_metics_endpoint(
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
     let ten_minutes_ago = now.saturating_sub(600);
 
@@ -1186,7 +1201,7 @@ pub async fn handle_ca_mint(
     // Contruct the unsigned Certificate Passport
     let expiration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs()
         + (365 * 24 * 60 * 60);
 
@@ -1483,6 +1498,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/admin/cluster/info", get(cluster_info_endpoint))
         .route("/v1/admin/cluster/topology", get(cluster_topology_endpoint))
         .route("/v1/dashboard/cards", get(dashboard_cards_endpoint))
+        .route("/v1/admin/ingress/toggle", post(toggle_ingress_endpoint))
         // System & Agent Deployment endpoints
         .route("/v1/system/boot_agent", post(upload_wasm_endpoint))
         .route("/v1/system/health/live", get(sse_health_endpoint))

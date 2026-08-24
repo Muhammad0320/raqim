@@ -28,6 +28,7 @@ use tower_http::cors::{Any, CorsLayer};
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::{eprintln, fs, println};
 
@@ -756,8 +757,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await;
     });
 
+    let ingress_paused = Arc::new(AtomicBool::new(false));
+
     // Spawn the hardware interrupt loop
-    HealthMonitor::spawn_telemetry_loop(health_tx.clone());
+    HealthMonitor::spawn_telemetry_loop(health_tx.clone(), ingress_paused.clone());
 
     let api_state = ApiState {
         config: config.clone(),
@@ -778,6 +781,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         master_signing_key: master_signing_key.clone(),
 
         hot_buffer: hot_buffer.clone(),
+        ingress_paused: ingress_paused.clone(),
     };
 
     let axum_app = build_admin_router(api_state).layer(
