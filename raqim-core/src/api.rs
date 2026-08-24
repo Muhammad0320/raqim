@@ -674,15 +674,17 @@ pub struct VaultSearchResult {
 pub struct VaultTelemetry {
     pub total_vectors: usize,
     pub index_size_mb: f64,
-    pub wal_pending_count: usize,
+    pub wal_pending_count: u64,
     pub densest_namespace: String,
+    pub embedder_name: String,
+    pub embeder_dim: usize,
 }
 
 pub async fn vault_telemetry_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
 ) -> Result<Json<VaultTelemetry>, ApiError> {
-    let wal_pending_count = state.wal.get_pending_count().await;
+    let wal_pending_count = state.axon.get_total_leaves() as u64;
 
     let total_vectors = state.lance.get_total_vector_count().await.unwrap_or(0);
 
@@ -692,13 +694,15 @@ pub async fn vault_telemetry_endpoint(
         .lance
         .get_densest_namespace()
         .await
-        .unwrap_or_else(|_| "UNKNOWN (0%)".to_string());
+        .unwrap_or_else(|_| "Empty (0%)".to_string());
 
     let telemetry = VaultTelemetry {
         total_vectors,
         wal_pending_count,
         index_size_mb,
         densest_namespace,
+        embedder_name: state.config.embedder_type.clone(),
+        embeder_dim: state.lance.dims as usize,
     };
 
     Ok(Json(telemetry))
@@ -1295,7 +1299,7 @@ pub async fn cluster_topology_endpoint(
             .active_agents
             .iter()
             .filter(|a| a.namespace == *namespace)
-            .map(|a| a.agent_hex().clone())
+            .map(|a| a.key().clone())
             .collect();
 
         shards.push(json!({ "namespace": namespace, "active_timelines": active_timelines, "total_crdt_operation": ops_count, "estimated_ram_mb": (estimated_ram_mb * 100.0).round() / 100.0, "attached_agents": attached_agents, "status": "ACTIVE"  }));

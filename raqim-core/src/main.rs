@@ -835,6 +835,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let task_registry = registry.clone();
                 let task_brain = brain_shard.clone();
                 let task_mem_router = mem_router.clone();
+                let worker_pause_flag = ingress_paused.clone();
 
                 // Spawn into the joinset
                  tcp_workers.spawn(async move {
@@ -852,8 +853,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut session_pub_key = [0u8; 32];
 
                 loop {
+                    // TCP Pause Barrier
+                    while worker_pause_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    }
+
                    //  THE FRAMING PROTOCOL: Read 4-byte length prefix first
-                //    Read from the BufReader
                     let mut len_buf = [0u8; 4];
                     if let Err(e) = tokio::io::AsyncReadExt::read_exact(&mut reader, &mut len_buf).await {
 
