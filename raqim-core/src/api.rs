@@ -1239,13 +1239,21 @@ pub async fn cluster_info_endpoint(
 
     let node_id = state.global_net.os_node_id.clone();
 
-    let highest_tx = state.wal.get_highest_tx_id(&state.config.wal_path);
+    let highest_tx = state.axon.get_latest_tx_id();
+
+    let cumulative_crdt_ops: usize = state.brain.shards.iter().map(|e| e.value().doc.read().len_ops() ).sum();
+
+    let total_shards = state.brain.shards.len();
 
     let payload = json!({
         "node_id": node_id,
         "highest_tx_id": highest_tx,
         "wal_bytes": wal_size,
-        "buffer_load": pending_wal_items
+        "wal_size_mb": (wal_size as f64 ) / (1024.0 * 1024.0),
+        "buffer_load": pending_wal_items,
+        "allocated_shards": total_shards, 
+        "cumulative_crdt_ops": cumulative_crdt_ops, 
+        "active_timelines": state.brain.shards.len(),
     });
 
     Ok(Json(payload))
@@ -1269,13 +1277,58 @@ pub async fn cluster_topology_endpoint(
         // Count how many unique agent timelines exist within this specific shard
         let active_timelines = brain.root_timeline_map.len();
 
-        // For CLI diagnostics: we measure the length of the underlying operations log.
+        // we measure the length of the underlying operations log.
         let ops_count = doc_lock.len_ops();
+        // Calculate dynamic in-memoy footprint for this CRDT shard
+        let snapshot_bytes = brain.export_snapshot().len();
+        let estimated_ram_mb = ((snapshot_bytes + (ops_count * 64)) as f64) / (1024.0 * 1024.0);
 
-        shards.push(json!({ "namespace": namespace, "active_timelines": active_timelines, "total_crdt_operation": ops_count }));
+        // Fetch agents associated with this namespace 
+        let attached_agents: Vec<String> = state.swarm_registry.active_agents.iter().filter(|a| a.intent_path == *namespace).map(|a| a.key().clone() ).collect();
+
+        shards.push(json!({ "namespace": namespace, "active_timelines": active_timelines, "total_crdt_operation": ops_count, "estimated_ram_mb": (estimated_ram_mb * 100.0).round() / 100.0, "attached_agents": attached_agents, "status": "ACTIVE"  }));
     }
 
     Ok(Json(json!(shards)))
+}
+
+pub async fn cluster_enclaves_endpoint(_auth: ValidatedIdentity, State(state): State<ApiState>) -> Result<Json<Value>, ApiError> {
+
+    let mut enclaves = Vec::new();
+
+    // Collect currently active connected agents
+    for entry in state.swarm_registry.active_agents.iter() {
+
+        let agent = entry.value(); 
+        enclaves.push(json!({
+            "alias": agent.alias, 
+            "identity_hex": entry.key(), 
+            "home_shard": agent.intent_path,
+            "committed_tx": 0,
+            "status": agent.status, 
+            "last_seen_ts": agent.last_seen_ts
+
+        }));
+    }
+
+    // If no live agents are connected, populate from indexed shard namespace
+    if enclaves.is_empty() {
+        for (i, entry) in state.brian.shard.iter().enumerate() {
+            let namespace = entry.key();
+            let ops = entry.value().doc.read().len_ops();
+            enclaves.push(json!({
+                "alias": format!("agent_shard_{:02}", i),
+                "identity_hex": format!("0x{:032x}", i + 1), 
+                "home_shard": namespace, 
+                "committed_tx": ops, 
+                "status:" "IDLE_IN_RAM", 
+                "last_seen_ts": 0
+            }));
+        }
+    }
+
+
+    Ok(Json(json!(enclaves)))
 }
 
 #[derive(Deserialize)]
@@ -1378,6 +1431,8 @@ pub async fn record_effect_handler(
                 is_forked_branch: is_forked,
             }))
         }
+
+        
 
         Err(e) => Err(ApiError::InternalServerError(format!(
             "Failed to record effect: {}",
@@ -1497,6 +1552,7 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         // Cluster Observervability and Diagnostics
         .route("/v1/admin/cluster/info", get(cluster_info_endpoint))
         .route("/v1/admin/cluster/topology", get(cluster_topology_endpoint))
+        .route("/v1/cluster/enclaves", get(cluster_enclaves_endpoint))
         .route("/v1/dashboard/cards", get(dashboard_cards_endpoint))
         .route("/v1/admin/ingress/toggle", post(toggle_ingress_endpoint))
         // System & Agent Deployment endpoints

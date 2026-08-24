@@ -69,7 +69,7 @@ export function TopologyClientLayout({
 
   return (
     <MainLayout title="Swarm Topology // Distributed CRDT Matrix">
-      <div className="flex flex-col h-full w-full bg-[#080C14] overflow-hidden p-3 gap-3">
+      <div className="flex flex-col h-full w-full bg-zinc-950 overflow-hidden p-3 gap-3">
         {/* 1. Cluster Status Ribbon */}
         <ClusterTelemetryRibbon
           clusterInfo={clusterInfo}
@@ -77,13 +77,14 @@ export function TopologyClientLayout({
           totalActiveAgents={totalActiveAgents}
         />
 
-        {/* 2. Interactive Canvas Container (65% height) */}
-        <div className="flex-1 min-h-[420px] bg-[#0D1322] border border-slate-800 rounded-sm overflow-hidden relative shadow-xl">
+        {/* 2. Interactive Canvas Container */}
+        <div className="flex-1 min-h-[420px] bg-zinc-950 border border-zinc-800/80 rounded-sm overflow-hidden relative shadow-xl">
           <ReactFlowProvider>
             <TopologyCanvas
               shards={shards}
               clusterInfo={clusterInfo}
               onSelectShard={(shard) => setSelectedShard(shard)}
+              selectedShardNamespace={selectedShard?.namespace || null}
             />
           </ReactFlowProvider>
 
@@ -98,7 +99,7 @@ export function TopologyClientLayout({
 
         {/* 3. High-Density Agent Process Matrix */}
         <div className="shrink-0 max-h-60 overflow-hidden">
-          <AgentProcessTable />
+          <AgentProcessTable agentAliases={agentAliases} />
         </div>
       </div>
     </MainLayout>
