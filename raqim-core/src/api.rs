@@ -19,6 +19,7 @@ use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
 use serde_json::{Value, json};
 use std::convert::Infallible;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{eprintln, format};
@@ -186,6 +187,7 @@ pub struct ApiState {
     pub master_signing_key: SigningKey,
 
     pub hot_buffer: Arc<HotVectorBuffer>,
+    pub ingress_paused: Arc<AtomicBool>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1037,27 +1039,24 @@ pub struct DashboardCards {
     pub global_transactions: u64,
     pub active_agents: usize,
     pub vault_capacity: usize,
-    pub hot_thoughts_count: u64, 
+    pub hot_thoughts_count: u64,
     pub cold_thoughts_count: u64,
-    pub latest_tx_hex: String, 
-    pub embedder_dims: i32, 
-    pub embedder_name: String, 
-    pub ingress_pause: bool  
-
+    pub latest_tx_hex: String,
+    pub embedder_dims: i32,
+    pub embedder_name: String,
+    pub ingress_pause: bool,
 }
 
 pub async fn dashboard_cards_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
 ) -> Result<Json<DashboardCards>, ApiError> {
-
-
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
 
-        // Vault capacity (Direct from lance)
+    // Vault capacity (Direct from lance)
     let total_vec = state.lance.get_total_vector_count().await.unwrap_or(0);
 
     // Iterate through the Dashmap
@@ -1076,23 +1075,22 @@ pub async fn dashboard_cards_endpoint(
     let hot_batches = state.wal.get_pending_count().await as u64;
 
     // Hot buffer leaves + cold storage
-    let hot_count = 0;
-    let total_lifetitme_txn = cold_count + hot_count;
+    let hot_count = state.axon.get_total_leaves() as u64;
+    let total_lifetime_txn = cold_count + hot_count;
 
-    let latest_tx = 0;
+    let latest_tx = state.axon.get_latest_tx_id();
     let latest_tx_hex = format!("0x{:032x}", latest_tx);
-    
 
     Ok(Json(DashboardCards {
         global_transactions: total_lifetime_txn,
         active_agents: active_count,
         vault_capacity: cold_count as usize,
-        hot_thoughts_count: hot_batches, 
+        hot_thoughts_count: hot_batches,
         cold_thoughts_count: cold_count,
-        latest_tx_hex: latest_tx_hex, 
-        embedder_dims: state.lance.dims, 
-        embedder_name: state.config.embedder_type, 
-        ingress_pause: state.ingress_paused.load(Relaxed); 
+        latest_tx_hex: latest_tx_hex,
+        embedder_dims: state.lance.dims,
+        embedder_name: state.config.embedder_type.clone(),
+        ingress_pause: state.ingress_paused.load(Relaxed),
     }))
 }
 

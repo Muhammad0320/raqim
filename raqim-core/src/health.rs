@@ -1,8 +1,7 @@
 use serde::Serialize;
-use std::{
-    sync::atomic::{Arc, AtomicBool},
-    time::Duration,
-};
+use std::{sync::atomic::AtomicBool, time::Duration};
+
+use std::sync::Arc;
 use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, Pid, RefreshKind, System};
 use tokio::sync::broadcast;
 
