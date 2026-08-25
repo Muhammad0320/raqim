@@ -8,7 +8,7 @@ use axum::{
     routing::{get, post},
 };
 use tower_http::catch_panic::CatchPanicLayer;
-
+use tokio::sync::watch;
 use base64::Engine;
 
 use axum::body::Bytes;
@@ -186,7 +186,7 @@ pub struct ApiState {
     pub master_signing_key: SigningKey,
 
     pub hot_buffer: Arc<HotVectorBuffer>,
-    pub ingress_paused: Arc<AtomicBool>,
+    pub pause_tx: Arc< watch::Sender::<bool>>
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1098,12 +1098,15 @@ pub async fn toggle_ingress_endpoint(
     _auth: ValidatedIdentity,
     State(state): State<ApiState>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let prev = state.ingress_paused.fetch_xor(true, Ordering::SeqCst);
+    let prev = *state.pause_tx.borrow();
     let new_state = !prev;
 
+    // Broadcasts state change across all worker tasks
+    let _ = state.pause_tx.send(new_state);
+    
     println!(
-        "[SYSTEM] Ingress State Switched: {} ",
-        if new_state { "PAUSED" } else { "ACTIVE" }
+        "[SYSTEM] Ingress flow control changed: {} ",
+        if new_state { "PAUSED (TCP ZERO-WINDOW) " } else { "ACTIVE" }
     );
 
     Ok(Json(serde_json::json!({
