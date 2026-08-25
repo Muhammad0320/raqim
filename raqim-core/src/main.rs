@@ -757,10 +757,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await;
     });
 
-    let ingress_paused = Arc::new(AtomicBool::new(false));
+    let (pause_tx, pause_rx) = tokio::sync::watch::channel(false);
+    let pause_rx = Arc::new(pause_rx);
+    let pause_tx = Arc::new(pause_tx);
 
     // Spawn the hardware interrupt loop
-    HealthMonitor::spawn_telemetry_loop(health_tx.clone(), ingress_paused.clone());
+    HealthMonitor::spawn_telemetry_loop(health_tx.clone(), pause_rx.clone());
 
     let api_state = ApiState {
         config: config.clone(),
@@ -781,7 +783,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         master_signing_key: master_signing_key.clone(),
 
         hot_buffer: hot_buffer.clone(),
-        ingress_paused: ingress_paused.clone(),
+        pause_tx: pause_tx.clone(),
     };
 
     let axum_app = build_admin_router(api_state).layer(
@@ -835,10 +837,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let task_registry = registry.clone();
                 let task_brain = brain_shard.clone();
                 let task_mem_router = mem_router.clone();
-                let worker_pause_flag = ingress_paused.clone();
+
 
                 // Spawn into the joinset
-                 tcp_workers.spawn(async move {
+            tcp_workers.spawn(async move {
 
                 //  Syscall Amortization: Wrap the socket in a 1mb BufReader to eliminate kernel context switches
                 let mut reader = tokio::io::BufReader::with_capacity(1024 * 1024, socket);
@@ -851,11 +853,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut cached_agent_hex = String::new();
                 let mut cached_group_name = String::new();
                 let mut session_pub_key = [0u8; 32];
+                let mut worker_pause_rx = pause_rx.clone();
 
                 loop {
-                    // TCP Pause Barrier
-                    while worker_pause_flag.load(std::sync::atomic::Ordering::Relaxed) {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                    // ZERO-CPU ASYNC SUSPENSION:
+                    if *worker_pause_rx.borrow() {
+
+                        if worker_pause_rx.changed().await.is_err() {
+                            break;
+                        }
+
+                        if *worker_pause_rx.borrow() {
+                            continue;
+                        }
+
                     }
 
                    //  THE FRAMING PROTOCOL: Read 4-byte length prefix first

@@ -1,9 +1,9 @@
 use serde::Serialize;
-use std::{sync::atomic::AtomicBool, time::Duration};
+use std::time::Duration;
 
 use std::sync::Arc;
 use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, Pid, RefreshKind, System};
-use tokio::sync::{broadcast, watch };
+use tokio::sync::{broadcast, watch};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SystemHealth {
@@ -21,7 +21,7 @@ pub struct HealthMonitor;
 impl HealthMonitor {
     pub fn spawn_telemetry_loop(
         health_tx: broadcast::Sender<SystemHealth>,
-        pause_rx: Arc< watch::Receiver::<bool> >,
+        pause_rx: Arc<watch::Receiver<bool>>,
     ) {
         tokio::spawn(async move {
             // Initialize systeminfo  strictly for CPU and memory to save cycles.
@@ -65,7 +65,7 @@ impl HealthMonitor {
                         host_total_memory_mb: host_total,
                         core_temp_celcius: core_temp,
                         mesh_latency_ms: 12,
-                        ingress_paused: *pause_rx.borrow,
+                        ingress_paused: *pause_rx.borrow(),
                     };
 
                     let _ = health_tx.send(payload);

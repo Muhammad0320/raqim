@@ -7,9 +7,9 @@ use axum::{
     http::{StatusCode, request::Parts},
     routing::{get, post},
 };
-use tower_http::catch_panic::CatchPanicLayer;
-use tokio::sync::watch;
 use base64::Engine;
+use tokio::sync::watch;
+use tower_http::catch_panic::CatchPanicLayer;
 
 use axum::body::Bytes;
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -186,7 +186,7 @@ pub struct ApiState {
     pub master_signing_key: SigningKey,
 
     pub hot_buffer: Arc<HotVectorBuffer>,
-    pub pause_tx: Arc< watch::Sender::<bool>>
+    pub pause_tx: Arc<watch::Sender<bool>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1090,7 +1090,7 @@ pub async fn dashboard_cards_endpoint(
         latest_tx_hex: latest_tx_hex,
         embedder_dims: state.lance.dims,
         embedder_name: state.config.embedder_type.clone(),
-        ingress_pause: state.ingress_paused.load(Ordering::Relaxed),
+        ingress_pause: *state.pause_tx.borrow(),
     }))
 }
 
@@ -1103,10 +1103,14 @@ pub async fn toggle_ingress_endpoint(
 
     // Broadcasts state change across all worker tasks
     let _ = state.pause_tx.send(new_state);
-    
+
     println!(
         "[SYSTEM] Ingress flow control changed: {} ",
-        if new_state { "PAUSED (TCP ZERO-WINDOW) " } else { "ACTIVE" }
+        if new_state {
+            "PAUSED (TCP ZERO-WINDOW) "
+        } else {
+            "ACTIVE"
+        }
     );
 
     Ok(Json(serde_json::json!({
