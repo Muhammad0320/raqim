@@ -758,11 +758,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let (pause_tx, pause_rx) = tokio::sync::watch::channel(false);
-    let pause_rx = Arc::new(pause_rx);
     let pause_tx = Arc::new(pause_tx);
 
     // Spawn the hardware interrupt loop
-    HealthMonitor::spawn_telemetry_loop(health_tx.clone(), pause_rx.clone());
+    let health_pause_rx = pause_rx.clone();
+    HealthMonitor::spawn_telemetry_loop(health_tx.clone(), health_pause_rx);
 
     let api_state = ApiState {
         config: config.clone(),
@@ -837,6 +837,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let task_registry = registry.clone();
                 let task_brain = brain_shard.clone();
                 let task_mem_router = mem_router.clone();
+                let task_pause_rx = pause_rx.clone();
 
 
                 // Spawn into the joinset
@@ -853,7 +854,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut cached_agent_hex = String::new();
                 let mut cached_group_name = String::new();
                 let mut session_pub_key = [0u8; 32];
-                let mut worker_pause_rx = pause_rx.clone();
+                let mut worker_pause_rx = task_pause_rx.clone();
 
                 loop {
                     // ZERO-CPU ASYNC SUSPENSION:

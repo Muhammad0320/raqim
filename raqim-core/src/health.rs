@@ -21,7 +21,7 @@ pub struct HealthMonitor;
 impl HealthMonitor {
     pub fn spawn_telemetry_loop(
         health_tx: broadcast::Sender<SystemHealth>,
-        pause_rx: Arc<watch::Receiver<bool>>,
+        pause_rx: watch::Receiver<bool>,
     ) {
         tokio::spawn(async move {
             // Initialize systeminfo  strictly for CPU and memory to save cycles.
