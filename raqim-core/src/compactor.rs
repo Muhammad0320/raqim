@@ -219,49 +219,55 @@ impl WalCompactor {
         let mut offset = 0;
         let mut logs_to_archive: Vec<OpLog> = Vec::new();
         let mut semantic_payloads: Vec<String> = Vec::new();
-        let aligned_buf = rkyv::util::AlignedVec::<16>::new();
+        let mut aligned_buf = rkyv::util::AlignedVec::<16>::new();
 
         // 16-Byte Aligned Batchh Parser with CRC32 Verification
-        while offset < buffer.len() {
-            if offset + 4 > buffer.len() {
+        while offset + 8 <= buffer.len() {
+            let entry_len =
+                u32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap()) as usize;
+            let expected_crc =
+                u32::from_le_bytes(buffer[offset + 4..offset + 8].try_into().unwrap());
+            let frame_total = 8 + entry_len;
+
+            if offset + frame_total > buffer.len() {
+                eprintln!(
+                    "[COMPACTOR WARN] Truncated tail frame at offset {}. Halting scan.",
+                    offset
+                );
                 break;
             }
 
-            let mut len_bytes = [0u8; 4];
-            len_bytes.copy_from_slice(&buffer[offset..offset + 4]);
-            let entry_len = u32::from_le_bytes(len_bytes) as usize;
-            offset += 4;
+            let entry_slice = &buffer[offset + 8..offset + frame_total];
 
-            // Skip Over the 4-byte CRC32 header
-            if offset + 4 > buffer.len() {
-                break;
+            if crc32fast::hash(entry_slice) != expected_crc {
+                eprintln!(
+                    "[COMPACTOR CORRUPTION] CRC32 mismatch at offset {}. Skipping frame.",
+                    offset
+                );
+                offset += frame_total;
+                continue;
             }
-            offset += 4;
 
-            let entry_slice = &buffer[offset..offset + entry_len];
+            // Copy slice to 16 bytes aligned buffer
+            aligned_buf.clear();
+            aligned_buf.extend_from_slice(entry_slice);
 
-            match rkyv::access::<<Vec<OpLog> as Archive>::Archived, rkyv::rancor::Error>(
-                entry_slice,
-            ) {
-                Ok(archived_log) => {
-                    if let Ok(log) =
-                        rkyv::deserialize::<Vec<OpLog>, rkyv::rancor::Error>(archived_log)
-                    {
+            // Decode batch
+            if let Ok(archived_batch) =
+                rkyv::access::<<Vec<OpLog> as Archive>::Archived, rkyv::rancor::Error>(&aligned_buf)
+            {
+                if let Ok(batch) =
+                    rkyv::deserialize::<Vec<OpLog>, rkyv::rancor::Error>(archived_batch)
+                {
+                    for log in batch {
                         let payload = format!(
-                            "[{:?}] Agent in {} stated {}",
+                            "[{:?}] Agent in {} stated {} ",
                             log.state.status, log.state.namespace, log.state.text
                         );
 
-                        logs_to_archive.push(log);
                         semantic_payloads.push(payload);
+                        logs_to_archive.push(log);
                     }
-                }
-
-                Err(e) => {
-                    eprintln!(
-                        "[COMPACTOR ERROR] Corrupted log frame at offset {}: {} ",
-                        offset, e
-                    );
                 }
             }
 
@@ -274,11 +280,11 @@ impl WalCompactor {
                 &processing_path,
             );
             let _ = fs::remove_file(processing_path);
-            let _ = fs::remove_file(manifest_path);
-            return;
+            Self::clear_manifest(&self.manifest_path);
+            return 0;
         }
 
-        // High throughput batch vector embedding
+        // Compute batch vector embedding
         let vectors = match self
             .lance_engine
             .embedder
@@ -292,7 +298,7 @@ impl WalCompactor {
                     "[COMPACTOR CRITICAL ERROR] Batch embedding failed for segment {}: {}. Segment preserved for retry.",
                     processing_path, e
                 );
-                return;
+                return 0;
             }
         };
 
@@ -303,6 +309,8 @@ impl WalCompactor {
             .max()
             .unwrap_or(0);
 
+        let archived_count = logs_to_archive.len();
+
         self.lance_engine
             .archive_batch(&logs_to_archive, &vectors)
             .await;
@@ -312,27 +320,27 @@ impl WalCompactor {
             target_file: processing_path.to_string(),
             state: CompactionState::Committed,
         };
-        Self::write_manifest_atomically(&manifest_path, &commited_manifest);
+        Self::write_manifest_atomically(&self.manifest_path, &commited_manifest);
 
         println!(
             "[COMPACTOR] Successfully archived {} thoughts from {} to lanceDB.",
-            logs_to_archive.len(),
-            processing_path
+            archived_count, processing_path
         );
 
+        // Safe cleanup and Broadcast
         if let Err(e) = fs::remove_file(processing_path) {
             eprintln!(
                 "[COMPACTOR WARRNING] Failed to remove processed WAL segment {}: {} ",
                 processing_path, e
             );
         }
-        let _ = fs::remove_file(manifest_path);
+        Self::clear_manifest(&self.manifest_path);
 
         let _ = self.tx.send(SystemEvent::CompactionTriggered {
-            archived_count: logs_to_archive.len(),
+            archived_count,
             max_compacted_tx,
         });
 
-        0
+        archived_count
     }
 }
