@@ -475,6 +475,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                 // Start the stopwatch
                 let start_time = std::time::Instant::now();
 
+                // Dispatch verified RPC across Zenoh Mesh
                 match os_state_clone
                     .global_net
                     .execute_a2a_rpc(envelope, os_state_clone.aegis.clone())
@@ -484,7 +485,52 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                         // stop the stopwatch
                         let latency_ms = start_time.elapsed().as_millis() as u32;
 
-                        // Send the answer back to the requesting agentn
+                        // Seal verified Answer (Tx_reply) into WAL + Merkle DAG
+                        let reply_tx_id = uuid::Uuid::now_v7().as_u128();
+                        let reply_ts = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64;
+
+                        let reply_state = AgentState {
+                            agent_id: Some(sender_id_bytes),
+                            transaction_id: reply_tx_id,
+                            timestamp: reply_ts,
+                            status: crate::AgentStatus::Reasoning,
+                            text: format!(
+                                "[Responder: {}] {}",
+                                responder_hex,
+                                String::from_utf8_lossy(&answer)
+                            ),
+                            namespace: format!("/swarm/a2a/reply/{}", capability),
+                        };
+
+                        let mut aligned_reply_buf = rkyv::util::AlignedVec::<16>::new();
+                        if let Ok(sb) = rkyv::to_bytes::<rkyv::rancor::Error>(&reply_state) {
+                            aligned_reply_buf.extend_from_slice(&sb);
+                        }
+
+                        if let Ok(archived_reply_state) =
+                            rkyv::access::<
+                                <AgentState as rkyv::Archive>::Archived,
+                                rkyv::rancor::Error,
+                            >(&aligned_reply_buf)
+                        {
+                            let _ = execute_raqim_cascade(
+                                archived_reply_state,
+                                os_state_clone.axon.clone(),
+                                os_state_clone.wal.clone(),
+                                os_state_clone.brain.clone(),
+                                os_state_clone.cortex_tx.clone(),
+                                os_state_clone.global_net.clone(),
+                                os_state_clone.event_tx.clone(),
+                                Vec::new(),
+                                Vec::new(),
+                            )
+                            .await;
+                        }
+
+                        // Send the answer back to the waiting python sdk coroutine
                         let res = WsMessage::QuestionAnswered {
                             request_id,
                             answer: answer.clone(),
@@ -509,8 +555,9 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                     Err(e) => {
                         let err = WsMessage::Error {
-                            message: e.to_string(),
+                            message: format!("[A2A Error] {}", e),
                         };
+
                         if let Ok(json_str) = serde_json::to_string(&err) {
                             let _ = conn_clone.downstream_tx.send(Message::Text(json_str)).await;
                         }
