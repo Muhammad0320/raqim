@@ -88,16 +88,10 @@ impl GlobalNetworkBridge {
     ) -> Result<(Vec<u8>, String), anyhow::Error> {
         let sender_hex = hex::encode(envelope.sender_id.clone());
 
-        // 1. AEGIS INTERCEPTION: Does this agent have clearance this question?
-        let mut packet_sig = [0u8; 64];
-        packet_sig.copy_from_slice(envelope.signature.as_slice());
-
-        let mut sender_pub_bytes: [u8; 32] = [0; 32];
-        sender_pub_bytes.copy_from_slice(envelope.sender_public_key.as_slice());
-
+        // Verify sender sesssion lineage certificate
         let (agent_hex, group_name) = match aegis.verify_session_lineage(
-            envelope.sender_capability_cert.as_slice(),
-            &sender_pub_bytes,
+            &envelope.sender_capability_cert.as_slice(),
+            &envelope.sender_public_key,
         ) {
             Ok((agent, group)) => (agent, group),
             Err(e) => {
@@ -110,12 +104,13 @@ impl GlobalNetworkBridge {
             }
         };
 
+        // Enforce fast Aegis Packet Authorization & Anti-Replay Timestamp check
         if let Err(e) = aegis.authorize_packet_fast(
-            agent_hex.as_str(),
-            group_name.as_str(),
-            &sender_pub_bytes,
+            &agent_hex,
+            &group_name,
+            &envelope.sender_public_key,
             &envelope.payload,
-            &packet_sig,
+            &envelope.signature,
             &envelope.target_capability,
             envelope.timestamp,
         ) {
@@ -125,27 +120,25 @@ impl GlobalNetworkBridge {
             ));
         }
 
-        // CRITICAL: Dynamic atomic load disctated whther query propagates across the globak mesh or stays on the LAN
-        let query_target = zenoh::query::QueryTarget::All;
-
-        // 2. Zero-Copy Serializarion of envelope
+        // 2. Zero-Copy Serializarion the Envelope for Zenoh Transmission
         let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&envelope)
             .unwrap()
             .into_vec();
+
         let key_expr = format!(
             "{}/a2a/{}",
             self.workspace_prefix, envelope.target_capability
         );
 
-        // 3. Zenoh GET request (The RPC )
+        // 3. Zenoh GET request (The RPC Broadcast )
         // We broadcast the question and wait for the authoritative answer to reply.
         let replies = self
             .session
             .get(&key_expr)
-            .target(query_target)
+            .target(zenoh::query::QueryTarget::All)
             .payload(bytes)
             .await
-            .unwrap();
+            .map_err(|e| anyhow::anyhow!("Zenoh query dispatch failed: {}", e))?;
 
         let reply_future = replies.recv_async();
 
@@ -163,11 +156,16 @@ impl GlobalNetworkBridge {
                         .to_string();
 
                     // Reselialize the answer bytes to send back to the original caller
-                    let clean_answer = json_val["answer"]
-                        .as_str()
-                        .unwrap_or("")
-                        .as_bytes()
-                        .to_vec();
+                    let clean_answer = if let Some(ans_str) = json_val["answer"].as_str() {
+                        ans_str.as_bytes().to_vec()
+                    } else if let Some(ans_arr) = json_val["answer"].as_array() {
+                        ans_arr
+                            .iter()
+                            .filter_map(|v| v.as_u64().map(|b| b as u8))
+                            .collect()
+                    } else {
+                        res_bytes.clone()
+                    };
 
                     return Ok((clean_answer, actual_responder));
                 }
@@ -307,18 +305,26 @@ impl GlobalNetworkBridge {
         });
     }
 
-    /// Binds an agent to a Semantic capability. It will listen for incoming A2A questions.
-    pub async fn register_agent_capability(
-        &self,
-        capability_path: &str,
-        mut response_handler: impl FnMut(&[u8]) -> Vec<u8> + Send + 'static,
-    ) {
+    /// Registers a local capability listener and routes queries to the handler
+    pub async fn register_agent_capability<F>(&self, capability_path: &str, mut response_handler: F)
+    where
+        F: FnMut(&[u8]) -> Vec<u8> + Send + 'static,
+    {
         let key_expr = format!("{}/a2a/{}", self.workspace_prefix, capability_path);
         let session = self.session.clone();
         let aegis = self.aegis.clone();
         tokio::spawn(async move {
             // A Queryable tells the global network: "I can answer questions for this topic"
-            let queryable = session.declare_queryable(&key_expr).await.unwrap();
+            let queryable = match session.declare_queryable(&key_expr).await {
+                Ok(q) => q,
+                Err(e) => {
+                    eprintln!(
+                        "[A2A FATAL] Failed to declare queryable on {}: {} ",
+                        key_expr, e
+                    );
+                    return;
+                }
+            };
 
             println!("[A2A] Capability Registered: Listening on {} ", key_expr);
 
@@ -328,18 +334,33 @@ impl GlobalNetworkBridge {
                     None => continue,
                 };
 
-                let archievd_envelope = unsafe {
-                    rkyv::access_unchecked::<<A2AEnvelope as Archive>::Archived>(&payload_bytes)
-                };
+                let archievd_envelope =
+                    match rkyv::access::<<A2AEnvelope as Archive>::Archived, rkyv::rancor::Error>(
+                        &payload_bytes,
+                    ) {
+                        Ok(env) => env,
+                        Err(e) => {
+                            eprintln!(
+                                "[A2A WARN] Malformed incoming A2AEnvelope memory layout: {} ",
+                                e
+                            );
+                            continue;
+                        }
+                    };
 
                 // Extract the raw question bytes
                 let question_payload = archievd_envelope.payload.as_slice();
 
                 let mut packet_signature = [0u8; 64];
-                packet_signature.copy_from_slice(archievd_envelope.signature.as_slice());
+                if archievd_envelope.signature.len() == 64 {
+                    packet_signature.copy_from_slice(archievd_envelope.signature.as_slice());
+                }
 
                 let mut agent_public_key = [0u8; 32];
-                agent_public_key.copy_from_slice(archievd_envelope.sender_public_key.as_slice());
+                if archievd_envelope.sender_public_key.len() == 32 {
+                    agent_public_key
+                        .copy_from_slice(archievd_envelope.sender_public_key.as_slice());
+                }
 
                 // UNIFIED PERIMETER AUDIT: Validates lineage token, proved the signature authenticity and checks path
 
@@ -350,7 +371,7 @@ impl GlobalNetworkBridge {
                     Ok((agent, group)) => (agent, group),
                     Err(e) => {
                         eprintln!(
-                            "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Reason: {}",
+                            "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Lineage Failed: {}",
                             e
                         );
 
@@ -360,42 +381,30 @@ impl GlobalNetworkBridge {
 
                 let packet_timestamp: i64 = archievd_envelope.timestamp.into();
 
-                match aegis.authorize_packet_fast(
-                    agent_hex.as_str(),
-                    group_name.as_str(),
+                if let Err(e) = aegis.authorize_packet_fast(
+                    &agent_hex,
+                    &group_name,
                     &agent_public_key,
                     question_payload,
                     &packet_signature,
                     &archievd_envelope.target_capability.as_str(),
                     packet_timestamp,
                 ) {
-                    Ok(_) => {
-                        // Execution approved. Invoke the inner WASM guest application runtime logic.
-                        let answer_bytes = response_handler(question_payload);
+                    eprintln!(
+                        "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Reason: {}",
+                        e
+                    );
 
-                        // Deliver the result frame back down the query link
-                        if let Err(e) = query.reply(query.key_expr(), answer_bytes).await {
-                            eprintln!(
-                                "[A2A Network Warning] Failed to deliver RPC answer frame: {}",
-                                e
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "[AEGIS NETWORK INTERDICTION] Dropped Malicious A2A RPC query line. Reason: {}",
-                            e
-                        );
-
-                        continue;
-                    }
+                    continue;
                 };
 
-                // Executes the agent's internal logic  to generate answer
+                // Execution approved. Invoke Local agent to Produce answer
                 let answer_bytes = response_handler(question_payload);
 
-                // Send the answer directly ack to the asking agent
-                query.reply(query.key_expr(), answer_bytes).await.unwrap();
+                // Deliver reply back to the requester over zenoh
+                if let Err(e) = query.reply(query.key_expr(), answer_bytes).await {
+                    eprintln!("[A2A WARN] Failed to deliver query reply: {}", e);
+                }
             }
         });
     }
