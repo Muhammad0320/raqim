@@ -114,6 +114,7 @@ impl WalCompactor {
 
     /// Starts the background compactor daemon with 2PC crash recovery on boot
     pub fn start_daemon(self: Arc<Self>) {
+        let self_clone = self.clone();
         tokio::spawn(async move {
             println!("[COMPACTOR] Booting Autonomous 2PC WAL Compactor Daemon... ");
 
@@ -135,10 +136,10 @@ impl WalCompactor {
 
                     _ = check_interval.tick() => {
 
-                            if let Ok(metadata) = fs::metadata(&self.wal_path) {
+                            if let Ok(metadata) = fs::metadata(self_clone.clone().wal_path.clone()) {
                                 if metadata.len() >= one_gb {
                                     println!("[COMPACTOR] WAL size threshold (1GB) breached! Triggering compaction... ");
-                                    let _ = self.trigger_safe_compaction().await;
+                                    let _ = self_clone.clone().trigger_safe_compaction().await;
                                 }
                             }
 
@@ -147,7 +148,7 @@ impl WalCompactor {
                         _ = daily_interval.tick() => {
 
                             println!("[COMPACTOR] 24-hour maintenance cycle reached. Triggering routine compaction...");
-                            let _ = self.trigger_safe_compaction().await;
+                            let _ = self_clone.clone().trigger_safe_compaction().await;
                         },
 
                 }
@@ -156,7 +157,7 @@ impl WalCompactor {
     }
 
     /// Executes on-demand or automated safe WAL rotatiton and LanceDB assimilation
-    pub async fn trigger_safe_compaction(&self) -> Result<usize, anyhow::Error> {
+    pub async fn trigger_safe_compaction(self: Arc<Self>) -> Result<(), anyhow::Error> {
         // Ask the WAL engine to rotate the file and give us the archived filename
         let (reply_tx, reply_rx) = oneshot::channel::<String>();
 
@@ -177,14 +178,17 @@ impl WalCompactor {
         );
 
         // Ingest the rotates segment into lanceDB
-        let count = self.execute_compaction(&archived_filename).await;
+        let compactor_clone = self.clone();
+        tokio::spawn(async move {
+            let count = compactor_clone.execute_compaction(&archived_filename).await;
 
-        println!(
-            "[COMPACTOR] Segment '{}' successfully assimilated ({} thoughts archived) ",
-            archived_filename, count
-        );
+            println!(
+                "[COMPACTOR] Background task finished: Segment '{}' successfully assimilated ({} thoughts archived) ",
+                archived_filename, count
+            );
+        });
 
-        Ok(count)
+        Ok(())
     }
 
     /// The 2PC Ingestion Engine: Decode batches, embed text, archives to LanceDB, and clean up

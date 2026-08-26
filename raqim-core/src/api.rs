@@ -1643,10 +1643,10 @@ pub async fn trigger_compaction_endpoint(
     println!("[ADMIN] Manual on-demand WAL compaction requested via HTTP API... ");
 
     match state.compactor.trigger_safe_compaction().await {
-        Ok(count) => Ok(Json(serde_json::json!({
+        Ok(()) => Ok(Json(serde_json::json!({
             "success": true,
-            "archived_thoughts": count,
-            "message": format!("Successfully compacted {} thougthts to LanceDB", count),
+            "status": "PROCESSING_IN_BACKGROUND",
+            "message": "WAL segment successfully rotated. Assimilating into lanceDB cold storage."
         }))),
 
         Err(e) => {

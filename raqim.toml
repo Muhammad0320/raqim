@@ -1,6 +1,7 @@
 [daemon]
 topic = "seige_swarm_mesh"
 wal_path = "production.wal"
+manifest_path = "compaction.manifest.json"
 witness_path = "./vault/witnesses"
 aegis_path = "aegis.toml"
 
