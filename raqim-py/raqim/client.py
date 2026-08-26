@@ -32,7 +32,7 @@ class ReplayDivergedError(Exception):
 class RaqimClientError(Exception): 
     """Raised for general Raqim client communication or cryptographic errors."""
     pass
-
+    
 # Task-Local context tracker 
 _execution_step_context: contextvars.ContextVar[int] = contextvars.ContextVar("raqim_step_context", default = 0)
 
