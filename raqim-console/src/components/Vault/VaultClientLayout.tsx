@@ -6,17 +6,24 @@ import { VaultTelemetryRibbon } from './VaultTelemetryRibbon';
 import { UnifiedSearchWorkbench } from './UnifiedSearchWorkbench';
 import { MerkleProofInspector } from './MerkleProofInspector';
 import { VaultTelemetry, VaultSearchResult, ClusterShard } from '../../lib/api';
-import { fetchVaultTelemetry, fetchVaultSearchResults } from '../../actions/vault';
+import { fetchVaultTelemetry, fetchVaultSearchResults, triggerCompactionAction } from '../../actions/vault';
 import { fetchTopology } from '../../actions/admin';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { CheckCircle, AlertCircle } from 'lucide-react';
 
 interface VaultClientLayoutProps {
   initialTelemetry: VaultTelemetry | null;
   initialResults: VaultSearchResult[];
   initialTxId: string | null;
   initialTopology: ClusterShard[];
+}
+
+interface ToastMessage {
+  id: string;
+  type: 'success' | 'error';
+  text: string;
 }
 
 export function VaultClientLayout({
@@ -35,9 +42,19 @@ export function VaultClientLayout({
   const [results, setResults] = useState<VaultSearchResult[]>(initialResults);
   const [selectedTxIdHex, setSelectedTxIdHex] = useState<string | null>(queryTxId);
   const [isLoadingSearch, setIsLoadingSearch] = useState(false);
+  const [isCompacting, setIsCompacting] = useState(false);
   const [shards, setShards] = useState<ClusterShard[]>(initialTopology);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const setStoreTelemetry = useSwarmStore((state) => state.setVaultTelemetry);
+
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts((prev) => [...prev, { id, type, text }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  };
 
   useEffect(() => {
     if (initialTelemetry) setStoreTelemetry(initialTelemetry);
@@ -91,11 +108,46 @@ export function VaultClientLayout({
     router.replace(`/vault?tx_id=${encodeURIComponent(txIdHex)}`, { scroll: false });
   };
 
+  const handleTriggerCompaction = async () => {
+    setIsCompacting(true);
+    try {
+      const res = await triggerCompactionAction();
+      if (res.success) {
+        showToast(
+          'WAL segment rotated. Assimilating into LanceDB in background.',
+          'success'
+        );
+        // Re-fetch /v1/vault/telemetry after 3 seconds to reflect on-disk state
+        setTimeout(async () => {
+          try {
+            const updated = await fetchVaultTelemetry();
+            if (updated) {
+              setTelemetry(updated);
+              setStoreTelemetry(updated);
+            }
+          } catch {
+            // Ignore
+          }
+        }, 3000);
+      } else {
+        showToast(`COMPACTION FAILED: ${res.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`COMPACTION FAILED: ${err.message || 'Daemon unreachable'}`, 'error');
+    } finally {
+      setIsCompacting(false);
+    }
+  };
+
   return (
     <MainLayout title="Forensic Audit Vault // Cryptographic Verifier">
-      <div className="flex flex-col h-full w-full bg-[#080C14] overflow-hidden p-3 gap-3">
-        {/* 1. Vault Telemetry Ribbon */}
-        <VaultTelemetryRibbon telemetry={telemetry} />
+      <div className="flex flex-col h-full w-full bg-zinc-950 overflow-hidden p-3 gap-3">
+        {/* 1. Vault Telemetry Ribbon with Compaction Trigger */}
+        <VaultTelemetryRibbon
+          telemetry={telemetry}
+          onTriggerCompaction={handleTriggerCompaction}
+          isCompacting={isCompacting}
+        />
 
         {/* 2. 2-Column Tactical Workspace */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden">
@@ -118,6 +170,27 @@ export function VaultClientLayout({
               onTxIdChange={handleSelectTxId}
             />
           </div>
+        </div>
+
+        {/* 3. Floating Feedback Toasts */}
+        <div className="fixed bottom-4 left-4 z-50 flex flex-col gap-2 font-mono text-xs select-none">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xs border shadow-2xl animate-in slide-in-from-bottom-2 duration-150 ${
+                toast.type === 'success'
+                  ? 'bg-emerald-950/90 border-emerald-500/80 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                  : 'bg-rose-950/90 border-rose-500/80 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
+              }`}
+            >
+              {toast.type === 'success' ? (
+                <CheckCircle className="w-4 h-4 text-emerald-400" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-400" />
+              )}
+              <span>{toast.text}</span>
+            </div>
+          ))}
         </div>
       </div>
     </MainLayout>

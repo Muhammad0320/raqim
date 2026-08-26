@@ -245,6 +245,18 @@ export async function toggleIngress(): Promise<ApiResponse<{ is_ingress_paused: 
   });
 }
 
+/** POST /v1/admin/compactor/trigger */
+export async function triggerCompaction(): Promise<
+  ApiResponse<{ success: boolean; status?: string; message?: string }>
+> {
+  return request<{ success: boolean; status?: string; message?: string }>(
+    '/v1/admin/compactor/trigger',
+    {
+      method: 'POST',
+    }
+  );
+}
+
 /** GET /v1/system/agents/aliases */
 export async function getAgentAliases(): Promise<ApiResponse<Record<string, string>>> {
   return request<Record<string, string>>('/v1/system/agents/aliases', { method: 'GET' });

@@ -4,6 +4,7 @@ import {
   searchVault,
   getVaultTelemetry as getCanonicalVaultTelemetry,
   getStateProof,
+  triggerCompaction,
 } from '../lib/api';
 
 import type {
@@ -81,4 +82,22 @@ export async function fetchStateProof(txIdHex: string): Promise<StateProofRespon
     proof: null,
     message: res.error || 'Transaction ID not found in active memory batch archives.',
   };
+}
+
+/**
+ * Server Action to trigger manual on-demand WAL compaction into LanceDB.
+ */
+export async function triggerCompactionAction(): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+}> {
+  const res = await triggerCompaction();
+  if (res.success && res.data) {
+    return {
+      success: true,
+      message: res.data.message || 'WAL segment rotated. Assimilating into LanceDB in background.',
+    };
+  }
+  return { success: false, error: res.error || 'Failed to trigger compaction' };
 }
