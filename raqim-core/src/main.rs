@@ -513,13 +513,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // The Autonomous compactor (WAL reaper)
-    let compactor = WalCompactor::new(
+    let compactor = Arc::new(WalCompactor::new(
         &config.wal_path,
+        &config.manifest_path,
         lance_engine.clone(),
         event_tx.clone(),
         wal.cmd_sender.clone(),
-    );
-    compactor.start_daemon();
+    ));
+
+    // Start Autonomous Daemon
+    compactor.clone().start_daemon();
 
     // Channel to talk to the publisher safely accross threads
     let (cortex_tx, mut cortex_rx) = mpsc::unbounded_channel::<Vec<u8>>();
@@ -784,6 +787,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         hot_buffer: hot_buffer.clone(),
         pause_tx: pause_tx.clone(),
+        compactor: compactor.clone(),
     };
 
     let axum_app = build_admin_router(api_state).layer(
