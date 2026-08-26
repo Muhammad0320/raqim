@@ -286,11 +286,11 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
             tokio::spawn(async move {
                 os_state
                     .global_net
-                    .register_agent_capability(&capability.as_str(), move |question_bytes| {
+                    .register_agent_capability(&capability, move |question_bytes| {
                         let request_id = Uuid::new_v4().to_string();
                         let (reply_tx, reply_rx) = oneshot::channel();
 
-                        // Store the wakeup pipe in the dashMap
+                        // Register pending response channel
                         conn_clone
                             .pending_a2a_requests
                             .insert(request_id.clone(), reply_tx);
@@ -309,11 +309,19 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                             });
                         }
 
-                        // ZERO CPU WAIT: Yield OS thread until Python replies. 15 seconds max wait time.
+                        // ZERO CPU WAIT: Suspends thread qith 15-sec timeout waiting for python reply
                         match tokio::runtime::Handle::current()
                             .block_on(timeout(Duration::from_secs(15), reply_rx))
                         {
-                            Ok(Ok(answer)) => answer.0,
+                            Ok(Ok((answer, responder_hex))) => {
+                                // Format structured JSON reply payload for Zenoh query return
+                                let reply_payload = serde_json::json!({
+                                    "responder_hex": responder_hex,
+                                    "answer": answer
+                                });
+
+                                serde_json::to_vec(&reply_payload).unwrap_or(answer)
+                            }
                             _ => {
                                 // Python crashed or too long. Clean up the DashMap to prevent memory leaks.
                                 conn_clone.pending_a2a_requests.remove(&request_id);
@@ -330,7 +338,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
             answer,
             responder_hex,
         } => {
-            // Remove the wakeup ppipe from dashmap and fire the answer into it!
+            // Remove the wakeup pipe from dashmap and fire the answer into it!
             if let Some((_, reply_tx)) = conn.pending_a2a_requests.remove(&request_id) {
                 let _ = reply_tx.send((answer, responder_hex));
             }
@@ -349,7 +357,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
             let conn_clone = conn.clone();
 
             tokio::spawn(async move {
-                // Decode Raw bytes from Hex Containers
+                // Decode Raw bytes from Hex container
                 let cert_bytes = match hex::decode(&capability_cert) {
                     Ok(b) => b,
                     Err(_) => return,
@@ -374,6 +382,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     sig_bytes.copy_from_slice(&signature)
                 }
 
+                // Verify Aegis Lineage Certificate
                 let (agent_hex, group_name) = match os_state_clone
                     .aegis
                     .verify_session_lineage(&cert_bytes, &public_key_bytes)
@@ -416,6 +425,41 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
 
                     return;
                 };
+
+                // Seal outgoing question (Tx_ask) into WAL + Merkle DAG
+                let ask_tx_id = uuid::Uuid::now_v7().as_u128();
+                let ask_state = AgentState {
+                    agent_id: Some(sender_id_bytes),
+                    transaction_id: ask_tx_id,
+                    namespace: format!("/swarm/a2a/ask/{}", capability),
+                    timestamp: current_ts,
+                    status: crate::AgentStatus::ToolExecution,
+                    text: String::from_utf8_lossy(&question).to_string(),
+                };
+
+                let mut aligned_state_buf = rkyv::util::AlignedVec::<16>::new();
+                if let Ok(sb) = rkyv::to_bytes::<rkyv::rancor::Error>(&ask_state) {
+                    aligned_state_buf.extend_from_slice(&sb);
+                }
+
+                if let Ok(archived_ask_state) = rkyv::access::<
+                    <AgentState as rkyv::Archive>::Archived,
+                    rkyv::rancor::Error,
+                >(&aligned_state_buf)
+                {
+                    let _ = execute_raqim_cascade(
+                        archived_ask_state,
+                        os_state_clone.axon.clone(),
+                        os_state_clone.wal.clone(),
+                        os_state_clone.brain.clone(),
+                        os_state_clone.cortex_tx.clone(),
+                        os_state_clone.global_net.clone(),
+                        os_state_clone.event_tx.clone(),
+                        Vec::new(),
+                        Vec::new(),
+                    )
+                    .await;
+                }
 
                 let envelope = A2AEnvelope {
                     sender_id: sender_id_bytes,
