@@ -4,6 +4,7 @@ use std::{
     eprintln, format,
     fs::{self, File},
     io::Read,
+    path::Path,
     println,
     sync::Arc,
 };
@@ -47,6 +48,52 @@ impl WalCompactor {
         }
     }
 
+    /// Recover and finishes any compaction that failed
+    async fn resume_pending_compactions(&self) {
+        let manifest_path = "compaction.manifest.json";
+
+        if let Ok(content) = fs::read_to_string(manifest_path) {
+            if let Ok(manifest) = serde_json::from_str::<CompactionManifest>(&content) {
+                if manifest.state == CompactionState::Pending {
+                    println!(
+                        "\n[COMPACTOR RECOVERY] Interrupted compaction detected for {}. Resuming LanceDB ingestion...",
+                        &manifest.target_file
+                    );
+
+                    self.execute_compaction(&manifest.target_file).await;
+                }
+            }
+        }
+    }
+
+    /// Guarantees the manifest write is immune to torn page corruption
+    fn write_manifest_atomically(path: &str, manifest: &CompactionManifest) {
+        let temp_path = format!("{}.tmp", path);
+        let json_data = serde_json::to_string_pretty(manifest).unwrap();
+        if fs::write(&temp_path, json_data).is_ok() {
+            let _ = fs::rename(&temp_path, path);
+        }
+    }
+
+    /// Read an existing manifest safely on boot
+    pub fn read_manifest(manifest_path: &str) -> Option<CompactionManifest> {
+        if Path::new(manifest_path).exists() {
+            if let Ok(content) = fs::read_to_string(manifest_path) {
+                if let Ok(manifest) = serde_json::from_str::<CompactionManifest>(&content) {
+                    return Some(manifest);
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn clear_manifest(manifest_path: &str) {
+        if Path::new(manifest_path).exists() {
+            let _ = fs::remove_file(manifest_path);
+        }
+    }
+
     pub fn start_daemon(self) {
         tokio::spawn(async move {
             println!("Bismillah. WAL compactor Daemon Active. Monitoring Disk...");
@@ -84,33 +131,6 @@ impl WalCompactor {
                 }
             }
         });
-    }
-
-    /// Recover and finishes any compaction that failed
-    async fn resume_pending_compactions(&self) {
-        let manifest_path = "compaction.manifest.json";
-
-        if let Ok(content) = fs::read_to_string(manifest_path) {
-            if let Ok(manifest) = serde_json::from_str::<CompactionManifest>(&content) {
-                if manifest.state == CompactionState::Pending {
-                    println!(
-                        "\n[COMPACTOR RECOVERY] Interrupted compaction detected for {}. Resuming LanceDB ingestion...",
-                        &manifest.target_file
-                    );
-
-                    self.execute_compaction(&manifest.target_file).await;
-                }
-            }
-        }
-    }
-
-    /// Internal Helper: Guarants the manifest write is immune to torn page corruption
-    fn write_manifest_atomically(path: &str, manifest: &CompactionManifest) {
-        let temp_path = format!("{}.tmp", path);
-        let json_data = serde_json::to_string_pretty(manifest).unwrap();
-        if fs::write(&temp_path, json_data).is_ok() {
-            let _ = fs::rename(&temp_path, path);
-        }
     }
 
     async fn execute_compaction(&self, processing_path: &str) {
@@ -166,9 +186,13 @@ impl WalCompactor {
 
             let entry_slice = &buffer[offset..offset + entry_len];
 
-            match rkyv::access::<<OpLog as Archive>::Archived, rkyv::rancor::Error>(entry_slice) {
+            match rkyv::access::<<Vec<OpLog> as Archive>::Archived, rkyv::rancor::Error>(
+                entry_slice,
+            ) {
                 Ok(archived_log) => {
-                    if let Ok(log) = rkyv::deserialize::<OpLog, rkyv::rancor::Error>(archived_log) {
+                    if let Ok(log) =
+                        rkyv::deserialize::<Vec<OpLog>, rkyv::rancor::Error>(archived_log)
+                    {
                         let payload = format!(
                             "[{:?}] Agent in {} stated {}",
                             log.state.status, log.state.namespace, log.state.text
