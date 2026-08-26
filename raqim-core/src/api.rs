@@ -19,7 +19,6 @@ use futures_util::stream::Stream;
 use futures_util::{SinkExt, stream::StreamExt};
 use serde_json::{Value, json};
 use std::convert::Infallible;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{eprintln, format, println};
 use tokio_stream::wrappers::BroadcastStream;
@@ -36,12 +35,13 @@ use uuid::Uuid;
 
 use crate::aegis::{CapabilityCertificate, QuarantineRecord};
 use crate::axon::{AxonGateKeeper, InclusionProof};
+use crate::compactor::WalCompactor;
 use crate::health::SystemHealth;
 use crate::hot_memory::HotVectorBuffer;
 use crate::lancedb_store::LanceEngine;
 use crate::nucleus::WalEngine;
 use crate::registry::SwarmRegistry;
-use crate::state::SwarmStateRegistry;
+use crate::state::{self, SwarmStateRegistry};
 use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge,
@@ -187,6 +187,8 @@ pub struct ApiState {
 
     pub hot_buffer: Arc<HotVectorBuffer>,
     pub pause_tx: Arc<watch::Sender<bool>>,
+
+    pub compactor: Arc<WalCompactor>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -1635,6 +1637,28 @@ pub async fn get_state_proof_handler(
     }
 }
 
+pub async fn trigger_compaction_endpoint(
+    State(state): State<ApiState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    println!("[ADMIN] Manual on-demand WAL compaction requested via HTTP API... ");
+
+    match state.compactor.trigger_safe_compaction().await {
+        Ok(count) => Ok(Json(serde_json::json!({
+            "success": true,
+            "archived_thoughts": count,
+            "message": format!("Successfully compacted {} thougthts to LanceDB", count),
+        }))),
+
+        Err(e) => {
+            eprintln!("[ADMIN ERROR] On-demand compaction failed: {}", e);
+            Err(ApiError::InternalServerError(format!(
+                "Compaction failed: {}",
+                e
+            )))
+        }
+    }
+}
+
 // Route Builder
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
@@ -1664,6 +1688,10 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/cluster/enclaves", get(cluster_enclaves_endpoint))
         .route("/v1/dashboard/cards", get(dashboard_cards_endpoint))
         .route("/v1/admin/ingress/toggle", post(toggle_ingress_endpoint))
+        .route(
+            "/v1/admin/compactor/trigger",
+            post(trigger_compaction_endpoint),
+        )
         // System & Agent Deployment endpoints
         .route("/v1/system/boot_agent", post(upload_wasm_endpoint))
         .route("/v1/system/health/live", get(sse_health_endpoint))
