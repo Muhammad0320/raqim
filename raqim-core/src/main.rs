@@ -28,7 +28,6 @@ use tower_http::cors::{Any, CorsLayer};
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::{eprintln, fs, println};
 

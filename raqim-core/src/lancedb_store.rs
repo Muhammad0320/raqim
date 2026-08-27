@@ -256,7 +256,7 @@ impl LanceEngine {
             Field::new(
                 "vector",
                 DataType::FixedSizeList(
-                    Arc::new(Field::new("item", DataType::Float32, false)),
+                    Arc::new(Field::new("item", DataType::Float32, true)),
                     self.dims,
                 ),
                 false,
