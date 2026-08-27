@@ -157,7 +157,7 @@ impl WalCompactor {
     }
 
     /// Executes on-demand or automated safe WAL rotatiton and LanceDB assimilation
-    pub async fn trigger_safe_compaction(self: Arc<Self>) -> Result<(), anyhow::Error> {
+    pub async fn trigger_safe_compaction(self: Arc<Self>) -> Result<(usize), anyhow::Error> {
         // Ask the WAL engine to rotate the file and give us the archived filename
         let (reply_tx, reply_rx) = oneshot::channel::<String>();
 
@@ -178,17 +178,14 @@ impl WalCompactor {
         );
 
         // Ingest the rotates segment into lanceDB
-        let compactor_clone = self.clone();
-        tokio::spawn(async move {
-            let count = compactor_clone.execute_compaction(&archived_filename).await;
+        let count = self.execute_compaction(&archived_filename).await;
 
-            println!(
-                "[COMPACTOR] Background task finished: Segment '{}' successfully assimilated ({} thoughts archived) ",
-                archived_filename, count
-            );
-        });
+        println!(
+            "[COMPACTOR] Background task finished: Segment '{}' successfully assimilated ({} thoughts archived) ",
+            archived_filename, count
+        );
 
-        Ok(())
+        Ok(count)
     }
 
     /// The 2PC Ingestion Engine: Decode batches, embed text, archives to LanceDB, and clean up

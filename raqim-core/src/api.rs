@@ -41,12 +41,12 @@ use crate::hot_memory::HotVectorBuffer;
 use crate::lancedb_store::LanceEngine;
 use crate::nucleus::WalEngine;
 use crate::registry::SwarmRegistry;
-use crate::state::{self, SwarmStateRegistry};
+use crate::state::SwarmStateRegistry;
 use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge,
 };
-use crate::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade, utils};
+use crate::{AgentState, IngressEnvelope, OpLog, SystemEvent, execute_raqim_cascade, utils};
 
 // Strongly typed api error system (Zero-Panic Guarantee)
 #[derive(Debug)]
@@ -443,6 +443,37 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                 if let Ok(sb) = rkyv::to_bytes::<rkyv::rancor::Error>(&ask_state) {
                     aligned_state_buf.extend_from_slice(&sb);
                 }
+
+                // Ingest request thought and capture it's exact merkle leaf hash
+                let ask_leaf_hash = if let Ok(archived_ask_state) =
+                    rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(
+                        &aligned_state_buf,
+                    ) {
+                    let (_, batch_opt) = os_state_clone.axon.seal_thought(OpLog {
+                        agent_id: sender_id_bytes,
+                        state: ask_state.clone(),
+                        delta: Vec::new(),
+                        previous_hash: [0u8; 32],
+                        current_hash: [0u8; 32],
+                        entropy_seeds: Vec::new(),
+                        network_responses: Vec::new(),
+                    });
+
+                    if let Some(batch) = batch_opt {
+                        let _ = os_state_clone
+                            .event_tx
+                            .send(SystemEvent::MarkleBatchCrystallized { batch });
+                    }
+
+                    // Compute the leaf hash for parent anchoring
+                    let mut hasher = blake3::Hasher::new_derive_key("raqim.axon.v1.leaf");
+                    hasher.update(&[]);
+                    hasher.update(&sender_id_bytes);
+                    let hash: [u8; 32] = hasher.finalize().into();
+                    hash
+                } else {
+                    [0u8; 32]
+                };
 
                 if let Ok(archived_ask_state) = rkyv::access::<
                     <AgentState as rkyv::Archive>::Archived,
@@ -1642,21 +1673,29 @@ pub async fn trigger_compaction_endpoint(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     println!("[ADMIN] Manual on-demand WAL compaction requested via HTTP API... ");
 
-    match state.compactor.trigger_safe_compaction().await {
-        Ok(()) => Ok(Json(serde_json::json!({
-            "success": true,
-            "status": "PROCESSING_IN_BACKGROUND",
-            "message": "WAL segment successfully rotated. Assimilating into lanceDB cold storage."
-        }))),
+    let compactor = state.compactor.clone();
 
-        Err(e) => {
-            eprintln!("[ADMIN ERROR] On-demand compaction failed: {}", e);
-            Err(ApiError::InternalServerError(format!(
-                "Compaction failed: {}",
-                e
-            )))
+    tokio::spawn(async move {
+        match compactor.trigger_safe_compaction().await {
+            Ok(count) => {
+                println!(
+                    "[ADMIN SUCCESS] Background compaction complete. Archived {} thoughts to LanceDB.",
+                    count
+                )
+            }
+            Err(e) => {
+                eprintln!(
+                    "[ADMIN ERROR] Background compaction encountered an error: {}",
+                    e
+                );
+            }
         }
-    }
+    });
+
+    Ok(Json(serde_json::json!({
+        "success": "ACCEPTED",
+        "message": "WAL rotation and 2PC LanceDB assimilation initiated in background worker."
+    })))
 }
 
 // Route Builder
