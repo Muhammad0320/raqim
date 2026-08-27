@@ -7,10 +7,11 @@ import uuid
 import httpx
 from google import genai
 from raqim import RaqimClient
+
 # ==================================================
 # Configuration and crytographic passport resolution
 # =================================================
-GEMINI_API_KEY  = os.getenv("GEMINII_API_KEY", "")
+GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
 MASTER_KEY_PATH = "./ca-keys/swarm_master.key"
 
 if not os.path.exists(MASTER_KEY_PATH): 
@@ -54,7 +55,7 @@ def generate_synthetic_transactions():
             "is_flagged": False  
             
         })
-    
+
     # Inject Money Laundering Smurfing Attacks: 5 Rapid transfers of $9,950 to Offshore 
     offshore_target = "ACCT_OFFSHORE_8892"
     for j in range(5): 
@@ -200,7 +201,7 @@ async def main():
         print("\n==================================================================")
         print("\n             AGENT 2 FORENSIIC INVESTIGATION REPORT              ")
         print("\n==================================================================")
-        print("==================================================================")
+        print("====================================================================")
         print(f" Beneficiary Target : {investigation_report['beneficiary']}")
         print(f" Total Laundered    : ${investigation_report['total_amount']:,.2f}")
         print(f" Assessed Risk Score: {investigation_report['risk_score']}")
