@@ -423,7 +423,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     if !recovered_logs.is_empty() {
-        // Trailing 1000 thoughts
+        // Trailing 250 thoughts
         let cache_limit = 250.min(recovered_logs.len());
         let recent_logs_slice = &recovered_logs[recovered_logs.len() - cache_limit..];
 
