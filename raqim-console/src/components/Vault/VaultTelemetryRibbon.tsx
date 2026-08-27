@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { VaultTelemetry } from '../../lib/api';
 import { Database, HardDrive, Zap, Layers, Loader2 } from 'lucide-react';
 
@@ -25,7 +25,7 @@ export function VaultTelemetryRibbon({
 
   return (
     <div className="flex flex-col gap-3 w-full shrink-0 select-none">
-      {/* Top Action Ribbon */}
+      {/* Top Action Bar */}
       <div className="flex items-center justify-between gap-3 bg-zinc-950/60 border border-zinc-800/80 rounded-sm px-3.5 py-2">
         <div className="flex items-center gap-2 font-mono text-xs text-zinc-400">
           <Database className="w-4 h-4 text-cyan-400" />
@@ -34,24 +34,26 @@ export function VaultTelemetryRibbon({
           </span>
         </div>
 
-        {/* Force On-Demand Compaction Trigger Lever */}
-        <button
-          onClick={onTriggerCompaction}
-          disabled={isCompacting}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xs bg-zinc-900 hover:bg-emerald-500/10 border border-emerald-500/40 hover:border-emerald-400 text-emerald-300 font-mono text-xs font-bold uppercase transition-all shadow-[0_0_12px_rgba(16,185,129,0.15)] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isCompacting ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-400" />
-              <span>ASSIMILATING WAL SEGMENTS...</span>
-            </>
-          ) : (
-            <>
-              <Zap className="w-3.5 h-3.5 text-emerald-400" />
-              <span>[⚡ FORCE ON-DEMAND COMPACTION]</span>
-            </>
-          )}
-        </button>
+        {/* Trigger WAL Compaction Action Button */}
+        {onTriggerCompaction && (
+          <button
+            onClick={onTriggerCompaction}
+            disabled={isCompacting}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xs border border-cyan-500/30 text-cyan-400 bg-cyan-950/20 hover:bg-cyan-900/40 font-mono text-xs font-bold uppercase transition-all shadow-[0_0_12px_rgba(0,243,255,0.15)] hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {isCompacting ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                <span>[⏳ ROTATING &amp; COMPACTING...]</span>
+              </>
+            ) : (
+              <>
+                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                <span>[⚡ TRIGGER WAL COMPACTION]</span>
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* 4 Telemetry Metric Cards */}

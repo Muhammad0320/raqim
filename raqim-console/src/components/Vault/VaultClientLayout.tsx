@@ -7,11 +7,11 @@ import { UnifiedSearchWorkbench } from './UnifiedSearchWorkbench';
 import { MerkleProofInspector } from './MerkleProofInspector';
 import { VaultTelemetry, VaultSearchResult, ClusterShard } from '../../lib/api';
 import { fetchVaultTelemetry, fetchVaultSearchResults, triggerCompactionAction } from '../../actions/vault';
-import { fetchTopology } from '../../actions/admin';
+import { fetchTopology, fetchDashboardCards } from '../../actions/admin';
 import { useSwarmStore } from '../../lib/store/useSwarmStore';
 import { useSwarmStream } from '../../lib/hooks/useSwarmStream';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { CheckCircle, AlertCircle } from 'lucide-react';
+import { CheckCircle, AlertCircle, Zap, Loader2 } from 'lucide-react';
 
 interface VaultClientLayoutProps {
   initialTelemetry: VaultTelemetry | null;
@@ -47,6 +47,7 @@ export function VaultClientLayout({
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const setStoreTelemetry = useSwarmStore((state) => state.setVaultTelemetry);
+  const setStoreCards = useSwarmStore((state) => state.setDashboardCards);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -109,26 +110,56 @@ export function VaultClientLayout({
   };
 
   const handleTriggerCompaction = async () => {
+    if (isCompacting) return;
     setIsCompacting(true);
     try {
       const res = await triggerCompactionAction();
       if (res.success) {
+        // On HTTP 200/202 response, trigger exact toast notification
         showToast(
-          'WAL segment rotated. Assimilating into LanceDB in background.',
+          'WAL segment rotated. 2PC LanceDB assimilation initiated in background.',
           'success'
         );
-        // Re-fetch /v1/vault/telemetry after 3 seconds to reflect on-disk state
+
+        // Wait 1.5 seconds post-trigger and automatically re-fetch telemetry & dashboard cards
         setTimeout(async () => {
           try {
-            const updated = await fetchVaultTelemetry();
-            if (updated) {
-              setTelemetry(updated);
-              setStoreTelemetry(updated);
+            const [updatedTel, updatedCards] = await Promise.all([
+              fetchVaultTelemetry(),
+              fetchDashboardCards(),
+            ]);
+
+            if (updatedTel) {
+              setTelemetry(updatedTel);
+              setStoreTelemetry(updatedTel);
+            }
+            if (updatedCards) {
+              setStoreCards(updatedCards);
+            }
+          } catch {
+            // Ignore background error
+          }
+        }, 1500);
+
+        // Re-sync again after 3.5 seconds to capture finished 2PC LanceDB assimilation
+        setTimeout(async () => {
+          try {
+            const [updatedTel, updatedCards] = await Promise.all([
+              fetchVaultTelemetry(),
+              fetchDashboardCards(),
+            ]);
+
+            if (updatedTel) {
+              setTelemetry(updatedTel);
+              setStoreTelemetry(updatedTel);
+            }
+            if (updatedCards) {
+              setStoreCards(updatedCards);
             }
           } catch {
             // Ignore
           }
-        }, 3000);
+        }, 3500);
       } else {
         showToast(`COMPACTION FAILED: ${res.error || 'Unknown error'}`, 'error');
       }
@@ -139,8 +170,35 @@ export function VaultClientLayout({
     }
   };
 
+  // Compaction Button styled per specification:
+  // Industrial Zinc-900 border with subtle Amber/Cyan glow on hover
+  // (border-cyan-500/30 text-cyan-400 bg-cyan-950/20 hover:bg-cyan-900/40)
+  const compactionHeaderAction = (
+    <button
+      onClick={handleTriggerCompaction}
+      disabled={isCompacting}
+      title="Rotate active WAL segment and initiate 2PC assimilation into LanceDB"
+      className="border border-cyan-500/30 text-cyan-400 bg-cyan-950/20 hover:bg-cyan-900/40 font-mono text-xs font-bold uppercase transition-all px-3.5 py-1.5 rounded-sm flex items-center gap-2 shadow-[0_0_12px_rgba(0,243,255,0.15)] hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+    >
+      {isCompacting ? (
+        <>
+          <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+          <span>[⏳ ROTATING &amp; COMPACTING...]</span>
+        </>
+      ) : (
+        <>
+          <Zap className="w-3.5 h-3.5 text-cyan-400" />
+          <span>[⚡ TRIGGER WAL COMPACTION]</span>
+        </>
+      )}
+    </button>
+  );
+
   return (
-    <MainLayout title="Forensic Audit Vault // Cryptographic Verifier">
+    <MainLayout
+      title="Forensic Audit Vault // Cryptographic Verifier"
+      headerAction={compactionHeaderAction}
+    >
       <div className="flex flex-col h-full w-full bg-zinc-950 overflow-hidden p-3 gap-3">
         {/* 1. Vault Telemetry Ribbon with Compaction Trigger */}
         <VaultTelemetryRibbon

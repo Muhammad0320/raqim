@@ -86,6 +86,7 @@ export async function fetchStateProof(txIdHex: string): Promise<StateProofRespon
 
 /**
  * Server Action to trigger manual on-demand WAL compaction into LanceDB.
+ * Targets POST /v1/admin/compactor/trigger
  */
 export async function triggerCompactionAction(): Promise<{
   success: boolean;
@@ -93,10 +94,12 @@ export async function triggerCompactionAction(): Promise<{
   error?: string;
 }> {
   const res = await triggerCompaction();
-  if (res.success && res.data) {
+  if (res.success) {
     return {
       success: true,
-      message: res.data.message || 'WAL segment rotated. Assimilating into LanceDB in background.',
+      message:
+        (typeof res.data?.message === 'string' && res.data.message) ||
+        'WAL segment rotated. 2PC LanceDB assimilation initiated in background.',
     };
   }
   return { success: false, error: res.error || 'Failed to trigger compaction' };
