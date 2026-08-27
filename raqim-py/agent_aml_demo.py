@@ -7,10 +7,13 @@ import uuid
 import httpx
 from google import genai
 from raqim import RaqimClient
+from dotenv import load_dotenv
+
 
 # ==================================================
 # Configuration and crytographic passport resolution
 # =================================================
+load_dotenv()
 GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
 MASTER_KEY_PATH = "./ca-keys/swarm_master.key"
 
