@@ -209,10 +209,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "🔒 Active Aegis Quarantine Perimeters ({} Isolated):",
                     records.len()
                 );
-                if agents.is_empty() {
+                if records.is_empty() {
                     println!("  None. All cryptographic gates clear.");
                 } else {
-                    for agent in agents {
+                    for r in records {
                         println!(
                             "   -> Agent:{} | Target: {} | Reason: {}",
                             r["agent_hex"], r["attempted_path"], r["violation_type"]
@@ -284,11 +284,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             action: ClusterAction::Info,
         } => {
             let url = format!("{}/v1/admin/cluster/info", cli.daemon_url);
-            let res = http_client
-                .get(&url)
-                .header("Authorization", format!("Bearer {}", get_auth()))
-                .send()
-                .await?;
+            let res = http_client.get(&url).send().await?;
 
             if res.status().is_success() {
                 let info: serde_json::Value = res.json().await?;
@@ -310,11 +306,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let url = format!("{}/v1/admin/cluster/topology", cli.daemon_url);
 
-            let res = http_client
-                .get(&url)
-                .header("Authorization", format!("Bearer {}", get_auth()))
-                .send()
-                .await?;
+            let res = http_client.get(&url).send().await?;
 
             if res.status().is_success() {
                 let shards: Vec<serde_json::Value> = res.json().await?;
