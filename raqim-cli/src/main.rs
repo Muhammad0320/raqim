@@ -157,7 +157,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Atomic bundling in the Workspace
                         let key_path = workspace.join(format!("{}.pem", agent_alias));
                         let cert_path = workspace.join(format!("{}.cert", agent_alias));
-                        let wasm_path = workspace.join(format!("{}.wasm", agent_alias));
 
                         fs::write(&key_path, signing_key.to_bytes())?;
                         fs::write(&cert_path, cert_bytes)?;
@@ -175,7 +174,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     Ok(response) => {
                         eprintln!(
-                            "   [FAIL] Agent: [{}]: CA Minting Refused - Status Code: {}",
+                            "   [FAIL] Agent: [{}]: CA Minting Rejected - (Status Code: {})",
                             agent_alias,
                             response.status()
                         )
@@ -183,8 +182,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     Err(e) => {
                         eprintln!(
-                            "   [FAIL] Agent: {} - Network Disruption - Trace: {} ",
-                            agent_alias, e
+                            "   [FAIL] Agent: {} - Daemom unreacheable at {} ({}) ",
+                            agent_alias, mint_url, e
                         );
                     }
                 }
@@ -201,20 +200,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             action: AegisAction::List,
         } => {
             let url = format!("{}/v1/admin/quarantine", cli.daemon_url);
-            let res = http_client
-                .get(&url)
-                .header("Authorization", format!("Bearer {}", get_auth()))
-                .send()
-                .await?;
+            let res = http_client.get(&url).send().await?;
 
             if res.status().is_success() {
-                let agents: Vec<String> = res.json().await?;
-                println!("🔒 Active Quarantine Perimeters (Blocklisted Hashes):");
+                let records: Vec<String> = res.json().await?;
+                println!(
+                    "🔒 Active Aegis Quarantine Perimeters ({} Isolated):",
+                    records.len()
+                );
                 if agents.is_empty() {
                     println!("  None. All cryptographic gates clear.");
                 } else {
                     for agent in agents {
-                        println!("   -> {}", agent);
+                        println!(
+                            "   -> Agent:{} | Target: {} | Reason: {}",
+                            r["agent_hex"], r["attempted_path"], r["violation_type"]
+                        );
                     }
                 }
             } else {
