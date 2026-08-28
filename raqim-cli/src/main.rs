@@ -10,17 +10,13 @@ use std::path::Path;
 #[derive(Parser)]
 #[command(
     name = "raqim",
-    about = "Raqim OS Administrative Command Line Core",
-    version = "1.0"
+    about = "Raqim OS Administrative Command Line Interface",
+    version = "1.0.0"
 )]
 struct Cli {
     /// URL of the Raqim OS Daemon Control plane
     #[arg(short, long, default_value = "http://127.0.0.1:8081", global = true)]
     daemon_url: String,
-
-    /// Enterprise License Key for Axum Auth
-    #[arg(short, long, env = "RAQIM_LICENSE_KEY", global = true)]
-    license_key: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -46,11 +42,7 @@ enum Commands {
         agent_id: String,
 
         #[arg(short, long)]
-        tx_id: u64,
-
-        /// Optional path to a JSON ForkConfig file
-        #[arg(short, long)]
-        fork_config: Option<String>,
+        tx_id: Option<String>,
     },
 
     /// Swarm Infrastructure Observability and Telemetry Mapping
@@ -68,7 +60,7 @@ enum KeyAction {
         #[arg(short, long)]
         name: String,
 
-        /// The security group mapping declared in aegis.toml (e.g finance_worker)
+        /// The security group mapping declared in aegis.toml
         #[arg(short, long)]
         group: String,
 
@@ -76,12 +68,8 @@ enum KeyAction {
         count: u32,
 
         /// Target directory for the atomic artifact
-        #[arg(short, long, default_value = "./vault/identities")]
+        #[arg(short, long, default_value = "./ca-keys")]
         out_dir: String,
-
-        /// Execution environment: 'internal' (WASM) or 'external' (Python/MCP/SDK)
-        #[arg(short, long, default_value = "external")]
-        env: String,
     },
 }
 
@@ -89,14 +77,22 @@ enum KeyAction {
 enum AegisAction {
     List,
 
-    Lift { agent_id: String },
+    Lift {
+        agent_id: String,
+        #[arg(
+            short,
+            long,
+            default_value = "Quarantine lifted via administrative CLI"
+        )]
+        reason: String,
+    },
 }
 
 #[derive(Subcommand)]
 enum ClusterAction {
-    /// Extracts raw system performance metrics, transaction counters, and storage status.
+    /// Polls live node viitals, buffer loads, and WAL status
     Info,
-    /// Inspect Active Loro document shards, allocated namespaces and active timelines
+    /// Inspect allocated Loro CRDT memory shards and active timelines
     Topology,
 }
 
