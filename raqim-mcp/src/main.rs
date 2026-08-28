@@ -40,6 +40,7 @@ impl RaqimHandler {
                 private_key_path
             )
         });
+
         let key_array: &[u8; 32] = key_bytes
             .as_slice()
             .try_into()
@@ -200,7 +201,7 @@ impl ServerHandler for RaqimHandler {
                     let state_bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&state)
                         .map_err(|e| {
                             mcp_rust_sdk::Error::Other(format!("State serialization failed: {}", e))
-                        })
+                        })?
                         .into_vec();
 
                     // Mathematically sign the state bytes with our private key.
@@ -210,7 +211,7 @@ impl ServerHandler for RaqimHandler {
                         intent_path,
                         public_key: self.pub_key_bytes,
                         signature,
-                        state_bytes: state_bytes.into_vec(),
+                        state_bytes,
                         capability_cert: self.capability_cert_bytes.clone(),
                     };
 
@@ -221,7 +222,7 @@ impl ServerHandler for RaqimHandler {
                                 "Envelope Serialization failed: {}",
                                 e
                             ))
-                        })
+                        })?
                         .into_vec();
                     let payload_len = (serialized_envelope.len() as u32).to_le_bytes();
 
@@ -262,7 +263,7 @@ impl ServerHandler for RaqimHandler {
                     );
 
                     // AXUM HTTP RAG CALL
-                    let resq = self.http_client.get(&url);
+                    let req = self.http_client.get(&url);
 
                     let response = req
                         .send()
@@ -407,7 +408,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (transport, _message_sender) = StdioTransport::new();
 
-    let handler = Arc::new(RaqimHandler::new(&key_path, &cert_path, &license_key));
+    let handler = Arc::new(RaqimHandler::new(&key_path, &cert_path, 8080, &daemon_url));
     let server = Server::new(Arc::new(transport), handler as Arc<dyn ServerHandler>);
 
     server.start().await?;
