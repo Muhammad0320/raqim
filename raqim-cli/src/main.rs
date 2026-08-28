@@ -1,6 +1,7 @@
 use blake3::Hasher;
 use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
+use ed25519_dalek::ed25519::signature::digest::core_api::AlgorithmName;
 use rand::rngs::OsRng;
 use reqwest::Client;
 use serde_json::json;
@@ -227,64 +228,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         Commands::Aegis {
-            action: AegisAction::Lift { agent_id },
+            action: AegisAction::Lift { agent_id, reason },
         } => {
             let url = format!("{}/v1/admin/quarantine/lift", cli.daemon_url);
             let res = http_client
                 .post(&url)
-                .header("Authorization", format!("Bearer {}", get_auth()))
-                .json(&json!({"agent_id": agent_id}))
-                .send()
-                .await?;
-
-            if res.status().is_success() {
-                println!("🔓 Quarantine lifted for agent: {}", agent_id)
-            } else {
-                eprintln!(
-                    "❌ Operational Error: Reset signal refused by kernel: {}",
-                    res.status()
-                )
-            }
-        }
-
-        // 3. The Time Machine (Reality Forking)
-        Commands::TimeTravel {
-            agent_id,
-            tx_id,
-            fork_config,
-        } => {
-            let mut payload =
-                json!({ "agent_id": agent_id, "target_tx_id": tx_id, "fork_config": null });
-
-            // Override is the admin provides a JSON file with overrides
-            if let Some(config_path) = fork_config {
-                let config_str = fs::read_to_string(config_path)?;
-                let fork_json: serde_json::Value = serde_json::from_str(&config_str)?;
-                payload["fork_config"] = fork_json;
-            }
-
-            let url = format!("{}/v1/admin/time_travel", cli.daemon_url);
-            println!(
-                "⌛ Initializing Time Travel for {} to TxID {}...",
-                agent_id, tx_id
-            );
-
-            let res = http_client
-                .post(&url)
-                .header("Authorization", format!("Bearer {}", get_auth()))
-                .json(&payload)
+                .json(&json!({"agent_hex": agent_id, "system_prompt_override": reason}))
                 .send()
                 .await?;
 
             if res.status().is_success() {
                 println!(
-                    "⚡ Isolation Matrix Deployed. Replay Successfully forked onto independent thread."
+                    "🔓 Quarantine lifted and context re-seeded for agent: {}",
+                    agent_id
                 );
             } else {
                 eprintln!(
-                    "❌ Temporal Exception: Kernel refused simulation launch: {}",
+                    "❌ Operational Error: Reset signal refused by kernel: {}",
                     res.status()
                 );
+            }
+        }
+
+        // 3. Historical timeline Inspection
+        Commands::TimeTravel { agent_id, tx_id: _ } => {
+            let url = format!(
+                "{}/v1/admin/time_travel/timeline/{}",
+                cli.daemon_url, agent_id
+            );
+
+            let res = http_client.get(&url).send().await?;
+
+            if res.status().is_success() {
+                let timeline: Vec<serde_json::Value> = res.json().await?;
+                println!(" ⌛ Historical Causal Timeline for Agent [{}]", agent_id);
+                if timeline.is_empty() {
+                    println!("  No commited states found for this identity");
+                } else {
+                    for (idx, node) in timeline.iter().enumerate() {
+                        println!(
+                            "  Step #{:02} | Tx: 0x{:032x} | Status: {:<12} | Payload: {}",
+                            idx + 1,
+                            node["tx_id"].as_u64().unwrap_or(0),
+                            node["agent_status"].as_str().unwrap_or(""),
+                            node[" payload_preview"].as_str().unwrap_or("")
+                        );
+                    }
+                }
+            } else {
+                eprintln!("❌ Timeline query failed: HTTP {}", res.status());
             }
         }
 
