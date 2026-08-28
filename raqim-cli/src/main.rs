@@ -290,14 +290,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let info: serde_json::Value = res.json().await?;
                 println!("🌐 Raqim Core Kernel Metrics:");
                 println!("  Node Identity Hash: {}", info["node_id"]);
-                println!("  Total Swarm Commits : TxID {}", info["highest_tx_buffer"]);
-                println!("  Inflight Bufer Load: {} items", info["buffer_load"]);
-                println!("  Disk WAL Footprint  : {} bytes ", info["wal_bytes"]);
+                println!("  Highest Transaction: {}", info["highest_tx_id"]);
+                println!(
+                    "  Active WAL Size: {:.2}MB ({} bytes)",
+                    info["wal_size_mb"].as_f64().unwrap_or(0.0),
+                    info["wal_bytes"]
+                );
+                println!(
+                    "  Cumulative CRRDT Ops  : {}  ",
+                    info["cumulative_crdt_ops"]
+                );
             } else {
-                eprintln!(
-                    "❌  Telemetry Failure: Failed to poll information stream: {}",
-                    res.status()
-                )
+                eprintln!("❌  Telemetry query failed: HTTP {}", res.status())
             }
         }
 
@@ -310,17 +314,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if res.status().is_success() {
                 let shards: Vec<serde_json::Value> = res.json().await?;
-                println!("🧠 Allocated Swarm Brain Shards  (Loro Documents): ");
-                for shard in shards {
-                    println!("  Shard Space Namespace: [{}]", shard["namespace"]);
-                    println!("  Active Peer Timelines: {}", shard["active_timelines"]);
-                    println!("  Total Memory Size: {} bytes", shard["memory_footprint"]);
+                println!("🧠 Allocated Swarm Brain Shards  (Loro CRDT): ");
+                for s in shards {
+                    println!(
+                        "  Shard Space: [{:<20}] | Timelines: {} | Ops: {:<8} | Est. RAM: {:.2} MB",
+                        s["namespace"].as_str().unwrap_or(""),
+                        s["active_timelines"],
+                        s["total_crdt_operations"],
+                        s["estimated_ram_mb"].as_f64().unwrap_or(0.0)
+                    )
                 }
             } else {
-                eprintln!(
-                    "❌  Telemetry Failure: Failed to traverse sharded state table: {}",
-                    res.status()
-                );
+                eprintln!("❌  Topology query failed: HTTP {}", res.status());
             }
         }
     }
