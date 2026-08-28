@@ -4,8 +4,8 @@ use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use reqwest::Client;
 use serde_json::json;
-use std::fs;
 use std::path::Path;
+use std::{fs, println};
 
 #[derive(Parser)]
 #[command(
@@ -101,13 +101,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let http_client = Client::builder().build()?;
 
-    // Helper Closure to inject the Enterprise JWT.
-    let get_auth = || -> String {
-        cli.license_key
-            .clone()
-            .expect("FATAL: --license_key or RAQIM_LICENSE_KEY env variable required")
-    };
-
     match &cli.command {
         // 1. Crytographic Key Generation
         Commands::Keys {
@@ -117,13 +110,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     group,
                     count,
                     out_dir,
-                    env,
                 },
         } => {
+            println!("==========================================================");
             println!("Bismillah. Initiating Sovereign Fleet Forge... ");
-            println!("Target Group [{}] ", group);
-            println!("Requested Size [{}]", count);
-            println!("Environmental Scope [{}]", env);
+            println!("Target Security Group [{}] ", group);
+            println!("Requested Fleet Size [{}]", count);
+            println!("Output Directory [{}]", out_dir);
+            println!("===========================================================");
 
             let workspace = Path::new(out_dir);
             fs::create_dir_all(workspace)?;
@@ -133,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for i in 1..=*count {
                 let agent_alias: String = if *count > 1 {
-                    format!("{}_{:02}", name.clone(), i)
+                    format!("{}_{:02}", name, i)
                 } else {
                     name.clone()
                 };
@@ -146,7 +140,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Identity Hash Derivation
                 let mut hasher = Hasher::new_derive_key("raqim.agent.v1.identity");
                 hasher.update(&public_key_bytes);
-
                 let mut derived_16_bytes = [0u8; 16];
                 hasher.finalize_xof().fill(&mut derived_16_bytes);
                 let agent_hex = hex::encode(derived_16_bytes);
@@ -154,14 +147,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Request Capability passport from the Daemon Control Plane
                 let payload = json!({"agent_hex": agent_hex.clone(), "group": group.clone() });
 
-                let res = http_client
-                    .post(&mint_url)
-                    .header("Authorization", format!("Bearer {}", get_auth()))
-                    .json(&payload)
-                    .send()
-                    .await;
+                let req = http_client.post(&mint_url).json(&payload);
 
-                match res {
+                match req.send().await {
                     Ok(response) if response.status().is_success() => {
                         let cert_hex: String = response.json().await?;
                         let cert_bytes = hex::decode(cert_hex)?;
@@ -173,11 +161,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         fs::write(&key_path, signing_key.to_bytes())?;
                         fs::write(&cert_path, cert_bytes)?;
-
-                        // Create a dummy WASM file to satisfy hot-reloader schema requirement
-                        if env == "internal" && !wasm_path.exists() {
-                            fs::write(&wasm_path, b"// Raqim WASM Plugin Scaffold")?;
-                        }
 
                         // Set strict Unix permissions for the private key
                         #[cfg(unix)]
