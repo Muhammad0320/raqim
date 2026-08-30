@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Create non-root unprivileged service user
 RUN groupadd -g 10001 raqim && \
-    useradd -u -g raqim -d /var/lib/raqim -m -s /sbin/nologin raqim
+    useradd -u -10001 -g raqim -d /var/lib/raqim -m -s /sbin/nologin raqim
 
 # Establish persistent storage diirectories with non-root ownership 
 WORKDIR /var/lib/raqim 

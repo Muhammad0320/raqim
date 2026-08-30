@@ -18,6 +18,7 @@ from typing import (
 
 import blake3
 import httpx
+import concurrent.futures
 import websockets
 import zenoh
 
@@ -201,7 +202,6 @@ class RaqimClient:
             resp.raise_for_status()
             return resp.json()
 
-    
     # @raqim.trace DECORATOR 
     def trace(self, namespace: str = "/default", custom_signature: Optional[str] = None) -> Callable[..., Any]: 
         """ 
@@ -294,22 +294,45 @@ class RaqimClient:
                         target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
                         
                     # For sync functions, bridge to async execution via loop runner
-                    loop = self._get_or_create_event_loop()
-                    
-                    if self.mode == "replay" and not self.is_forked: 
-                        cached = loop.run_until_complete(
-                            self._fetch_recorded_effect(step, call_sig_hex)
-                        ) 
-                        if cached is not None: 
-                            print(f"[RAQIM REPLAY] Step {step} (Sync) replayed from WAL ($0 API cost).")
-                            return cached 
+                    try: 
+                        running_loop = asyncio.get_running_loop()
+                    except: 
+                        running_loop = None 
+                    if running_loop and running_loop.is_running():
+                        # Scenario 1: Sync function called inside active async loop (e.g. inside main())
+                        if self.mode == "replay" and not self.is_forked: 
+                            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                                cached = pool.submit(lambda: asyncio.run(self._fetch_recorded_effect(step, call_sig_hex))).result()
+                            
+                            if cached is not None: 
+                                print(f"[RAQIM REPLAY] Step {step} (Sync) replayed from WAL ($0 API cost).")
+                                return cached 
 
-                        self._handle_divergence(step, call_sig_hex, namespace)
-                        target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
-                    
-                    result = fn(*args, **kwargs)
-                    loop.run_until_complete(self._persist_effect(step, call_sig_hex, result, target_ns))
-                    return result 
+                            self._handle_divergence(step, call_sig_hex, namespace)
+                            target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+                        
+                        result = fn(*args, **kwargs)
+                        # Schedule persistence without blocking the running loop
+                        asyncio.create_task(self._persist_effect(step, call_sig_hex, result, target_ns))
+                        return result
+                    else:
+                        # Scenario 2: Sync function called from standard synchronous context
+                        loop = self._get_or_create_event_loop()
+                        
+                        if self.mode == "replay" and not self.is_forked: 
+                            cached = loop.run_until_complete(
+                                self._fetch_recorded_effect(step, call_sig_hex)
+                            ) 
+                            if cached is not None: 
+                                print(f"[RAQIM REPLAY] Step {step} (Sync) replayed from WAL ($0 API cost).")
+                                return cached 
+
+                            self._handle_divergence(step, call_sig_hex, namespace)
+                            target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+                        
+                        result = fn(*args, **kwargs)
+                        loop.run_until_complete(self._persist_effect(step, call_sig_hex, result, target_ns))
+                        return result 
                 
                 return sync_wrapper
 
@@ -375,7 +398,11 @@ class RaqimClient:
         
     def _get_or_create_event_loop(self) -> asyncio.AbstractEventLoop: 
         try: 
-            return asyncio.get_event_loop
+            loop = asyncio.get_event_loop() 
+            if loop.is_closed(): 
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            return loop 
         except RuntimeError: 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
