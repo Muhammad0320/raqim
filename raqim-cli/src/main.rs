@@ -1,7 +1,6 @@
 use blake3::Hasher;
 use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
-use ed25519_dalek::ed25519::signature::digest::core_api::AlgorithmName;
 use rand::rngs::OsRng;
 use reqwest::Client;
 use serde_json::json;

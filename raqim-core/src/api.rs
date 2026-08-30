@@ -439,46 +439,22 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                     text: String::from_utf8_lossy(&question).to_string(),
                 };
 
-                let mut aligned_state_buf = rkyv::util::AlignedVec::<16>::new();
+                let mut aligned_ask_buf = rkyv::util::AlignedVec::<16>::new();
                 if let Ok(sb) = rkyv::to_bytes::<rkyv::rancor::Error>(&ask_state) {
-                    aligned_state_buf.extend_from_slice(&sb);
+                    aligned_ask_buf.extend_from_slice(&sb);
                 }
 
-                // Ingest request thought and capture it's exact merkle leaf hash
-                let ask_leaf_hash = if let Ok(archived_ask_state) =
-                    rkyv::access::<<AgentState as rkyv::Archive>::Archived, rkyv::rancor::Error>(
-                        &aligned_state_buf,
-                    ) {
-                    let (_, batch_opt) = os_state_clone.axon.seal_thought(OpLog {
-                        agent_id: sender_id_bytes,
-                        state: ask_state.clone(),
-                        delta: Vec::new(),
-                        previous_hash: [0u8; 32],
-                        current_hash: [0u8; 32],
-                        entropy_seeds: Vec::new(),
-                        network_responses: Vec::new(),
-                    });
+                // Compute deterministic leaf hash of the questionfor causal chaining
+                let mut ask_hasher = blake3::Hasher::new_derive_key("raqim.axon.v1.leaf");
+                ask_hasher.update(&aligned_ask_buf);
+                ask_hasher.update(&sender_id_bytes);
+                let ask_leaf_hash: [u8; 32] = ask_hasher.finalize().into(); 
 
-                    if let Some(batch) = batch_opt {
-                        let _ = os_state_clone
-                            .event_tx
-                            .send(SystemEvent::MarkleBatchCrystallized { batch });
-                    }
-
-                    // Compute the leaf hash for parent anchoring
-                    let mut hasher = blake3::Hasher::new_derive_key("raqim.axon.v1.leaf");
-                    hasher.update(&[]);
-                    hasher.update(&sender_id_bytes);
-                    let hash: [u8; 32] = hasher.finalize().into();
-                    hash
-                } else {
-                    [0u8; 32]
-                };
 
                 if let Ok(archived_ask_state) = rkyv::access::<
                     <AgentState as rkyv::Archive>::Archived,
                     rkyv::rancor::Error,
-                >(&aligned_state_buf)
+                >(&aligned_ask_buf)
                 {
                     let _ = execute_raqim_cascade(
                         archived_ask_state,
@@ -525,16 +501,20 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                             .unwrap_or_default()
                             .as_secs() as i64;
 
+                       //Embed ask_tx_id and parent leaf hash into oreply payload
+                       let anchored_reply_payload = serde_json::json!({
+                        "causal_parent_tx": format!("{:032x}", ask_tx_id), 
+                        "causal_parent_hash": hex::encode(ask_leaf_hash),
+                        "responder_hex": responder_hex, 
+                        "answer": String::from_utf8_lossy(&answer)
+                       });
+
                         let reply_state = AgentState {
                             agent_id: Some(sender_id_bytes),
                             transaction_id: reply_tx_id,
                             timestamp: reply_ts,
                             status: crate::AgentStatus::Reasoning,
-                            text: format!(
-                                "[Responder: {}] {}",
-                                responder_hex,
-                                String::from_utf8_lossy(&answer)
-                            ),
+                            text: anchored_reply_payload.to_string(),
                             namespace: format!("/swarm/a2a/reply/{}", capability),
                         };
 
