@@ -89,7 +89,7 @@ class CanonicalSerializer:
         canonical_str = cls.canonical_json(normalized_payload)
         
         # 4. Compute 32-byte BLAKE3 Hash using Domain Separation Key
-        hasher = blake3.blake3(derive_key="raqim.effect.v1.signature")
+        hasher = blake3.blake3(derive_key_context="raqim.effect.v1.signature")
         hasher.update(canonical_str.encode("utf-8"))
         call_sig_hash = hasher.digest(length=32)
         
@@ -108,8 +108,8 @@ class RaqimClient:
         self.crypto_core = RaqimCryptoCore(private_key_path, cert_path)
 
        # Mathematically derive 16-byte Agent ID via Blake3 Domain Separation
-        public_key_bytes = bytes(self.crypto_core.public_key_bytes)
-        derived_16_bytes = blake3.blake3(public_key_bytes, derive_key="raqim.agent.v1.identity").digest(length=16)
+        public_key_bytes = bytes(self.crypto_core.pub_key_bytes)
+        derived_16_bytes = blake3.blake3(public_key_bytes, derive_key_context="raqim.agent.v1.identity").digest(length=16)
        
         # The 32-character hex string representing the 16-bytes
         self.agent_hex = derived_16_bytes.hex()
@@ -473,7 +473,7 @@ def verify_state_proof_offline(payload_bytes: bytes, agent_id_str: str, proof_di
     agent_id_bytes = bytes.fromhex(agent_id_str)
     
     # Recompute leaf hash 
-    hasher = blake3.blake3(derive_key="raqim.axon.v1.leaf")
+    hasher = blake3.blake3(derive_key_context="raqim.axon.v1.leaf")
     hasher.update(payload_bytes)
     hasher.update(agent_id_bytes)
     current_hash = hasher.digest(length=32)
@@ -484,7 +484,7 @@ def verify_state_proof_offline(payload_bytes: bytes, agent_id_str: str, proof_di
     for sibling_hex in proof_dict["sibling_hashes_hex"]: 
         sibling_bytes = bytes.fromhex(sibling_hex) 
         
-        node_hasher = blake3.blake3(derive_key="raqim.axon.v1.node")
+        node_hasher = blake3.blake3(derive_key_context="raqim.axon.v1.node")
         if index % 2 == 0: 
             node_hasher.update(current_hash)
             node_hasher.update(sibling_bytes)

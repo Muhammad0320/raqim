@@ -3,9 +3,19 @@ use clap::{Parser, Subcommand};
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::Path;
 use std::{fs, println};
+
+#[derive(Clone, Debug, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize)]
+pub struct QuarantineRecord {
+    pub agent_hex: String,
+    pub violation_type: String,
+    pub attemped_path: String,
+    pub payload_preview: String,
+    pub timestamp: u64,
+}
 
 #[derive(Parser)]
 #[command(
@@ -203,7 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let res = http_client.get(&url).send().await?;
 
             if res.status().is_success() {
-                let records: Vec<String> = res.json().await?;
+                let records: Vec<QuarantineRecord> = res.json().await?;
                 println!(
                     "🔒 Active Aegis Quarantine Perimeters ({} Isolated):",
                     records.len()
@@ -214,7 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for r in records {
                         println!(
                             "   -> Agent:{} | Target: {} | Reason: {}",
-                            r["agent_hex"], r["attempted_path"], r["violation_type"]
+                            r.agent_hex, r.attemped_path, r.violation_type,
                         );
                     }
                 }
