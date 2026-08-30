@@ -201,8 +201,8 @@ class RaqimClient:
             resp.raise_for_status()
             return resp.json()
 
+    
     # @raqim.trace DECORATOR 
-# @raqim.trace DECORATOR 
     def trace(self, namespace: str = "/default", custom_signature: Optional[str] = None) -> Callable[..., Any]: 
         """ 
         @raqim.trace Decorator: 
@@ -314,8 +314,9 @@ class RaqimClient:
                 return sync_wrapper
 
         return decorator
+   
     # Internal Effect Engine Helpers
-    async def _fetch_recorded_effect(self, step_ordinal: int, call_sig_hex: str) -> Optional[Any]:
+    async def _fetch_recorded_effect(self, step_ordinal: int, call_sig_hex  : str) -> Optional[Any]:
         """Fetches recorded effect from daemon. Returns None if signature diverged."""
         async with httpx.AsyncClient() as http: 
             try: 
