@@ -1,9 +1,44 @@
-use ::raqim_core::{AgentState, AgentStatus, IngressEnvelope, generate_uuidv7_txid};
 use ed25519_dalek::{Signer, SigningKey};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-
+use rkyv::{Archive, Deserialize, Serialize};
+use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// The fundamental unit of our Flight Recorder.
+#[derive(
+    Archive, Deserialize, Serialize, Debug, PartialEq, Clone, SerdeDeserialize, SerdeSerialize,
+)]
+pub struct AgentState {
+    pub agent_id: Option<[u8; 16]>,
+    pub transaction_id: u128,
+
+    pub timestamp: i64,
+    pub status: AgentStatus,
+
+    pub text: String,
+    pub namespace: String,
+}
+
+// The current execution state of the agent in the swarm.
+#[derive(
+    Archive, Deserialize, Serialize, Debug, PartialEq, Clone, SerdeDeserialize, SerdeSerialize,
+)]
+pub enum AgentStatus {
+    Idle,
+    Reasoning,     // Waiting on LLM token generation
+    ToolExecution, // Executing an external API or tool
+    Halted,        // Interdicted by the Aegis security layer
+}
+
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+pub struct IngressEnvelope {
+    pub intent_path: String,
+    pub public_key: [u8; 32],
+    pub signature: [u8; 64],
+    pub state_bytes: Vec<u8>,
+    pub capability_cert: Vec<u8>,
+}
 
 /// The Python Class wrapping the Rust Cryptography
 #[pyclass]
@@ -69,7 +104,7 @@ impl RaqimCryptoCore {
         let state = AgentState {
             agent_id: Some(agent_id_array),
             namespace: intent_path.to_string(),
-            transaction_id: generate_uuidv7_txid(),
+            transaction_id: uuid::Uuid::now_v7().as_u128(),
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()

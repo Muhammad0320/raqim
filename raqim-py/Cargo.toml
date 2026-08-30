@@ -17,3 +17,4 @@ pyo3 = { version = "0.28.3", features = ["extension-module"] }
 hex =  "0.4"
 blake3 = "1.5"
 uuid = {version = "1.10", features = ["v7"] }
+serde = { version = "1.0", features = ["derive"] }
