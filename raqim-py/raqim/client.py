@@ -202,21 +202,22 @@ class RaqimClient:
             return resp.json()
 
     # @raqim.trace DECORATOR 
-    def trace(self, namespace: str = "/default", custom_signature: Optional[str] = None ) -> Callable[..., Any]: 
+# @raqim.trace DECORATOR 
+    def trace(self, namespace: str = "/default", custom_signature: Optional[str] = None) -> Callable[..., Any]: 
         """ 
         @raqim.trace Decorator: 
         Wraps any sync function, async coroutine, or async streaming generator. 
         - In 'record' mode: Runs fn live, records result to Raqim WAL. 
         - In 'replay' mode: Bypasses execution, fetches output from WAL ($0 API cost). 
-        - On code change: Autoo-forks execution into a parallel universe branch
+        - On code change: Auto-forks execution into a parallel universe branch.
         """
         def decorator(fn: Callable[..., Any]) -> Callable[..., Any]: 
             if inspect.isasyncgenfunction(fn): 
-                # path A: Async Generator (streeaming LLM token)
+                # Path A: Async Generator (Streaming LLM tokens)
                 @functools.wraps(fn)
                 async def async_gen_wrapper(*args: Any, **kwargs: Any) -> AsyncGenerator[Any, None]:
                     step = _execution_step_context.get()
-                    _execution_step_context.set(step+1)
+                    _execution_step_context.set(step + 1)
                     
                     call_sig_hex, _ = CanonicalSerializer.derive_call_signature_hash(fn, args, kwargs, custom_signature)
                     
@@ -225,16 +226,16 @@ class RaqimClient:
                         target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
 
                     # Replay Check
-                    if self.mode == "replay" and not self.is_forked : 
+                    if self.mode == "replay" and not self.is_forked: 
                         cached = await self._fetch_recorded_effect(step, call_sig_hex)
                         if cached is not None: 
-                            print(f"[RAQIM REPLAY] Step {step}. (Stream) replayed from WAL ($0 API cost).")
+                            print(f"[RAQIM REPLAY] Step {step} (Stream) replayed from WAL ($0 API cost).")
                             for chunk in cached: 
                                 yield chunk
                             return 
                         
                         # Divergence Triggered
-                        self._handle_divergence(self, call_sig_hex, namespace)
+                        self._handle_divergence(step, call_sig_hex, namespace)
                         target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
 
                     # Live Execution & accumulation
@@ -249,7 +250,7 @@ class RaqimClient:
                 return async_gen_wrapper
             
             elif asyncio.iscoroutinefunction(fn): 
-                # Path B: Stadard Async Coroutine
+                # Path B: Standard Async Coroutine
                 @functools.wraps(fn) 
                 async def async_wrapper(*args: Any, **kwargs: Any) -> Any: 
                     step = _execution_step_context.get()
@@ -259,16 +260,14 @@ class RaqimClient:
                     
                     target_ns = namespace
                     if self.is_forked: 
-                        target_ns = f"phantom_{namespace}_{self.agent_hex}_step_{step}"
-                    
+                        target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
                     
                     # Replay Check
                     if self.mode == "replay" and not self.is_forked: 
                         cached = await self._fetch_recorded_effect(step, call_sig_hex)
                         if cached is not None: 
-                            print(f"[RAQIM REPLAY] Step {step} replayed from WAL ($0 API cost) ")
+                            print(f"[RAQIM REPLAY] Step {step} replayed from WAL ($0 API cost).")
                             return cached
-                        
                         
                         # Divergence Triggered
                         self._handle_divergence(step, call_sig_hex, namespace)
@@ -280,43 +279,41 @@ class RaqimClient:
                     return result
                 
                 return async_wrapper
+            
             else: 
                 # Path C: Synchronous function
                 @functools.wraps(fn)
                 def sync_wrapper(*args: Any, **kwargs: Any) -> Any: 
-                    @functools.wraps(fn)
-                    def sync_wrapper(*args: Any, **kwargs: Any) -> Any: 
-                        step = _execution_step_context.get()
-                        _execution_step_context.set(step+1)
-                        
-                        call_sig_hex, _ = CanonicalSerializer.derive_call_signature_hash(fn, args, kwargs, custom_signature)
-                        
-                        target_ns = namespace
-                        if self.is_forked:
-                            target = f"phantom_{namespace}_{self.agent_hex}_step{step}"
-                            
-                        # For sync functions, bridge to async execution via loop runner
-                        loop = self._get_or_create_event_loop()
-                        
-                        if self.mode == "replay" and not self.is_forked: 
-                            cached = loop.run_until_complete(
-                                self._fetch_recorded_effect(step, call_sig_hex)
-                            ) 
-                            if cached is not None: 
-                                print(f"[RAQIM REPLA] Step {step} (Sync) replayed from WAL ($0 API cost.) "  )
-                                return cached 
-
-                            self._handle_divergence(step, call_sig_hex, namespace)
-                            target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
-                        
-                        result = fn(*args, **kwargs)
-                        loop.run_until_complete(self._persist_effect(step, call_sig_hex, result, target_ns))
-                        return result 
+                    step = _execution_step_context.get()
+                    _execution_step_context.set(step + 1)
                     
-                    return sync_wrapper
-                
-                return decorator
+                    call_sig_hex, _ = CanonicalSerializer.derive_call_signature_hash(fn, args, kwargs, custom_signature)
+                    
+                    target_ns = namespace
+                    if self.is_forked:
+                        target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+                        
+                    # For sync functions, bridge to async execution via loop runner
+                    loop = self._get_or_create_event_loop()
+                    
+                    if self.mode == "replay" and not self.is_forked: 
+                        cached = loop.run_until_complete(
+                            self._fetch_recorded_effect(step, call_sig_hex)
+                        ) 
+                        if cached is not None: 
+                            print(f"[RAQIM REPLAY] Step {step} (Sync) replayed from WAL ($0 API cost).")
+                            return cached 
 
+                        self._handle_divergence(step, call_sig_hex, namespace)
+                        target_ns = f"phantom_{namespace}_{self.agent_hex}_step{step}"
+                    
+                    result = fn(*args, **kwargs)
+                    loop.run_until_complete(self._persist_effect(step, call_sig_hex, result, target_ns))
+                    return result 
+                
+                return sync_wrapper
+
+        return decorator
     # Internal Effect Engine Helpers
     async def _fetch_recorded_effect(self, step_ordinal: int, call_sig_hex: str) -> Optional[Any]:
         """Fetches recorded effect from daemon. Returns None if signature diverged."""
