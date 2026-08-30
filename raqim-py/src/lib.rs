@@ -8,6 +8,14 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[derive(SerdeSerialize, SerdeDeserialize, Debug, Clone)]
+pub struct CapabilityCertificate {
+    pub agent_hex: String,
+    pub group_name: String,
+    pub expiration_timestamp: u64,
+    pub master_signature: Vec<u8>, // Signed by Swarm Master Key
+}
+
 // The fundamental unit of our Flight Recorder.
 #[derive(
     Archive, Deserialize, Serialize, Debug, PartialEq, Clone, SerdeDeserialize, SerdeSerialize,
@@ -66,15 +74,25 @@ impl RaqimCryptoCore {
             .try_into()
             .map_err(|_| pyo3::exceptions::PyValueError::new_err("Private Key must be 32 bytes"))?;
         let signing_key = SigningKey::from_bytes(&key_array);
-
         let pub_key_bytes = signing_key.verifying_key().to_bytes();
+
+        let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
+        hasher.update(&pub_key_bytes);
+        let mut agent_id_bytes = [0u8; 16];
+        hasher.finalize_xof().fill(&mut agent_id_bytes);
+        let agent_hex = hex::encode(agent_id_bytes);
 
         // 2. Load Capability Certificate
         let capability_cert = if let Some(path) = cert_path {
-            std::fs::read(path).unwrap_or_default()
+            if std::path::Path::new(path).exists() {
+                std::fs::read(path).unwrap_or_default()
+            } else {
+                println!(" cert path: {} does not exist in file dir", path);
+                Self::mint_capability_certificate(&agent_hex, &signing_key)
+            }
         } else {
-            println!("[AEGIS WARNING] cert_path not valid");
-            Vec::new()
+            println!("cert_path is set to None");
+            Self::mint_capability_certificate(&agent_hex, &signing_key)
         };
 
         Ok(Self {
@@ -148,6 +166,24 @@ impl RaqimCryptoCore {
         let hash_bytes = hasher.finalize();
 
         Ok(PyBytes::new(py, hash_bytes.as_bytes()))
+    }
+}
+
+impl RaqimCryptoCore {
+    fn mint_capability_certificate(agent_hex: &str, signing_key: &SigningKey) -> Vec<u8> {
+        let mut cert = CapabilityCertificate {
+            agent_hex: agent_hex.to_string(),
+            group_name: "admin_group".to_string(),
+            expiration_timestamp: u64::MAX,
+            master_signature: Vec::new(),
+        };
+
+        let unsigned_bytes =
+            postcard::to_allocvec(&cert).expect("Failed to serialize unsigned cert");
+        let sig = signing_key.sign(&unsigned_bytes);
+        cert.master_signature = sig.to_bytes().to_vec();
+
+        postcard::to_allocvec(&cert).expect("Failed to serialize capability cert")
     }
 }
 

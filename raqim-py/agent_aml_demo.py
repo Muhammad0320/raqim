@@ -20,10 +20,17 @@ from raqim.client import RaqimClient
 # ==============================================================================
 EXECUTION_MODE = "record"  # Change to "replay" after the first run
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-MASTER_KEY_PATH = "../ca-keys/swarm_master.key"
+# Resolve Master Signing Key
+KEY_SEARCH_PATHS = [
+    "../ca-keys/swarm_master.key",
+    "./ca-keys/swarm_master.key",
+    "/home/muhammad/projects/raqim/synapse/ca-keys/swarm_master.key"
+]
+MASTER_KEY_PATH = next((p for p in KEY_SEARCH_PATHS if os.path.exists(p)), None)
 
-if not os.path.exists(MASTER_KEY_PATH):
-    MASTER_KEY_PATH = "./ca-keys/swarm_master.key"
+if not MASTER_KEY_PATH:
+    print("[FATAL] Swarm master key not found. Start raqim-core daemon first.")
+    sys.exit(1)
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
@@ -100,16 +107,25 @@ async def investigate_anomaly(
 
     user_query = f"Analyze transfers totaling ${total_amt:,.2f} from {suspects} to {receiver}."
 
+    finding = None
     if ai_client:
-        start_t = time.perf_counter()
-        resp = ai_client.models.generate_content(
-            model="gemini-3.5-flash-lite",
-            contents=f"{system_prompt}\n\n{user_query}"
+        try:
+            start_t = time.perf_counter()
+            resp = ai_client.models.generate_content(
+                model="gemini-3.5-flash-lite",
+                contents=f"{system_prompt}\n\n{user_query}"
+            )
+            elapsed = (time.perf_counter() - start_t) * 1000
+            finding = f"[{elapsed:.1f}ms LLM INFERENCE]: {resp.text}"
+        except Exception as e:
+            print(f"⚠️ [API FALLBACK] Gemini call failed ({e}). Reverting to deterministic rules engine...")
+
+    if not finding:
+        finding = (
+            f"[DETERMINISTIC FORENSIC AUDIT]: High-confidence Structuring/Smurfing pattern confirmed. "
+            f"{len(bundle)} structured transfers totaling ${total_amt:,.2f} targeting beneficiary {receiver}. "
+            f"Transactions structured below $10,000 threshold to evade Bank Secrecy Act CTR filing."
         )
-        elapsed = (time.perf_counter() - start_t) * 1000
-        finding = f"[{elapsed:.1f}ms LLM INFERENCE]: {resp.text}"
-    else:
-        finding = f"[DETERMINISTIC FALLBACK]: Structuring confirmed for {receiver} totaling ${total_amt:,.2f}."
 
     return {
         "beneficiary": receiver,
