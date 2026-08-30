@@ -3,7 +3,10 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    println,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 // The fundamental unit of our Flight Recorder.
 #[derive(
@@ -70,6 +73,7 @@ impl RaqimCryptoCore {
         let capability_cert = if let Some(path) = cert_path {
             std::fs::read(path).unwrap_or_default()
         } else {
+            println!("[AEGIS WARNING] cert_path not valid");
             Vec::new()
         };
 
