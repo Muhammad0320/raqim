@@ -1365,7 +1365,7 @@ pub async fn cluster_info_endpoint(
 
     let payload = json!({
         "node_id": node_id,
-        "highest_tx_id": format!("{:032x}", highest_tx),
+        "highest_tx_id": format!("0x{:032x}", highest_tx),
         "wal_bytes": wal_size,
         "wal_size_mb": (wal_size as f64 ) / (1024.0 * 1024.0),
         "buffer_load": pending_wal_items,
@@ -1602,11 +1602,6 @@ pub async fn get_effect_handler(
     }
 }
 
-#[derive(Deserialize)]
-pub struct StateProofParams {
-    pub tx_id: String,
-}
-
 #[derive(Serialize)]
 pub struct StateProofResponse {
     pub success: bool,
@@ -1617,12 +1612,15 @@ pub struct StateProofResponse {
 /// Generate an 0(log N) Merkle Inclusion Proof for any tx_id
 pub async fn get_state_proof_handler(
     State(state): State<ApiState>,
-    Query(params): Query<StateProofParams>,
+    Path(tx_param): Path<String>,
 ) -> Result<Json<StateProofResponse>, ApiError> {
+    let clean_hex = tx_param.trim_start_matches("0x");
     // Parse u128 UUIDv7
-    let tx_id = u128::from_str_radix(&params.tx_id, 16).map_err(|_| {
-        ApiError::BadRequest("tx_id must be a valid 32-character hex string".to_string())
-    })?;
+    let tx_id = u128::from_str_radix(clean_hex, 16)
+        .or_else(|_| clean_hex.parse::<u128>())
+        .map_err(|_| {
+            ApiError::BadRequest("tx_id must be a valid 32-character hex string".to_string())
+        })?;
 
     // Query Axon Gatekeeper for 0(log N) Inclusion proof
     match state.axon.generate_proof_for_tx(tx_id) {
@@ -1681,7 +1679,7 @@ pub async fn trigger_compaction_endpoint(
 pub fn build_admin_router(state: ApiState) -> axum::Router {
     axum::Router::new()
         // State Proofs & Effect Recording
-        .route("/v1/state/proof", get(get_state_proof_handler))
+        .route("/v1/state/proof/:tx_id", get(get_state_proof_handler))
         .route("/v1/effect/record", post(record_effect_handler))
         .route("/v1/effect/get", post(get_effect_handler))
         // Aegis Firewall & Governance
