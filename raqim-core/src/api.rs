@@ -1203,7 +1203,7 @@ pub async fn toggle_ingress_endpoint(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let prev = *state.pause_tx.borrow();
     let new_state = !prev;
-
+    
     // Broadcasts state change across all worker tasks
     let _ = state.pause_tx.send(new_state);
 

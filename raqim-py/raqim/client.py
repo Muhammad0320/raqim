@@ -96,7 +96,7 @@ class CanonicalSerializer:
         
         return call_sig_hash.hex(), canonical_str
         
-        
+
 class RaqimClient:
     def __init__(
         self, alias: str, tenant: str, private_key_path: str, cert_path: Optional[str] = None,
@@ -130,7 +130,6 @@ class RaqimClient:
         # The callback function provided by the developer
         self._reality_fork_hook: Callable[[str], None] = None 
     
- 
     async def boot(self): 
         """
         Enterprise Ignition Sequence: 
@@ -158,7 +157,6 @@ class RaqimClient:
             Registers the developer callback for Aegis FORCE_CONTEXT_EVICTION events.
         """
         self._reality_fork_hook = callback
-
 
     def _handle_os_control_override(self, sample: Any) -> None:
         """Listener that wipes corrupted context when Aegis trips a circuit breaker """
@@ -407,7 +405,7 @@ class RaqimClient:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             return loop
-        
+    
     # A2A Websocket Swarm router 
     async def connect_swarm(self):
         """Connect  background WebSocket Multiplexer to Raqim's A2A gateway"""

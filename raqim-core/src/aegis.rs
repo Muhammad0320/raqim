@@ -435,4 +435,5 @@ impl AegisGateKeeper {
 
         Ok((cert.agent_hex, cert.group_name))
     }
+
 }
