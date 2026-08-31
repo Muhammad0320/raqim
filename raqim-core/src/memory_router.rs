@@ -299,7 +299,7 @@ impl MemoryRouter {
             let mut stream = table
                 .query()
                 .only_if(format!(
-                    "agent_id = '{}' AND tx_id >= {} AND tx_id <= {}",
+                    "agent_id = '{}' AND tx_id >= '{}' AND tx_id <= '{}'",
                     agent_hex,
                     format!("{:032x}", next_txid),
                     format!("{:032x}", target_tx_id)
