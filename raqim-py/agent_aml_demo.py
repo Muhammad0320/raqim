@@ -61,7 +61,6 @@ agent_compliance = RaqimClient(
     private_key_path=MASTER_KEY_PATH,
     mode=EXECUTION_MODE,
 )
-
 # ==============================================================================
 # 2. DETERMINISTIC SYNTHETIC TRANSACTIONS
 # ==============================================================================
@@ -104,25 +103,33 @@ async def investigate_anomaly(
     total_amt = sum(t["amount"] for t in bundle)
     suspects = list(set(t["sender"] for t in bundle))
     receiver = bundle[0]["receiver"]
-
     user_query = f"Analyze transfers totaling ${total_amt:,.2f} from {suspects} to {receiver}."
 
     finding = None
-    if ai_client:
+
+    # Native Non-Blocking Async LLM Inference via Direct REST
+    if GEMINI_API_KEY:
+        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
+        payload = {
+            "contents": [{
+                "parts": [{"text": f"{system_prompt}\n\n{user_query}"}]
+            }]
+        }
         try:
             start_t = time.perf_counter()
-            resp = ai_client.models.generate_content(
-                model="gemini-3.7-flash",
-                contents=f"{system_prompt}\n\n{user_query}"
-            )
-            elapsed = (time.perf_counter() - start_t) * 1000
-            finding = f"[{elapsed:.1f}ms LLM INFERENCE]: {resp.text}"
+            async with httpx.AsyncClient(timeout=15.0) as http:
+                resp = await http.post(gemini_url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    text_content = data["candidates"][0]["content"]["parts"][0]["text"]
+                    elapsed = (time.perf_counter() - start_t) * 1000
+                    finding = f"[{elapsed:.1f}ms GEMINI FLASH]: {text_content}"
         except Exception as e:
-            print(f"⚠️ [API FALLBACK] Gemini call failed ({e}). Reverting to deterministic rules engine...")
+            print(f"⚠️ [API FALLBACK] Direct Gemini REST call failed ({e}). Reverting to deterministic rules engine...")
 
     if not finding:
         finding = (
-            f"[DETERMINISTIC FORENSIC AUDIT]: High-confidence Structuring/Smurfing pattern confirmed. "
+            f"[DETERMINISTIC FORENSIC AUDIT]: High-confidence Structuring pattern confirmed. "
             f"{len(bundle)} structured transfers totaling ${total_amt:,.2f} targeting beneficiary {receiver}. "
             f"Transactions structured below $10,000 threshold to evade Bank Secrecy Act CTR filing."
         )
@@ -139,13 +146,14 @@ async def investigate_anomaly(
 @agent_compliance.trace(namespace="/finance/compliance_sar")
 async def generate_sar(investigation: dict, evidence_tx_hex: str) -> dict:
     proof_data = None
-    try:
-        async with httpx.AsyncClient() as http:
-            res = await http.get(f"http://localhost:8081/v1/state/proof/{evidence_tx_hex}", timeout=3.0)
-            if res.status_code == 200:
-                proof_data = res.json()
-    except Exception as e:
-        proof_data = {"status": "unverified", "error": str(e)}
+    if evidence_tx_hex and evidence_tx_hex != "00":
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as http:
+                res = await http.get(f"http://localhost:8081/v1/state/proof/{evidence_tx_hex}")
+                if res.status_code == 200:
+                    proof_data = res.json()
+        except Exception as e:
+            proof_data = {"status": "unverified", "error": str(e)}
 
     return {
         "sar_id": f"SAR-2026-US-{uuid.uuid4().hex[:6].upper()}",
@@ -183,10 +191,14 @@ async def main():
         print(f"📄 Finding Preview:\n{investigation['finding'][:200]}...\n")
 
         print("[STEP 3] Agent 3 fetching Merkle inclusion proof & filing SAR...")
-        # Resolve active Tx ID from kernel
-        async with httpx.AsyncClient() as http:
-            latest_info = await http.get("http://localhost:8081/v1/admin/cluster/info")
-            evidence_tx_hex = latest_info.json().get("highest_tx_id", "0x00").replace("0x", "")
+        evidence_tx_hex = "00"
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as http:
+                latest_info = await http.get("http://localhost:8081/v1/admin/cluster/info")
+                if latest_info.status_code == 200:
+                    evidence_tx_hex = latest_info.json().get("highest_tx_id", "0x00").replace("0x", "")
+        except Exception as e:
+            print(f"⚠️ [WARN] Could not resolve highest TxID: {e}")
 
         sar = await generate_sar(investigation, evidence_tx_hex)
         print("==================================================================")

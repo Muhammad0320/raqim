@@ -610,7 +610,7 @@ impl WasmEngine {
             tokio::spawn(async move {
                 lance_clone
                     .save_snapshot(
-                        current_tx_id as i64,
+                        current_tx_id,
                         current_time as i64,
                         &agent_hex_clone,
                         snapshot_clone,
