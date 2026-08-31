@@ -2,8 +2,11 @@ import asyncio
 import os
 import sys
 import time
+import ssl
 import uuid
+import json
 import httpx
+import urllib.request
 from dotenv import load_dotenv
 
 # Load local .env
@@ -73,8 +76,27 @@ def get_synthetic_stream():
         {"external_ref": "SWIFT-005", "sender": "ACC_SUSPECT_03", "receiver": "ACC_OFFSHORE_8892", "amount": 9950.00, "node": "CAYMAN_ROUTER"},
     ]
 
+
 # ==============================================================================
-# 3. TRACED AGENT PIPELINE
+# 3. DIRECT ROBUST GEMINI CALL (Bypasses WSL2 httpx TLS bugs)
+# ==============================================================================
+def call_gemini_rest(prompt: str, user_query: str) -> str:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+    payload = {
+        "contents": [{
+            "parts": [{"text": f"{prompt}\n\n{user_query}"}]
+        }]
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    ctx = ssl.create_default_context()
+    
+    with urllib.request.urlopen(req, context=ctx, timeout=12) as response:
+        res = json.loads(response.read().decode("utf-8"))
+        return res["candidates"][0]["content"]["parts"][0]["text"]
+
+# ==============================================================================
+# 4. TRACED AGENT PIPELINE
 # ==============================================================================
 @agent_ingest.trace(namespace="/finance/triage")
 def screen_transaction(tx: dict) -> dict:
@@ -90,13 +112,14 @@ def screen_transaction(tx: dict) -> dict:
         "risk": risk,
         "escalate": (risk == "CRITICAL"),
     }
+
 @agent_investigator.trace(namespace="/finance/investigations")
 async def investigate_anomaly(
     bundle: list,
     system_prompt: str = (
         "You are an expert Anti-Money Laundering Forensic Auditor. "
         "Analyze this suspicious structuring cluster where multiple parties send $9,950 to evade the $10,000 BSA limit. "
-        "State the regulatory finding and assign a risk score."
+        "State the regulatory finding concisely."
     )
 ) -> dict:
     total_amt = sum(t["amount"] for t in bundle)
@@ -107,26 +130,13 @@ async def investigate_anomaly(
     finding = None
 
     if GEMINI_API_KEY:
-        # Try gemini-2.5-flash endpoint
-        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-        payload = {
-            "contents": [{
-                "parts": [{"text": f"{system_prompt}\n\n{user_query}"}]
-            }]
-        }
         try:
             start_t = time.perf_counter()
-            async with httpx.AsyncClient(timeout=10.0) as http:
-                resp = await http.post(gemini_url, json=payload)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    text_content = data["candidates"][0]["content"]["parts"][0]["text"]
-                    elapsed = (time.perf_counter() - start_t) * 1000
-                    finding = f"[{elapsed:.1f}ms GEMINI FLASH]: {text_content}"
-                else:
-                    print(f"⚠️ [GEMINI REST {resp.status_code}] {resp.text[:150]}")
+            text_content = await asyncio.to_thread(call_gemini_rest, system_prompt, user_query)
+            elapsed = (time.perf_counter() - start_t) * 1000
+            finding = f"[{elapsed:.1f}ms GEMINI FLASH]: {text_content}"
         except Exception as e:
-            print(f"⚠️ [API FALLBACK] Gemini REST call failed ({e}). Reverting to deterministic rules engine...")
+            print(f"⚠️ [GEMINI RETRY / FALLBACK] {e}")
 
     if not finding:
         finding = (
@@ -153,8 +163,6 @@ async def generate_sar(investigation: dict, evidence_tx_hex: str) -> dict:
                 res = await http.get(f"http://localhost:8081/v1/state/proof/{evidence_tx_hex}")
                 if res.status_code == 200:
                     proof_data = res.json()
-                else:
-                    print(f"⚠️ [PROOF WARN] HTTP {res.status_code}: {res.text}")
         except Exception as e:
             proof_data = {"status": "unverified", "error": str(e)}
 
@@ -169,7 +177,7 @@ async def generate_sar(investigation: dict, evidence_tx_hex: str) -> dict:
     }
 
 # ==============================================================================
-# 4. MAIN EXECUTION
+# 5. MAIN EXECUTION
 # ==============================================================================
 async def main():
     await agent_ingest.boot()
@@ -177,7 +185,6 @@ async def main():
     await agent_compliance.boot()
 
     print("\n[STEP 1] Agent 1 screening live stream...")
-    print("GEMIMI API KEY ", GEMINI_API_KEY)
     transactions = get_synthetic_stream()
     flagged = []
 
@@ -192,7 +199,7 @@ async def main():
     if flagged:
         print(f"\n[STEP 2] Agent 2 investigating {len(flagged)} anomalous records...")
         investigation = await investigate_anomaly(flagged)
-        print(f"📄 Finding Preview:\n{investigation['finding'][:200]}...\n")
+        print(f"📄 Finding Preview:\n{investigation['finding'][:250]}...\n")
 
         print("[STEP 3] Agent 3 fetching Merkle inclusion proof & filing SAR...")
         evidence_tx_hex = "00"
