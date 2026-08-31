@@ -448,8 +448,7 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                 let mut ask_hasher = blake3::Hasher::new_derive_key("raqim.axon.v1.leaf");
                 ask_hasher.update(&aligned_ask_buf);
                 ask_hasher.update(&sender_id_bytes);
-                let ask_leaf_hash: [u8; 32] = ask_hasher.finalize().into(); 
-
+                let ask_leaf_hash: [u8; 32] = ask_hasher.finalize().into();
 
                 if let Ok(archived_ask_state) = rkyv::access::<
                     <AgentState as rkyv::Archive>::Archived,
@@ -501,13 +500,13 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                             .unwrap_or_default()
                             .as_secs() as i64;
 
-                       //Embed ask_tx_id and parent leaf hash into oreply payload
-                       let anchored_reply_payload = serde_json::json!({
-                        "causal_parent_tx": format!("{:032x}", ask_tx_id), 
-                        "causal_parent_hash": hex::encode(ask_leaf_hash),
-                        "responder_hex": responder_hex, 
-                        "answer": String::from_utf8_lossy(&answer)
-                       });
+                        //Embed ask_tx_id and parent leaf hash into oreply payload
+                        let anchored_reply_payload = serde_json::json!({
+                         "causal_parent_tx": format!("{:032x}", ask_tx_id),
+                         "causal_parent_hash": hex::encode(ask_leaf_hash),
+                         "responder_hex": responder_hex,
+                         "answer": String::from_utf8_lossy(&answer)
+                        });
 
                         let reply_state = AgentState {
                             agent_id: Some(sender_id_bytes),
@@ -1366,7 +1365,7 @@ pub async fn cluster_info_endpoint(
 
     let payload = json!({
         "node_id": node_id,
-        "highest_tx_id": highest_tx,
+        "highest_tx_id": format!("{:032x}", highest_tx),
         "wal_bytes": wal_size,
         "wal_size_mb": (wal_size as f64 ) / (1024.0 * 1024.0),
         "buffer_load": pending_wal_items,

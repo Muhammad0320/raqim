@@ -267,10 +267,10 @@ impl LanceEngine {
     /// Schema for WASM memory snapshot
     fn snapshot_schema(&self) -> Arc<Schema> {
         Arc::new(Schema::new(vec![
-            Field::new("tx_id", DataType::Int64, false),
+            Field::new("tx_id", DataType::Utf8, false),
             Field::new("timestamp", DataType::Int64, false),
             Field::new("agent_id", DataType::Utf8, false),
-            Field::new("memory_blob", DataType::Binary, false), // The actual WASM RAM
+            Field::new("memory_blob", DataType::Binary, false),
         ]))
     }
 
@@ -305,7 +305,7 @@ impl LanceEngine {
                     .take(100)
                     .collect::<String>();
                 let m = format!(
-                    "{{\"tx_id\": {}, \"namespace\": \"{}\", \"text_preview\": \"{}...\"}}",
+                    "{{\"tx_id\": \"{}\", \"namespace\": \"{}\", \"text_preview\": \"{}...\"}}",
                     tx_id, namespace, safe_text
                 );
 
@@ -356,7 +356,7 @@ impl LanceEngine {
                 ("SecurityBreach", agent_id.to_string(), m)
             }
 
-            SystemEvent::LicenseUpdated { new_jwt } => (
+            SystemEvent::LicenseUpdated { .. } => (
                 "LicenseUpdated",
                 "SYSTEM".to_string(),
                 format!(" {{ \"message\": \"{}\" }} ", "License Key was updated"),
@@ -665,12 +665,12 @@ impl LanceEngine {
     /// Saves the 2MB-5MB active memory snapshot to Cold storage.
     pub async fn save_snapshot(
         &self,
-        tx_id: i64,
+        tx_id: u128,
         timestamp: i64,
         agent_hex: &str,
         memory_blob: Vec<u8>,
     ) {
-        let tx_array = Arc::new(Int64Array::from(vec![tx_id]));
+        let tx_array = Arc::new(StringArray::from(vec![format!("{:032x}", tx_id)]));
         let time_array = Arc::new(Int64Array::from(vec![timestamp]));
         let agent_array = Arc::new(StringArray::from(vec![agent_hex.to_string()]));
         let blob_array = Arc::new(BinaryArray::from(vec![memory_blob.as_slice()]));
@@ -714,7 +714,8 @@ impl LanceEngine {
             .query()
             .only_if(format!(
                 "agent_id = '{}' AND tx_id <= {} ",
-                agent_hex, target_tx_id
+                agent_hex,
+                format!("{:032x}", target_tx_id)
             ))
             .limit(1)
             .execute()

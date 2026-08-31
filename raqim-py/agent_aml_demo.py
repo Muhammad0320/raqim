@@ -112,7 +112,7 @@ async def investigate_anomaly(
         try:
             start_t = time.perf_counter()
             resp = ai_client.models.generate_content(
-                model="gemini-3.5-flash-lite",
+                model="gemini-3.7-flash",
                 contents=f"{system_prompt}\n\n{user_query}"
             )
             elapsed = (time.perf_counter() - start_t) * 1000
