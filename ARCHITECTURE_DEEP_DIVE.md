@@ -1,738 +1,498 @@
-# Raqim (Synapse) Architecture Deep Dive: Definitive Technical Specification
-
-> **Classification:** Comprehensive Technical Architecture Specification & Implementation Reference  
-> **Target Workspace:** `/home/muhammad/projects/raqim/synapse`  
-> **Scope:** `raqim-core` (Kernel Core), `raqim-py` (Python Runtime & PyO3 C-Extension), `raqim-cli` (Fleet Provisioning & Administration), `raqim-mcp` (Model Context Protocol Universal Bridge), `raqim-siege` (Zero-Copy Stress & Benchmark Harness), `raqim-console` (Next.js 16 / React 19 Observability Deck), and daemon configuration systems (`raqim.toml`, `aegis.toml`).  
-> *(Explicitly Excluded: `raqim-agent-sdk`)*
-
----
-
-## Table of Contents
-
-1. [Macro Architecture & System Topology](#1-macro-architecture--system-topology)
-2. [Workspace Inventory & Crate Graph](#2-workspace-inventory--crate-graph)
-3. [`raqim-core`: Sovereign Kernel & Microkernel Engine](#3-raqim-core-sovereign-kernel--microkernel-engine)
-   - [3.1 Kernel Data Contracts & Cascade Pipeline (`lib.rs`)](#31-kernel-data-contracts--cascade-pipeline-librs)
-   - [3.2 OS Bootloader, Ingress Multiplexer & Signal Handlers (`main.rs`)](#32-os-bootloader-ingress-multiplexer--signal-handlers-mainrs)
-   - [3.3 Nucleus: Group Commit WAL Engine & Aho-Corasick Scanner (`nucleus.rs`)](#33-nucleus-group-commit-wal-engine--aho-corasick-scanner-nucleusrs)
-   - [3.4 Axon: Domain-Separated Merkle DAG & $O(\log_2 N)$ Proofs (`axon.rs`)](#34-axon-domain-separated-merkle-dag--olog_2-n-proofs-axonrs)
-   - [3.5 Aegis: Cryptographic Firewall & Lock-Free Rate Limiter (`aegis.rs`)](#35-aegis-cryptographic-firewall--lock-free-rate-limiter-aegisrs)
-   - [3.6 Memory Router: RRF Hybrid Search & Deterministic Effects (`memory_router.rs`)](#36-memory-router-rrf-hybrid-search--deterministic-effects-memory_routerrs)
-   - [3.7 Sandbox: Wasmtime Hypervisor & WASI Jailing (`sandbox.rs`)](#37-sandbox-wasmtime-hypervisor--wasi-jailing-sandboxrs)
-   - [3.8 LanceDB Storage: Columnar Vector Vault & Arrow Schemas (`lancedb_store.rs`)](#38-lancedb-storage-columnar-vector-vault--arrow-schemas-lancedb_storers)
-   - [3.9 Compactor: Two-Phase Commit WAL Lifecycle Manager (`compactor.rs`)](#39-compactor-two-phase-commit-wal-lifecycle-manager-compactorrs)
-   - [3.10 Worm Witness Engine: Immutable Storage & Linux `chattr +i` (`witness.rs`)](#310-worm-witness-engine-immutable-storage--linux-chattr-i-witnessrs)
-   - [3.11 Network Bridge: Zenoh P2P Swarm Gossip (`network.rs`)](#311-network-bridge-zenoh-p2p-swarm-gossip-networkrs)
-   - [3.12 State Substrate: Sharded Loro CRDT Documents (`state.rs`)](#312-state-substrate-sharded-loro-crdt-documents-staters)
-   - [3.13 Hot Memory: 10k Ring Buffer & SIMD Cosine Proximity (`hot_memory.rs`)](#313-hot-memory-10k-ring-buffer--simd-cosine-proximity-hot_memoryrs)
-   - [3.14 Embedding Subsystem: FastEmbed BGE vs OpenAI Providers (`embedding.rs`)](#314-embedding-subsystem-fastembed-bge-vs-openai-providers-embeddingrs)
-   - [3.15 Registry & Live Process Table (`registry.rs`)](#315-registry--live-process-table-registryrs)
-   - [3.16 Health & Vitals Telemetry (`health.rs`, `telemetry.rs`)](#316-health--vitals-telemetry-healthrs-telemetryrs)
-   - [3.17 Shared Memory IPC: Iceoryx2 Data Plane (`cortex.rs`)](#317-shared-memory-ipc-iceoryx2-data-plane-cortexrs)
-   - [3.18 Kernel Configuration & Utilities (`config.rs`, `utils.rs`)](#318-kernel-configuration--utilities-configrs-utilsrs)
-   - [3.19 HTTP, SSE, WebSocket & Ingress API Layer (`api.rs`)](#319-http-sse-websocket--ingress-api-layer-apirs)
-4. [`raqim-py`: Native PyO3 Extension & Python Deterministic Client](#4-raqim-py-native-pyo3-extension--python-deterministic-client)
-   - [4.1 Native Rust Extension (`src/lib.rs`)](#41-native-rust-extension-srclibrs)
-   - [4.2 Python Runtime & `@raqim.trace` Engine (`raqim/client.py`)](#42-python-runtime--raqimtrace-engine-raqimclientpy)
-   - [4.3 Real-World AML Swarm Demo (`agent_aml_demo.py`)](#43-real-world-aml-swarm-demo-agent_aml_demopy)
-5. [`raqim-cli`: Fleet Administration & Key Provisioning](#5-raqim-cli-fleet-administration--key-provisioning)
-6. [`raqim-mcp`: Model Context Protocol Universal Bridge](#6-raqim-mcp-model-context-protocol-universal-bridge)
-7. [`raqim-siege`: Hardened Microsecond Stress & Benchmark Suite](#7-raqim-siege-hardened-microsecond-stress--benchmark-suite)
-8. [`raqim-console`: Next.js 16 / React 19 Observability Deck](#8-raqim-console-nextjs-16--react-19-observability-deck)
-9. [End-to-End Execution Lifecycles](#9-end-to-end-execution-lifecycles)
-   - [9.1 Ingress to Cascade Lifecycle](#91-ingress-to-cascade-lifecycle)
-   - [9.2 Agent-to-Agent (A2A) RPC Query Flow](#92-agent-to-agent-a2a-rpc-query-flow)
-   - [9.3 Deterministic Replay & Universe Branching](#93-deterministic-replay--universe-branching)
-   - [9.4 Autonomous 2PC Compaction & WORM Witness Anchoring](#94-autonomous-2pc-compaction--worm-witness-anchoring)
-10. [Architectural Invariants & Engineering Reference](#10-architectural-invariants--engineering-reference)
-
----
-
-## 1. Macro Architecture & System Topology
-
-Raqim is an **Agent Operating System (AOS)** and **Cryptographic Flight Recorder** engineered to transform stochastic, non-deterministic AI agent executions into cryptographically verifiable, durable, and deterministically replayable state transitions.
+# Raqim Kernel: Comprehensive Architecture Deep Dive & Forensic Systems Audit
 
 ```
-                                  +---------------------------------------+
-                                  |    raqim-console (Next.js 16 Deck)    |
-                                  |   [Dashboard, Topology, Time-Travel]  |
-                                  +-------------------+-------------------+
-                                                      | SSE / HTTP / WS
-                                                      v
-+-------------------+      TCP (rkyv)      +-------------------------------------------------------+
-|     raqim-py      | -------------------> |                      raqim-core                       |
-|   (Python SDK)    | < - - - - - - - - -  |                 (Sovereign Kernel OS)                 |
-+-------------------+     Zenoh / WS       |                                                       |
-                                           |  +-----------------+  +----------------------------+  |
-+-------------------+      Stdio MCP       |  | Aegis GateKeep  |  | Axon Merkle DAG (BLAKE3)   |  |
-|     raqim-mcp     | -------------------> |  | (Ed25519 Firew) |  | (1024-Leaf Crystallize)    |  |
-|  (Universal LLM)  | < - - - - - - - - -  |  +-----------------+  +----------------------------+  |
-+-------------------+       TCP / WS       |  +-----------------+  +----------------------------+  |
-                                           |  | Nucleus WAL     |  | Loro CRDT State Registry   |  |
-+-------------------+      Admin HTTP      |  | (Group Commit)  |  | (Namespaced DashMap Shards)|  |
-|     raqim-cli     | -------------------> |  +-----------------+  +----------------------------+  |
-|  (Fleet Provision)|                      |  +-----------------+  +----------------------------+  |
-+-------------------+                      |  | 2PC Compactor   |  | MemoryRouter (Hybrid RRF)  |  |
-                                           |  | (WAL -> LanceDB)|  | (Hot RAM + Cold Vector)    |  |
-+-------------------+      TCP Siege       |  +-----------------+  +----------------------------+  |
-|    raqim-siege    | -------------------> |  +-----------------+  +----------------------------+  |
-| (500k TPS Bench)  |                      |  | Wasmtime Engine |  | GlobalNetworkBridge (Zenoh)|  |
-+-------------------+                      |  +-----------------+  +----------------------------+  |
-                                           +---------------------------+---------------------------+
-                                                                       |
-                                         +-----------------------------+-----------------------------+
-                                         |                             |                             |
-                                         v                             v                             v
-                             +-----------------------+    +--------------------------+   +-----------------------+
-                             |   NVMe Storage        |    | LanceDB Cold Vector      |   | Immutable WORM        |
-                             |   production.wal      |    | production_semantic      |   | ./vault/witnesses/    |
-                             +-----------------------+    +--------------------------+   +-----------------------+
-```
-
-### Core Architecture Pillars
-1. **Zero-Trust Cryptographic Perimeter:** All agents hold an Ed25519 keypair. Identity is derived via domain-separated BLAKE3 hashing. Every thought and RPC packet is signed and verified by the **Aegis** firewall before touching memory.
-2. **Causal Merkle DAG:** State transitions form an append-only cryptographic directed acyclic graph (DAG) yielding $O(\log_2 N)$ Merkle inclusion proofs.
-3. **Hierarchical 2PC Memory Hierarchy:**
-   - *Hot Tier:* High-throughput WAL with group commits (2ms / 6,000 entries) + 10k-slot SIMD RAM ring buffer.
-   - *Cold Tier:* LanceDB columnar vector storage backed by Apache Arrow.
-   - *Witness Tier:* Write Once Read Many (WORM) storage with Ed25519 master root signatures and Linux `chattr +i` immutability.
-4. **Decentralized Convergence:** Loro CRDTs sharded across namespaces synchronize state via Zenoh 1.7.2 P2P mesh; local node IPC is accelerated by Iceoryx2 shared memory.
-5. **Deterministic Replay & Time Travel:** Ability to freeze execution at any transaction ID ($Tx_{id}$), evaluate cached side-effects ($0 API cost), or branch into parallel `phantom_` simulation namespaces via Wasmtime memory-page snapshotting.
-
----
-
-## 2. Workspace Inventory & Crate Graph
-
-```
-synapse/ (Cargo Workspace Root)
-  ├── Cargo.toml
-  ├── raqim.toml
-  ├── aegis.toml
-  ├── ARCHITECTURE_DEEP_DIVE.md
-  │
-  ├── raqim-core/          [Central Kernel Daemon & Microkernel]
-  ├── raqim-py/            [Python Runtime SDK & PyO3 C-Extension Module]
-  ├── raqim-cli/           [Sovereign Fleet CLI & Key Provisioning Engine]
-  ├── raqim-mcp/           [Model Context Protocol Universal Stdio Translator]
-  ├── raqim-siege/         [Microsecond-Precision Latency Benchmark & Stress Suite]
-  └── raqim-console/       [Next.js 16 / React 19 Observability Deck & Mission Control]
+========================================================================================
+           RAQIM KERNEL: DEEP ARCHITECTURAL AUDIT & FORENSIC SYSTEMS SPECIFICATION
+========================================================================================
+Auditor Role     : Ruthless Systems Architect & Devil's Advocate
+Target Substrate : synapse (raqim-core, raqim-siege, raqim-py, raqim-cli)
+Excluded Modules : WASI, WASM Sandbox, raqim-agent-sdk, raqim-cloud, raqim-mcp
+                   (Intentionally stripped/skipped for this lean kernel release)
+Substrate State  : Lean Kernel MVP (v0.1.0)
+========================================================================================
 ```
 
 ---
 
-## 3. `raqim-core`: Sovereign Kernel & Microkernel Engine
+## 1. Executive Mentor Reality Check & Architecture Overview
 
-### 3.1 Kernel Data Contracts & Cascade Pipeline (`lib.rs`)
+The core vision of **Raqim** is to provide an immutable, deterministic, zero-copy operating substrate for multi-agent autonomous swarms. It unifies:
+1. **Deterministic Flight Recording:** Capturing every thought, state mutation, and side-effect with $0-cost replay.
+2. **Conflict-Free Replicated Data Types (CRDTs):** Merging multi-agent timelines across distributed namespaces without central coordination.
+3. **Cryptographic Merkle DAGs:** Sealing state transitions into tamper-evident 1,024-leaf Merkle batches.
+4. **Hardware-Synced Durability:** Append-only Write-Ahead Logging (WAL) with group-commit NVMe flushes and 2-Phase Commit (2PC) vector compactions.
+5. **Zero-Copy Inter-Process Communication (IPC):** Shared-memory ring buffers via Iceoryx2 and high-throughput P2P networking via Zenoh.
+6. **Zero-Trust Perimeter Security (Aegis):** Cryptographic capability passports, Master Key lineage verification, anti-replay freshness bounds, and atomic rate limiting.
 
-`raqim-core/src/lib.rs` defines the central data contracts, serialization invariants (`rkyv`), broadcast events, and the primary pipeline coordinator: `execute_raqim_cascade()`.
-
-#### Data Contracts
-- **`AgentStatus`** (`enum`): Lifecycle states: `Idle`, `Reasoning`, `ToolExecution`, `Halted`.
-- **`AgentState`** (`struct`):
-  - `agent_id: Option<[u8; 16]>`: Cryptographic 16-byte identity hash.
-  - `transaction_id: u128`: Monotonically increasing UUIDv7 identifier.
-  - `timestamp: i64`: Unix epoch timestamp (seconds).
-  - `status: AgentStatus`: Lifecycle status.
-  - `text: String`: Natural language reasoning, action payload, or tool input.
-  - `namespace: String`: Shard destination (e.g., `/finance/triage`).
-- **`OpLog`** (`struct`): Encapsulates an `AgentState` alongside CRDT delta bytes for durable storage and network transmission.
-- **`IngressEnvelope`** (`struct`): Wire protocol format for TCP/HTTP thought ingestion:
-  - `intent_path: String`, `public_key: [u8; 32]`, `signature: [u8; 64]`, `state_bytes: Vec<u8>`, `capability_cert: Vec<u8>`.
-- **`A2AEnvelope`** (`struct`): Wire format for Agent-to-Agent Remote Procedure Calls:
-  - `sender_id: [u8; 16]`, `sender_public_key: [u8; 32]`, `target_capability: String`, `payload: Vec<u8>`, `signature: [u8; 64]`, `sender_capability_cert: Vec<u8>`, `timestamp: i64`.
-- **`EffectKey` & `EffectRecord`** (`structs`): Deterministic side-effect cache:
-  - `EffectKey`: `agent_id: [u8; 16]`, `step_ordinal: u64`, `call_signature_hash: [u8; 32]`.
-  - `EffectRecord`: `effect_key: EffectKey`, `output_payload: Vec<u8>`, `timestamp: i64`, `tx_id: u128`, `namespace: String`.
-- **`SystemEvent`** (`enum`): System-wide broadcast event bus variants (`ThoughtCommitted`, `AegisInterdiction`, `SecurityBreach`, `RealityForked`, `CompactionTriggered`, `QuarantineSynchronized`).
-
-#### Pipeline Coordinator: `execute_raqim_cascade`
-Orchestrates every verified thought through the 6-stage kernel cascade:
-1. **CRDT Local Shard Update:** Mutates the Loro document corresponding to `archived_state.namespace` and exports the delta.
-2. **Axon Merkle Sealing:** Calculates leaf hash ($\text{BLAKE3}(\text{state\_bytes} \mathbin{\Vert} \text{agent\_id})$) and records the leaf in the active Merkle DAG.
-3. **Nucleus WAL Group Append:** Dispatches the `OpLog` to the background group-commit queue.
-4. **Cortex Zero-Copy IPC:** Serializes the `OpLog` to Iceoryx2 shared memory for local consumers.
-5. **Global Mesh Egress:** Asynchronously broadcasts the verified `OpLog` across the Zenoh network.
-6. **SSE Firehose Dispatch:** Emits `SystemEvent::ThoughtCommitted` to the Axum broadcast channel.
+### Intentionally Stripped / Skipped Components for Lean MVP
+For this initial release, the following sub-layers were intentionally stripped/skipped to isolate and harden the core cryptographic and storage substrate:
+* **WASM / WASI Sandbox (`raqim-core/src/sandbox.rs`):** Wasmtime linear memory sandboxing and dynamic plugin loading.
+* **Agent Rust SDK (`raqim-agent-sdk`):** Native Rust macro bindings for autonomous agent loops.
+* **Raqim Cloud (`raqim-cloud`):** Multi-tenant cloud control plane and remote WORM bucket synchronization.
+* **Model Context Protocol Gateway (`raqim-mcp`):** Dynamic MCP tool reflection and server bridges.
 
 ---
 
-### 3.2 OS Bootloader, Ingress Multiplexer & Signal Handlers (`main.rs`)
+## 2. Forensic Systems Audit: Critical Errors & Flaws
 
-`raqim-core/src/main.rs` initializes all subsystems, manages master keys, handles signal termination, and binds network transports.
-
-#### Startup & Lifecycle
-1. **Master Key Bootstrap:** Reads `./ca-keys/swarm_master.key` (or generates a fresh Ed25519 signing key with `0o600` permissions).
-2. **Aegis Hot-Reloader:** Spawns a file watcher on `aegis.toml` using `notify::RecommendedWatcher`.
-3. **Storage & Engine Initializations:** Boots `LanceEngine`, `WalEngine`, `AxonGateKeeper`, `SwarmStateRegistry`, and `GlobalNetworkBridge`.
-4. **Phoenix State Hydration:** Scans the active WAL file and WORM witness blocks to reconstruct active Merkle roots and warm up the in-memory `HotVectorBuffer`.
-5. **Background Daemons:** Boots `WalCompactor`, `HealthMonitor` (1Hz sysinfo SSE), `CortexPublisher` (Iceoryx2), and the WASM plugin file watcher (`./plugins/`).
-6. **Multithreaded TCP Server (Port 8080):** Accepts incoming agent connections, parses 4-byte LE length-prefixed frames, verifies lineage and signatures via Aegis, and executes `execute_raqim_cascade()`.
-7. **Graceful Drain:** Intercepts `SIGINT`/`SIGTERM`, pauses network ingress, flushes pending WAL group-commit batches, flushes vector tables, disconnects Zenoh, and executes an NVMe hardware `fsync`.
+Below is the exhaustive catalog of critical bugs, race conditions, memory safety violations, and logic errors identified in the active codebase.
 
 ---
 
-### 3.3 Nucleus: Group Commit WAL Engine & Aho-Corasick Scanner (`nucleus.rs`)
+### Critical Flaw 1: Compactor Frame Offset Desynchronization
+* **File & Lines:** `raqim-core/src/compactor.rs:200-240`
+* **Severity:** **CRITICAL (Data Loss & Compaction Failure)**
+* **Technical Defect:** 
+  The disk binary frame format is:
+  $$\text{Frame} = [\text{4B Length Prefix}] + [\text{4B CRC32 Checksum}] + [\text{N Bytes Payload}]$$
+  Total frame size $= 8 + \text{entry\_len}$.
+  Inside `WalCompactor::execute_compaction`, when a frame passes CRC32 validation, the loop updates the offset as follows:
+  ```rust
+  let entry_len = u32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap()) as usize;
+  let expected_crc = u32::from_le_bytes(buffer[offset + 4..offset + 8].try_into().unwrap());
+  let frame_total = 8 + entry_len;
+  // ... deserialization and archiving ...
+  offset += entry_len; // <--- BUG: Missing the 8-byte header!
+  ```
+* **Blast Radius:** On any rotated WAL segment containing more than one batch, batch #1 is successfully parsed, but the cursor advances by only `entry_len`. Batch #2 is then read starting 8 bytes *inside* the previous frame's payload. Every subsequent batch in the file fails CRC validation, logs `[COMPACTOR CORRUPTION] CRC32 mismatch`, and is permanently dropped during compaction.
 
-`nucleus.rs` provides append-only disk logging with group commits and zero-copy substring scanning.
+---
 
-#### Binary Frame Layout
+### Critical Flaw 2: WAL Silent Overwrite on Node Restart
+* **File & Lines:** `raqim-core/src/nucleus.rs:65-105`
+* **Severity:** **CRITICAL (Ledger Corruption on Boot)**
+* **Technical Defect:** 
+  During startup, `recover_and_truncate_torn_frames` scans the existing `production.wal`, computes `clean_offset`, and populates the sparse index. However, the background worker task opens the file without seeking to `clean_offset` or opening in append mode:
+  ```rust
+  let mut active_file = tokio::fs::OpenOptions::new()
+      .create(true).read(true).write(true)
+      .open(&file_path).await.expect("Failed to open WAL file");
+  ```
+* **Blast Radius:** Because the write cursor defaults to offset `0` rather than `clean_offset`, the first new batch written after a node restart **overwrites historical transactions at the beginning of the file**, while `index.insert(first_txid, *current_offset)` records an offset pointing to the end of the file. The index and the physical disk immediately desynchronize.
+
+---
+
+### Critical Flaw 3: Aegis Firewall Wildcard Out-of-Bounds Panic
+* **File & Lines:** `raqim-core/src/aegis.rs:198-206`
+* **Severity:** **HIGH (Thread Panic / Denial of Service)**
+* **Technical Defect:** 
+  When checking blocked namespaces:
+  ```rust
+  for blocked in &live_policy.blocked_namespaces {
+      let match_found = if blocked.ends_with("*") {
+          intent_path.starts_with(&blocked[..blocked.len() + 1]) // <--- BUG: Slice out-of-bounds!
+      } else {
+          intent_path == blocked
+      };
+  ```
+  `blocked.len() + 1` attempts to slice past the end of the string. (In `allowed_namespaces`, `blocked.len() - 1` is correctly used to strip the `*`).
+* **Blast Radius:** The moment an agent attempts an action that hits a wildcard-blocked namespace rule (e.g. `system.*`), the worker thread panics with `index out of bounds: len is X, but index is X+1`, terminating the TCP worker connection.
+
+---
+
+### Critical Flaw 4: `AtomicTokenBucket` Underflow & Permanent Rate Limit Bypass
+* **File & Lines:** `raqim-core/src/aegis.rs:47-75`
+* **Severity:** **HIGH (Security Bypass under Concurrency)**
+* **Technical Defect:** 
+  `check_and_consume` checks and decrements tokens without an atomic Compare-And-Swap (CAS) loop:
+  ```rust
+  let current_tokens = self.tokens.load(Ordering::Relaxed);
+  if current_tokens > 0 {
+      self.tokens.fetch_sub(1, Ordering::Relaxed);
+      true
+  } else {
+      false
+  }
+  ```
+* **Blast Radius:** If concurrent requests arrive when `tokens == 1`, multiple threads observe `current_tokens == 1 > 0`. All of them execute `fetch_sub(1)`. The `AtomicU64` underflows from `0` to $2^{64} - K \approx 1.84 \times 10^{19}$. Because `current_tokens > 0` remains true for the next 18 quintillion requests, **rate limiting is permanently bypassed for that security group.**
+
+---
+
+### Critical Flaw 5: Undefined Behavior in Memory Router WAL Scanner
+* **File & Lines:** `raqim-core/src/memory_router.rs:115-135`
+* **Severity:** **HIGH (Memory Safety / Undefined Behavior)**
+* **Technical Defect:** 
+  `WalEngine` writes frames formatted as `[4B Len] + [4B CRC] + [Archived Vec<OpLog>]`.
+  `MemoryRouter::scan_wal_zero_copy` reads only 4 bytes of length, fails to skip the 4-byte CRC32 checksum, and attempts to cast the slice directly into a single `Archived<OpLog>` instead of `Archived<Vec<OpLog>>`:
+  ```rust
+  let entry_len = u32::from_le_bytes(len_bytes) as usize;
+  offset += 4; // Fails to add 4 bytes for CRC32!
+  let entry_slice = &mmap[offset..offset + entry_len];
+  let archived_log = unsafe {
+      rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice) // Wrong struct layout!
+  };
+  ```
+* **Blast Radius:** Casting memory with the wrong struct layout and offset constitutes Undefined Behavior (UB). Accessing fields like `archived.state.namespace` dereferences invalid memory offsets, risking SIGSEGV crashes during semantic memory queries.
+
+---
+
+### Critical Flaw 6: WORM Witness Naming Mismatch in Disaster Recovery
+* **File & Lines:** `raqim-core/src/witness.rs:88, 114`
+* **Severity:** **HIGH (Disaster Recovery Failure)**
+* **Technical Defect:** 
+  In `anchor_batch`, the WORM bundle is written as:
+  ```rust
+  let witness_file_path = format!("{}/batch_{:08}.json", self.witness_dir, batch.batch_id);
+  ```
+  However, in `fetch_bundle_from_witness`, the recovery engine searches for:
+  ```rust
+  let file_path = format!("{}/bundle_{:08}.json", self.witness_dir, batch_id);
+  ```
+* **Blast Radius:** The Phoenix Crash Recovery routine (`execute_forensic_boot_audit`) will never locate local or GCP cloud bundles during rollbacks, throwing: `"Disaster Recovery Error: Block bundle #X not found in any worm target"`.
+
+---
+
+### Critical Flaw 7: 64-Bit Truncation of 128-Bit UUIDv7 in Loro CRDT
+* **File & Lines:** `raqim-core/src/state.rs:69`
+* **Severity:** **MEDIUM (Data Integrity / Collision Risk)**
+* **Technical Defect:** 
+  ```rust
+  let _ = record_entry.insert("tx_id", state.transaction_id as i64);
+  ```
+* **Blast Radius:** `state.transaction_id` is a 128-bit UUIDv7 (`u128`). Casting it `as i64` truncates the upper 64 bits—which contains the millisecond UNIX timestamp header. This destroys chronological sort order in the CRDT document and causes ID collisions across timelines.
+
+---
+
+### Critical Flaw 8: LanceDB SQL Syntax Error in Snapshot Query
+* **File & Lines:** `raqim-core/src/lancedb_store.rs:242`
+* **Severity:** **MEDIUM (Time Travel Query Failure)**
+* **Technical Defect:** 
+  In `fetch_closest_snapshot`:
+  ```rust
+  let mut stream = table.query()
+      .only_if(format!("agent_id = '{}' AND tx_id <= {}' ", agent_hex, format!("{:032x}", target_tx_id)))
+      .limit(1).execute().await?;
+  ```
+* **Blast Radius:** The SQL predicate contains a trailing unclosed single quote (`tx_id <= {}' `). In addition, `tx_id` is stored as a `StringArray`, but the query lacks an opening quote and lacks an `ORDER BY tx_id DESC` clause. The query either errors out or returns an arbitrary record rather than the *closest* snapshot.
+
+---
+
+### Critical Flaw 9: Double-Slash Topic Prefixing in Network Layer
+* **File & Lines:** `raqim-core/src/network.rs:37, 120, 200`
+* **Severity:** **LOW (Topic Routing Anomaly)**
+* **Technical Defect:** 
+  In `GlobalNetworkBridge::new`:
+  ```rust
+  let workspace_prefix = format!("{}/", config.mesh_topic_prefix); // Ends with '/'
+  ```
+  Later, when generating topics:
+  ```rust
+  let key_expr = format!("{}/a2a/{}", self.workspace_prefix, capability_path); // Produces raqim//a2a/...
+  ```
+* **Blast Radius:** Creates double-slash delimiters (`raqim//a2a/...`) in Zenoh key expressions, causing potential path matching mismatches if external subscribers listen on normalized paths.
+
+---
+
+### Critical Flaw 10: Python Client Self-Signed Certificate Trap
+* **File & Lines:** `raqim-py/src/lib.rs:135-145`
+* **Severity:** **MEDIUM (Handshake Rejection)**
+* **Technical Defect:** 
+  If `cert_path` is `None` or missing on disk, `RaqimCryptoCore` self-signs the `CapabilityCertificate` using the agent's *own* private key rather than the Master Swarm Key.
+* **Blast Radius:** When this certificate is sent to `raqim-core`, Aegis executes `self.master_public_key.verify()`, which fails with `Lineage Audit Failure: Forged Master Signature`. Agents cannot establish connections without a pre-minted master-signed passport.
+
+---
+
+## 3. Exhaustive Layer-by-Layer Architectural Specification
+
 ```
-+-------------------+-------------------+-----------------------------------+
-| 4 Bytes (u32 LE)  | 4 Bytes (u32 LE)  | N Bytes                           |
-| Payload Length    | CRC32 Checksum    | rkyv-aligned Archived Vec<OpLog>  |
-+-------------------+-------------------+-----------------------------------+
++==================================================================================================+
+|                                    RAQIM KERNEL ARCHITECTURE                                     |
++==================================================================================================+
+|                                                                                                  |
+|   +------------------------------------------------------------------------------------------+   |
+|   | 1. PERIMETER & INGRESS GATEWAY                                                           |   |
+|   |    - TCP Socket Ingress (Port 8080) + HTTP Admin API (Axum Port 3000)                    |   |
+|   |    - Aegis Lineage Handshake (Master Key Ed25519) + Fast-Path Audit (Anti-Replay / ACL)  |   |
+|   +------------------------------------------------------------------------------------------+   |
+|                                              |                                                   |
+|                                              v                                                   |
+|   +------------------------------------------------------------------------------------------+   |
+|   | 2. RAQIM STATE CASCADE (execute_raqim_cascade)                                           |   |
+|   |                                                                                          |   |
+|   |   +-----------------------+  +-----------------------+  +----------------------------+   |
+|   |   | Loro CRDT Shards      |  | Axon Merkle DAG       |  | Nucleus WAL                |   |
+|   |   | - Namespace isolation |  | - BLAKE3 leaf hashing |  | - 6,000-batch group commit |   |
+|   |   | - Two-pass allocation |  | - 1,024-leaf batches  |  | - 2ms NVMe fsync           |   |
+|   |   | - Memory delta export |  | - Inclusion proofs    |  | - CRC32 checksum frames    |   |
+|   |   +-----------------------+  +-----------------------+  +----------------------------+   |
+|   |                                                                                          |   |
+|   |   +-----------------------+  +-----------------------+  +----------------------------+   |
+|   |   | Iceoryx2 Cortex       |  | Zenoh Network Bridge  |  | Axum Event Bus             |   |
+|   |   | - Zero-copy IPC       |  | - P2P pub/sub mesh    |  | - Real-time SSE Firehose   |   |
+|   |   | - Shared memory ring  |  | - A2A RPC queryables  |  | - System event stream      |   |
+|   |   +-----------------------+  +-----------------------+  +----------------------------+   |
+|   +------------------------------------------------------------------------------------------+   |
+|                                              |                                                   |
+|                                              v                                                   |
+|   +------------------------------------------------------------------------------------------+   |
+|   | 3. STORAGE & RECOVERY TIER                                                               |   |
+|   |    - Hot Vector Buffer: SIMD RAM cosine search + Watermark-based compaction eviction     |   |
+|   |    - 2PC WalCompactor: Background WAL segment rotation -> FastEmbed -> LanceDB           |   |
+|   |    - WORM Witness Engine: 1,024-leaf roots -> Ed25519 Signed -> Linux chattr +i          |   |
+|   +------------------------------------------------------------------------------------------+   |
+|                                              |                                                   |
+|                                              v                                                   |
+|   +------------------------------------------------------------------------------------------+   |
+|   | 4. AGENT INTEGRATION LAYER (raqim-py)                                                    |   |
+|   |    - PyO3 Rust Cryptographic Core (`RaqimCryptoCore`)                                    |   |
+|   |    - Deterministic Replay Decorator (`@raqim.trace`) with Canonical JSON hashing         |   |
+|   |    - Parallel Universe Branching (`phantom_` namespaces on code divergence)              |   |
+|   +------------------------------------------------------------------------------------------+   |
++==================================================================================================+
 ```
 
-#### Core Components & Functions
-- **`WalEngine`**: Manages a background IO worker loop over an async `mpsc` channel.
-- **Group Commit Protocol:** Gathers up to 6,000 logs or waits for a 2ms timeout before writing a single contiguous batch with CRC32 verification and `file.sync_data()`.
-- **`recover_and_truncate_torn_frames(path)`**: Scans the log on boot, detects torn or uncommitted tails caused by OS power failure, and truncates the file back to the last valid byte offset.
-- **`lexical_scan(query, namespace, limit, path)`**: Memory-maps (`memmap2::Mmap`) the WAL segment and performs zero-copy substring search using the **Aho-Corasick automaton** (`aho_corasick::AhoCorasick`).
-- **`fetch_hot_timeline(agent_hex, path)`**: Extracts recent chronological entries directly from the active WAL.
-
 ---
 
-### 3.4 Axon: Domain-Separated Merkle DAG & $O(\log_2 N)$ Proofs (`axon.rs`)
+### 3.1 Layer 1: Cryptographic Identity & Aegis Zero-Trust Perimeter
 
-`axon.rs` builds append-only binary Merkle trees with cryptographic domain separation and batch crystallization.
-
-#### Cryptographic Domain Separation
-- **Merkle Leaf KDF:** `blake3::Hasher::new_derive_key("raqim.axon.v1.leaf")` over `delta_bytes || agent_id`.
-- **Merkle Node KDF:** `blake3::Hasher::new_derive_key("raqim.axon.v1.node")` over `left_child || right_child`.
-- **Agent Identity KDF:** `blake3::Hasher::new_derive_key("raqim.agent.v1.identity")` over `ed25519_public_key` (derived to 16 bytes).
-
-#### Key Operations
-- **`seal_thought(tx_id, agent_id, delta_bytes, namespace)`**: Calculates the leaf hash and appends it to the active tree buffer for the namespace.
-- **`compute_markle_root(leaves)`**: Computes the root of a binary Merkle tree. Odd leaves are balanced by duplicating the final node.
-- **Batch Crystallization (1,024 Leaves):** When an active tree reaches 1,024 leaves, it is crystallized into an immutable `MarkleBatch`, linked to the previous batch root, and handed to `WormWitnessEngine`.
-- **`generate_proof_for_tx(tx_id) -> Option<InclusionProof>`**: Generates an audit trail of sibling hashes ($O(\log_2 N)$) from leaf to root.
-- **`verify_inclusion(leaf_hash, agent_id, proof) -> bool`**: Client-side verifiable calculation confirming inclusion in the root.
-- **`execute_forensic_boot_audit()`**: Recomputes historical roots on boot and compares them against signed WORM witness blocks.
-
----
-
-### 3.5 Aegis: Cryptographic Firewall & Lock-Free Rate Limiter (`aegis.rs`)
-
-`aegis.rs` enforces security policies, anti-replay constraints, lock-free rate limiting, and cluster-wide quarantine synchronization.
-
-#### Key Mechanics
-- **`CapabilityCertificate`**: Postcard-serialized credential containing `agent_hex`, `group_name`, expiration timestamp, and master key signature.
-- **`AtomicTokenBucket`**: Lock-free token-bucket rate limiter. Uses relaxed atomic loads and atomic compare-and-swap (CAS) loops on token counts without mutex contention.
-- **`authorize_packet_fast(...) -> Result<(), AegisViolation>`**:
-  1. *Quarantine Evaluation:* Drops packets if `agent_hex` is present in `quarantine_blocklist`.
-  2. *Anti-Replay Verification:* Enforces $|T_{\text{packet}} - T_{\text{system}}| \le 30\text{s}$.
-  3. *Ed25519 Payload Signature:* Verifies packet integrity using the sender's public key.
-  4. *Namespace Policy Rules:* Validates access against `allowed_namespaces` and `blocked_namespaces`.
-  5. *Token Bucket Evaluation:* Consumes rate-limiter tokens.
-- **`verify_session_lineage(cert_bytes, agent_public_key)`**: Verifies that the agent's public key matches the certificate identity hash and verifies the master key's signature.
-- **Quarantine Mesh Synchronization:** Quarantines agents locally upon violation and broadcasts `QuarantineRecord` alerts across the Zenoh network.
-
----
-
-### 3.6 Memory Router: RRF Hybrid Search & Deterministic Effects (`memory_router.rs`)
-
-`memory_router.rs` handles hybrid search across memory tiers, side-effect caching, and time-travel reality branching.
-
-#### Hybrid RAG Search
-Combines cold vector ANN from LanceDB and hot RAM vector search from `HotVectorBuffer` using **Reciprocal Rank Fusion (RRF, $k=60$)** with exponential time decay:
-$$\text{Score} = \sum_{m \in \{\text{Hot}, \text{Cold}\}} \frac{1}{k + \text{rank}_m} \times e^{-\lambda \cdot (T_{\text{now}} - T_{\text{thought}})}$$
-
-#### Deterministic Side-Effect Cache
-- **`record_effect(agent_id, step_ordinal, call_signature_hash, output_payload, namespace)`**: Caches tool outputs using a BLAKE3 key derived from `agent_id || step_ordinal || call_signature_hash`. Commits the record to the WAL and Merkle DAG.
-- **`get_effect(agent_id, step_ordinal, call_signature_hash)`**: Retrieves cached tool outputs during replay mode, bypassing external API invocations ($0 token/API cost).
-- **`boot_historical_agent(agent_hex, target_tx_id, fork_config, is_fork, phantom_tx)`**: Restores WASM linear memory to the closest prior snapshot, replays WAL deltas up to `target_tx_id`, applies configuration mutations, and branches execution into a `phantom_` namespace.
-
----
-
-### 3.7 Sandbox: Wasmtime Hypervisor & WASI Jailing (`sandbox.rs`)
-
-`sandbox.rs` implements sandboxed WebAssembly execution with Wasmtime v29, WASI Preview 1 jailing, fuel metering, and memory snapshotting.
-
-#### Security & Execution Bounds
-- **Fuel Metering:** Limits execution to 1,000,000 fuel units per invocation.
-- **Memory Limits:** Maximum reservation ceiling of 50MB per instance.
-- **WASI Jailing:** Direct file system and raw socket operations are blocked. All I/O is routed through host functions.
-
-#### Host ABI Functions
-- `host_emit_thought(ptr, len)`: Commits a thought directly to the kernel cascade.
-- `host_request_entropy(out_ptr, len)`: Returns host CSPRNG entropy.
-- `host_fetch_url(url_ptr, len, out_ptr)`: Proxies external HTTP calls through Aegis firewall inspection.
-- `host_ask_agent(cap_ptr, len, q_ptr, q_len)`: Dispatches an A2A query to the swarm.
-- `host_register_capability(cap_ptr, len)`: Registers capability query handlers.
-- `host_await_a2a_question()` / `host_reply_a2a()`: Coordinates incoming A2A queries.
-- `host_get_time()`: Returns synchronized system time.
-- **Memory Checkpointing:** `create_checkpoint()` and `inject_historical_state()` dump and restore WebAssembly linear memory pages for state reproduction.
-
----
-
-### 3.8 LanceDB Storage: Columnar Vector Vault & Arrow Schemas (`lancedb_store.rs`)
-
-`lancedb_store.rs` manages long-term cold storage, columnar Arrow schemas, and vector ANN search.
-
-#### Arrow Table Schemas
-- **`agent_history`**: `tx_id: Utf8`, `agent_id: Utf8`, `namespace: Utf8`, `text: Utf8`, `status: Utf8`, `timestamp: Int64`, `vector: FixedSizeList<Float32>[dims]`.
-- **`agent_snapshot`**: `agent_id: Utf8`, `tx_id: Utf8`, `timestamp: Int64`, `wasm_memory_dump: Binary`.
-- **`system_audit_vault`**: `event_id: Utf8`, `event_type: Utf8`, `agent_id: Utf8`, `details: Utf8`, `timestamp: Int64`.
-
-#### Key Operations
-- **`archive_batch(logs, vectors)`**: Encodes `OpLog` entries and embedding vectors into Arrow `RecordBatch` instances and appends them to LanceDB.
-- **`semantic_search(query, namespace, limit)`**: Executes cosine similarity ANN searches across historical records.
-- **`save_snapshot()` / `fetch_closest_snapshot()`**: Manages WASM memory dumps for historical time travel.
-- **`generate_compliance_report(agent_hex, start_ts, end_ts)`**: Compiles historical thoughts and Merkle roots into regulatory audit reports.
-
----
-
-### 3.9 Compactor: Two-Phase Commit WAL Lifecycle Manager (`compactor.rs`)
-
-`compactor.rs` migrates committed thoughts from the hot WAL into cold LanceDB storage using a **Two-Phase Commit (2PC)** state machine.
+Every thought entering the Raqim kernel is treated as untrusted network traffic.
 
 ```
-[Active WAL File] 
-       |
-       v (1GB size or 24hr timer)
-[Rotate Barrier] -> WalEngine seals & renames WAL to production.wal.<timestamp>
-       |
-       v (2PC Step 1: Write PENDING Manifest)
-[Vector Embedding] -> FastEmbed / OpenAI batch vectorization
+[Agent Public Key (32B)] ---> [BLAKE3 Domain Derivation: "raqim.agent.v1.identity"] ---> [Agent ID (16B)]
+                                                                                               |
+[Capability Certificate] ---> [Ed25519 Master Signature Verification] -------------------------+
+                                                                                               |
+                                                                                    (Session Established)
+```
+
+1. **Deterministic Agent Identity:**
+   An agent’s identity is derived strictly from its Ed25519 verifying key using a domain-separated BLAKE3 key derivation:
+   $$\text{Agent ID} = \text{BLAKE3-XOF}_{\text{"raqim.agent.v1.identity"}}(\text{PublicKey})[0..16]$$
+   This prevents identity spoofing: an agent cannot claim an `agent_hex` unless it holds the corresponding private key.
+
+2. **The Capability Passport:**
+   Agents authenticate using a `CapabilityCertificate` serialized via `postcard`:
+   * `agent_hex`: String hex of the 16-byte derived identity.
+   * `group_name`: Security group defined in `aegis.toml` (e.g. `admin_group`, `analyst_group`).
+   * `expiration_timestamp`: Absolute UNIX epoch expiration.
+   * `master_signature`: 64-byte Ed25519 signature over the payload by the Master Swarm Key (`ca-keys/swarm_master.key`).
+
+3. **Two-Tier Verification Pipeline:**
+   * **Handshake Phase (Heavy):** Verified only on the first packet of a TCP session. Validates the Master Key signature on the certificate, asserts that the certificate's `agent_hex` matches the packet's public key, checks expiration, and ensures the agent is not in the quarantine blocklist.
+   * **Fast-Path Audit (Sub-microsecond):** Executed for every single packet.
+     * **Anti-Replay Window:** Rejects packets where $|\text{current\_time} - \text{packet\_timestamp}| > 30\text{s}$.
+     * **Signature Verification:** Verifies the inner payload against the session's verifying key.
+     * **Key Drift Detection:** Ensures the socket's public key has not changed mid-session.
+     * **Access Control Lists (ACL):** Enforces `allowed_namespaces` and `blocked_namespaces` with glob support.
+     * **Token-Bucket Rate Limiting:** Enforces group-specific maximum TPS and burst capacity.
+
+---
+
+### 3.2 Layer 2: The CRDT Hive-Mind (Loro Substrate)
+
+Raqim maintains multi-agent state using Conflict-free Replicated Data Types (CRDTs) powered by `LoroDoc`:
+
+1. **Namespace Isolation:**
+   Each swarm namespace (e.g. `/finance/aml`, `/forensics/case_102`) is allocated an independent, isolated `LoroDoc`.
+2. **Two-Pass Speculative Allocation:**
+   `SwarmStateRegistry` manages document shards inside a `DashMap<String, Arc<SwarmState>>`:
+   * *Pass 1 (Fast Read):* Retrieves existing shards without acquiring a write lock on the registry.
+   * *Pass 2 (Speculative Instantiation):* If missing, allocates the `SwarmState` outside the lock and uses `DashMap::entry().or_insert()` for atomic insertion, eliminating lock contention.
+3. **State Mutation & Delta Export:**
+   * Each agent possesses a `LoroList` container within the namespace document.
+   * On append, a `LoroMap` node containing `tx_id`, `ts`, `payload`, and `status` is inserted.
+   * `doc.export(ExportMode::Updates { from: previous_vv })` extracts *only* the binary mutations generated by that specific operation, yielding minimal delta payloads for peer replication.
+
+---
+
+### 3.3 Layer 3: The Merkle DAG & State Crystallization (Axon GateKeeper)
+
+The Axon engine binds every operation into an append-only cryptographic directed acyclic graph (DAG):
+
+```
+Leaf Hash = BLAKE3("raqim.axon.v1.leaf", delta || agent_id)
+                      |
+           +----------+----------+
+           |                     |
+     [Node Hashing]        [Node Hashing]   ---> Computed via BLAKE3("raqim.axon.v1.node", left || right)
+           |                     |
+           +----------+----------+
+                      |
+              [Merkle Root (32B)]  (Crystallized every 1,024 leaves)
+```
+
+1. **Leaf Construction:**
+   $$\text{Leaf Hash} = \text{BLAKE3}_{\text{"raqim.axon.v1.leaf"}}(\text{delta} \mathbin{\Vert} \text{agent\_id})$$
+2. **Batch Crystallization (1,024 Chunking):**
+   * Transactions are appended to an `ActiveTreeBuffer`.
+   * When `accumulated_leaves.len() == 1024`, the Merkle tree is computed.
+   * The batch is sealed into a `MarkleBatch`, indexed in `batch_archive`, and its root becomes the `parent_batch_root` for the next cycle.
+3. **$O(\log N)$ Inclusion Proofs:**
+   Clients can request cryptographic inclusion proofs for any historical or active `tx_id`. The proof contains the leaf index, sibling hash path, and Merkle root, allowing offline verification via `verify_inclusion`.
+
+---
+
+### 3.4 Layer 4: Durability & Storage Hierarchy (Nucleus WAL, Compactor, LanceDB)
+
+```
+[Incoming OpLog] 
        |
        v
-[LanceDB Archive] -> Ingest RecordBatch into Arrow tables
+[Nucleus WAL (production.wal)] <--- Group commit (2ms flush, 6,000 batch, CRC32)
        |
-       v (2PC Step 2: Write COMMITTED Manifest)
-[Cleanup] -> Delete processed WAL segment & clear manifest
+       | (Rotated at 1GB or 24h)
+       v
+[2PC Compactor Manifest]
+       |
+       +---> [FastEmbed BGE-Base Embeddings]
+       |
+       +---> [LanceDB Vector Table: agent_history.lance]
+       |
+       `---> [Evict from HotVectorBuffer]
 ```
 
-#### Manifest Invariants
-- `CompactionState::Pending`: Manifest written atomically via temporary file rename. If interrupted by an OS crash, boot recovery resumes ingestion.
-- `CompactionState::Committed`: Ingestion complete. If interrupted before segment deletion, boot recovery cleans up the orphaned WAL segment.
+1. **Hot WAL (`nucleus.rs`):**
+   * Tokio async background worker with bounded channels (`100,000` depth).
+   * Group commits up to 6,000 logs or flushes every 2ms via physical `active_file.sync_data()`.
+   * In-memory `BTreeMap<u128, u64>` sparse index mapping `tx_id` $\rightarrow$ physical byte offset.
+2. **Autonomous 2PC Compactor (`compactor.rs`):**
+   * Triggered when the WAL reaches 1GB or every 24 hours.
+   * Issues `WalCommand::Rotate` to the WAL engine, which renames `production.wal` to `production.wal_<timestamp>.wal` and opens a clean active file.
+   * Writes a two-phase commit manifest (`Pending` $\rightarrow$ `Committed`).
+   * Generates dense vector embeddings via FastEmbed and commits Arrow `RecordBatch` tables to LanceDB.
+3. **Hybrid Memory Retrieval:**
+   `MemoryRouter::query_hybrid_memory` executes a scatter-gather search:
+   * Queries Cold LanceDB and Hot RAM Vector Buffer concurrently.
+   * Fuses results using Reciprocal Rank Fusion (RRF, $k=60$) combined with an exponential time-decay scoring function:
+     $$\text{Score}_{\text{decayed}} = \left( \frac{1}{60 + \text{Rank}} \right) \times e^{-\lambda \cdot \Delta t_{\text{hours}}}$$
 
 ---
 
-### 3.10 Worm Witness Engine: Immutable Storage & Linux `chattr +i` (`witness.rs`)
+### 3.5 Layer 5: IPC & Mesh Data Planes (Iceoryx2 & Zenoh)
 
-`witness.rs` anchors crystallized Merkle roots into immutable storage targets.
-
-#### Data Structures & Immutability Targets
-- **`AnchoredRootWitness`**: Contains batch metadata, root hashes, timestamps, and the master private key signature.
-- **`CertifiedBundleBlock`**: Pairs the signed witness with the raw `OpLog` batch.
-- **Local Immutable File Storage:** Saves bundles to `./vault/witnesses/batch_{id}.json`. On Linux, executes `chattr +i` to apply kernel-level append-only immutability.
-- **Cloud WORM Storage:** Replicates bundles via HTTP PUT to cloud object stores configured with Object Lock policies.
-
----
-
-### 3.11 Network Bridge: Zenoh P2P Swarm Gossip (`network.rs`)
-
-`network.rs` coordinates peer-to-peer swarm synchronization and RPC routing using Zenoh 1.7.2.
-
-#### Topic Topology
-- `raqim/{tenant}/{swarm}/thoughts/{node_id}`: Broadcast topic for locally committed thoughts.
-- `raqim/{tenant}/{swarm}/thoughts/*`: Wildcard subscription for foreign thought ingestion.
-- `raqim/{tenant}/{swarm}/a2a/{capability}`: Queryable path for A2A RPC requests.
-- `raqim/{tenant}/{swarm}/system/quarantine`: Synchronization topic for cluster quarantine alerts.
-- `raqim/{tenant}/{swarm}/control/{agent_hex}`: Control topic for out-of-band context eviction directives.
+1. **Iceoryx2 Cortex (Local Shared Memory):**
+   * True zero-copy IPC substrate.
+   * Employs memory-mapped shared memory pools for intra-node agent communication, bypassing network stack overhead.
+2. **Zenoh Mesh (`network.rs`):**
+   * Distributed P2P pub/sub and queryable mesh.
+   * Subscribes to `raqim/state/*` to synchronize CRDT state across clusters.
+   * Implements an echo filter to immediately drop self-originated packets.
+   * Routes Agent-to-Agent (A2A) RPC questions and responses over declared Zenoh queryables.
 
 ---
 
-### 3.12 State Substrate: Sharded Loro CRDT Documents (`state.rs`)
+### 3.6 Layer 6: Python Client Architecture (`raqim-py`)
 
-`state.rs` provides deterministic state convergence across nodes using Loro CRDTs.
-
-- **`SwarmState`**: Contains an isolated `LoroDoc` wrapped in a `parking_lot::RwLock` for a specific namespace, with diff event listeners attached to the root map.
-- **`SwarmStateRegistry`**: Sharded `DashMap<String, Arc<SwarmState>>` utilizing two-pass speculative allocation to eliminate write-lock contention.
-- **`purge_phantom_shards()`**: Scans and garbage-collects completed simulation shards (`phantom_*`) when their reference counts drop to 1.
-
----
-
-### 3.13 Hot Memory: 10k Ring Buffer & SIMD Cosine Proximity (`hot_memory.rs`)
-
-`hot_memory.rs` maintains an in-memory ring buffer of recent thought embeddings.
-
-- **`HotVectorBuffer`**: Thread-safe `VecDeque<HotVectorEntry>` ring buffer holding up to 10,000 entries.
-- **`search_hot(query_vector, namespace_filter, top_k)`**: Performs SIMD-accelerated cosine similarity search directly in RAM.
-- **`evict_compacted_up_to(max_compacted_tx)`**: Evicts entries that have been durably written to LanceDB, maintaining an efficient memory footprint.
+1. **Native PyO3 Cryptographic Core (`RaqimCryptoCore`):**
+   * Compiles native C-extensions for Ed25519 signing, BLAKE3 hashing, and `rkyv` serialization directly in Rust.
+   * Assembles `IngressEnvelope` frames and prefixes them with 4-byte little-endian lengths.
+2. **Deterministic Replay Decorator (`@raqim.trace`):**
+   * Canonicalizes function arguments using deterministic JSON serialization.
+   * Derives a 32-byte BLAKE3 call signature hash (`raqim.effect.v1.signature`).
+   * Queries `/v1/effect/get`. If found, returns the cached execution result with zero LLM/API cost.
+   * If code has changed, triggers divergence handling (`on_divergence="fork"`), creating an isolated `phantom_{namespace}_{agent}_step{N}` branch in the CRDT and WAL.
 
 ---
 
-### 3.14 Embedding Subsystem: FastEmbed BGE vs OpenAI Providers (`embedding.rs`)
+## 4. Raqim Siege Benchmark Suite: Mechanics & Mathematics
 
-`embedding.rs` abstracts vector generation across local and remote providers via the `EmbeddingProvider` trait.
-
-- **`LocalBgeProvider`** (`BGE-Base-EN-v1.5`): Local embedding generation producing 768-dimensional vectors via `fastembed`. Offloads inference to `tokio::task::spawn_blocking`.
-- **`OpenAIProvider`** (`text-embedding-3-large`): Remote embedding generation producing 3,072-dimensional vectors via the OpenAI REST API.
-- **`MockEmbeddingProvider`**: Benchmark provider returning zero-filled vectors for stress-testing raw throughput.
-
----
-
-### 3.15 Registry & Live Process Table (`registry.rs`)
-
-`registry.rs` tracks active agent processes in a concurrent `DashMap<String, AgentProcess>`.
-- Updates agent status (`Idle`, `Reasoning`, `ToolExecution`, `Quarantined`) on every ingress packet.
-- Provides real-time process metadata for topology visualization in `raqim-console`.
-
----
-
-### 3.16 Health & Vitals Telemetry (`health.rs`, `telemetry.rs`)
-
-- **`HealthMonitor` (`health.rs`)**: Uses `sysinfo` to monitor CPU load, RSS memory usage, host memory, and core temperature, broadcasting metrics to `/v1/system/health/live` at 1Hz when subscribers are active.
-- **`TelemetryEngine` (`telemetry.rs`)**: Implements lock-free atomic counters (`AtomicU64`) tracking CRDT merges, routed A2A bytes, and time-travel query volumes.
-
----
-
-### 3.17 Shared Memory IPC: Iceoryx2 Data Plane (`cortex.rs`)
-
-`cortex.rs` provides zero-copy shared-memory IPC via Iceoryx2 (`iceoryx2::prelude::*`) for low-latency communication between local processes on the same host.
-
----
-
-### 3.18 Kernel Configuration & Utilities (`config.rs`, `utils.rs`)
-
-- **`RaqimConfig` (`config.rs`)**: Parses `raqim.toml` and CLI flags (`CliArgs`), applying configuration overrides for daemon ports, storage paths, and cryptographic keys.
-- **`utils.rs`**: Provides helper functions, including `parse_agent_id()`, for converting 32-character hex strings into 16-byte fixed arrays.
-
----
-
-### 3.19 HTTP, SSE, WebSocket & Ingress API Layer (`api.rs`)
-
-`api.rs` exposes the HTTP/REST endpoints, SSE streams, and WebSocket bridges.
-
-#### API Route Reference
-
-| Method | Route | Handler | Purpose |
-| :--- | :--- | :--- | :--- |
-| **`GET`** | `/v1/state/proof/:tx_id` | `get_state_proof_handler` | Returns $O(\log_2 N)$ Merkle inclusion proof for a given $Tx_{id}$ |
-| **`POST`**| `/v1/effect/record` | `record_effect_handler` | Commits tool side-effects to WAL and Merkle DAG |
-| **`POST`**| `/v1/effect/get` | `get_effect_handler` | Retrieves cached side-effects during deterministic replay |
-| **`GET`** | `/v1/aegis/quarantine_list` | `active_qurantine_endpoint` | Lists all currently quarantined agents |
-| **`POST`**| `/v1/admin/quarantine/lift` | `lift_qurantine_and_resurrect` | Clears quarantine and sends context eviction signal via Zenoh |
-| **`GET`** | `/v1/aegis/metrics` | `aegis_metics_endpoint` | Returns security violation counts and rate-limiter token states |
-| **`POST`**| `/v1/admin/ca/mint` | `handle_ca_mint` | Mints Ed25519 Capability Certificates signed by the Master Key |
-| **`POST`**| `/v1/admin/time_travel` | `time_travel_endpoint` | Branches execution into a `phantom_` simulation shard |
-| **`GET`** | `/v1/admin/time_travel/timeline/:agent_hex` | `fetch_agent_timeline` | Returns historical thought sequence for an agent |
-| **`GET`** | `/v1/admin/cluster/info` | `cluster_info_endpoint` | Returns kernel vitals, WAL size, and CRDT operation totals |
-| **`GET`** | `/v1/admin/cluster/topology` | `cluster_topology_endpoint` | Returns active CRDT shards and connected agents |
-| **`GET`** | `/v1/cluster/enclaves` | `cluster_enclaves_endpoint` | Returns active agent enclaves and status |
-| **`GET`** | `/v1/dashboard/cards` | `dashboard_cards_endpoint` | Returns high-level metrics for dashboard cards |
-| **`POST`**| `/v1/admin/ingress/toggle` | `toggle_ingress_endpoint` | Toggles TCP ingress pausing (Zero-Window flow control) |
-| **`POST`**| `/v1/admin/compactor/trigger` | `trigger_compaction_endpoint`| Manually triggers 2PC WAL compaction to LanceDB |
-| **`POST`**| `/v1/system/boot_agent` | `upload_wasm_endpoint` | Uploads and registers `.wasm` agent binaries to `./plugins/` |
-| **`GET`** | `/v1/system/health/live` | `sse_health_endpoint` | 1Hz SSE stream of hardware and process metrics |
-| **`GET`** | `/v1/system/firehose` | `sse_firehose_endpoint` | Real-time SSE stream of all committed swarm thoughts |
-| **`GET`** | `/v1/time-travel/stream` | `sse_phantom_endpoint` | Dedicated SSE stream for simulation shard events |
-| **`GET`** | `/v1/system/agents/aliases` | `agent_alias_endpoint` | Returns map of `agent_hex -> alias` |
-| **`GET`** | `/v1/mcp/ws` | `mcp_ws_handler` | Bi-directional WebSocket bridge for MCP tool calling & A2A RPC |
-| **`POST`**| `/v1/swarm/ingress` | `http_ingress_endpoint` | Zero-copy binary `rkyv` HTTP thought ingestion |
-| **`GET`** | `/v1/swarm/memory` | `semantic_search_endpoint` | Hybrid vector search (Hot RAM + Cold LanceDB) |
-| **`GET`** | `/v1/vault/search` | `unified_vault_search` | Concurrent search combining LanceDB ANN and WAL lexical scanning |
-| **`GET`** | `/v1/vault/telemetry` | `vault_telemetry_endpoint` | Returns index sizes, vector counts, and storage metrics |
-
----
-
-## 4. `raqim-py`: Native PyO3 Extension & Python Deterministic Client
-
-### 4.1 Native Rust Extension (`src/lib.rs`)
-
-`raqim-py/src/lib.rs` compiles into the `raqim_core` C-extension module, exposing high-performance cryptographic primitives and `rkyv` serialization directly to Python.
-
-#### Native Class: `RaqimCryptoCore`
-- **`new(pem_path: &str, cert_path: Option<&str>)`**: Loads the Ed25519 private key, derives the 16-byte agent identity via BLAKE3 domain separation, and loads the capability certificate.
-- **`sign_payload(payload: &[u8]) -> PyBytes`**: Produces a 64-byte Ed25519 signature over arbitrary bytes.
-- **`generate_tcp_payload(agent_hex, intent_path, text) -> PyBytes`**: Serializes an `AgentState` struct with a UUIDv7 transaction ID to `rkyv` bytes, signs the payload, and formats an `IngressEnvelope` with a 4-byte LE length prefix for direct TCP transmission.
-- **`hash_call_signatures(call_inputs: &str) -> PyBytes`**: Computes a 32-byte BLAKE3 call signature hash (`raqim.effect.v1.signature`) over serialized function arguments.
-
----
-
-### 4.2 Python Runtime & `@raqim.trace` Engine (`raqim/client.py`)
-
-`raqim-py/raqim/client.py` provides the high-level Python client interface.
-
-#### Key Components
-- **`CanonicalSerializer`**: Normalizes Python primitives, dictionaries, dataclasses, and Pydantic models (v1 and v2) into deterministic JSON format (`sort_keys=True, separators=(',', ':')`) for repeatable BLAKE3 hashing.
-- **`RaqimClient`**:
-  - Manages connections, authentication, and execution modes (`record` vs. `replay`).
-  - **`boot()`**: Sends an initial `/system/handshake` over TCP to register the agent alias, and subscribes to Zenoh control topics.
-  - **`commit_thought(agent_hex, intent_path, text)`**: Sends signed zero-copy payloads to the daemon over TCP port 8080.
-  - **`query_memory(intent_path, query, limit)`**: Queries hybrid memory via HTTP.
-  - **`connect_swarm()` / `ask_swarm()` / `serve_capability()`**: Manages A2A RPC queries over WebSockets.
-  - **`_handle_os_control_override()`**: Listens for `FORCE_CONTEXT_EVICTION` directives from Aegis to reset corrupted agent context.
-- **`@raqim.trace(namespace, custom_signature)` Decorator**:
-  - Instruments synchronous functions, async coroutines, and async generators (streaming LLM tokens).
-  - **Record Mode:** Executes functions live, caches results via `/v1/effect/record`, and commits thoughts to the Merkle DAG.
-  - **Replay Mode:** Fetches cached results from `/v1/effect/get` without invoking the underlying function.
-  - **Automatic Divergence Handling:** If function arguments or code signatures change during replay, branches execution into a `phantom_{namespace}_{agent_hex}_step{step}` namespace and transitions from replay to live mode.
-- **`verify_state_proof_offline(payload_bytes, agent_id_str, proof_dict) -> bool`**: Recomputes the BLAKE3 Merkle path client-side to verify inclusion proofs with zero network dependencies.
-
----
-
-### 4.3 Real-World AML Swarm Demo (`agent_aml_demo.py`)
-
-Demonstrates an end-to-end pipeline with three sovereign agents:
+`raqim-siege` is the high-concurrency stress-testing engine for the Raqim kernel.
 
 ```
-[Synthetic Transaction Stream]
-             |
-             v
-  [Agent 1: Triage Screener] ----(Screens transactions below $10,000 threshold)
-             |
-             v (If flagged: Escalates anomaly)
-[Agent 2: Forensic Analyst] ----(Analyzes structuring cluster via Gemini 2.5 Flash)
-             |
-             v
-[Agent 3: Compliance Officer] --(Fetches Merkle Inclusion Proof & files sealed SAR)
-```
-
-1. **`triage_screener` (`/finance/triage`)**: Screens payments to detect structuring patterns (e.g., transfers between $9,000 and $10,000 targeting offshore nodes).
-2. **`forensic_analyst` (`/finance/investigations`)**: Analyzes transaction clusters using Gemini 2.5 Flash to generate forensic audit findings.
-3. **`compliance_officer` (`/finance/compliance_sar`)**: Attaches cryptographic Merkle inclusion proofs from `/v1/state/proof/:tx_id` and files a sealed Suspicious Activity Report (SAR).
-
----
-
-## 5. `raqim-cli`: Fleet Administration & Key Provisioning
-
-`raqim-cli/src/main.rs` provides command-line management for the Raqim OS.
-
-```
-raqim (CLI Entrypoint)
-  |-- keys forge       -> Batch-mints Ed25519 identities & Capability Passports
-  |-- aegis list       -> Displays active quarantine blocks
-  |-- aegis lift       -> Clears agent quarantine and triggers context reseeding
-  |-- timetravel       -> Displays historical causal timelines for an agent
-  `-- cluster info/top -> Inspects node vitals, WAL buffer loads, and CRDT shards
-```
-
-### Command Reference
-- **`raqim keys forge --name <name> --group <group> --count <N> --out-dir <dir>`**:
-  - Generates $N$ Ed25519 keypairs using `OsRng`.
-  - Derives 16-byte agent identities using BLAKE3 domain separation.
-  - Requests signed capability certificates from the daemon (`/v1/admin/ca/mint`).
-  - Writes `.pem` private keys (with Unix `0o600` permissions) and `.cert` capability files to the output directory.
-- **`raqim aegis list`**: Queries `/v1/aegis/quarantine_list` to display active quarantine records.
-- **`raqim aegis lift --agent-id <hex> --reason <text>`**: Calls `/v1/admin/quarantine/lift` to clear quarantine status and send a context reset signal.
-- **`raqim timetravel --agent-id <hex>`**: Queries `/v1/admin/time_travel/timeline/:agent_hex` to display an agent's historical causal timeline.
-- **`raqim cluster info`** and **`raqim cluster topology`**: Queries `/v1/admin/cluster/info` and `/v1/admin/cluster/topology` to report WAL size, memory usage, and CRDT shard state.
-
----
-
-## 6. `raqim-mcp`: Model Context Protocol Universal Bridge
-
-`raqim-mcp/src/main.rs` implements a Model Context Protocol (MCP) server over standard I/O (`StdioTransport`), allowing LLMs to interface directly with the Raqim OS.
-
-```
-+--------------------------+
-|  LLM Client / MCP Host   |
-+-------------+------------+
-              | Stdio (JSON-RPC)
-              v
-+-------------+------------+
-|        raqim-mcp         |
-+-------------+------------+
-              |
-              +---> commit_thought --> Ed25519 Sign -> 4B Frame -> TCP (Port 8080) -> WalEngine
-              +---> query_memory   --> HTTP GET -> /v1/swarm/memory (Hybrid RAG)
-              `---> ask_swarm      --> WebSocket -> /v1/mcp/ws -> Zenoh A2A RPC
-```
-
-### Exposed MCP Tools
-1. **`commit_thought`**:
-   - **Arguments:** `thought_text`, `status` (`Reasoning`, `ToolExecution`, `Halted`, `Idle`), `intent_path`.
-   - **Action:** Derives the caller's agent identity, signs the state using its Ed25519 key, and writes the framed binary payload to TCP port 8080.
-2. **`query_memory`**:
-   - **Arguments:** `query`, `intent_path`.
-   - **Action:** Queries `/v1/swarm/memory` to perform hybrid search across hot and cold storage tiers.
-3. **`ask_swarm`**:
-   - **Arguments:** `target_capability`, `question`.
-   - **Action:** Connects to `/v1/mcp/ws`, dispatches an `AskQuestion` payload, and awaits the response over the A2A network.
-
----
-
-## 7. `raqim-siege`: Hardened Microsecond Stress & Benchmark Suite
-
-`raqim-siege/src/main.rs` is a high-concurrency load-testing harness designed to evaluate kernel throughput and measure microsecond-level latency percentiles.
-
-```
-[Master CA Key Loaded]
-          |
-          v
-[Mint 50 Virtual Agents with Ed25519 Keys + Capability Passports]
-          |
-          v
-[Connect 50 Concurrent TCP Sockets to Kernel (Port 8080)]
-          |
-          v
-[Synchronize on tokio::sync::Barrier]
-          |
-          v
-[Firehose Ingestion: 500,000 Thoughts Streamed Across Sockets]
-          |
-          v
-[Collect Microsecond Latency Samples -> Calculate Percentile Distribution]
-```
-
-### Performance Metrics Captured
-- **Total Ingestion Volume:** 500,000 thoughts distributed across 50 concurrent worker shards.
-- **Latency Distribution:** Records write and transport times per thought to calculate $P_{50}$, $P_{90}$, $P_{95}$, $P_{99}$, $P_{99.9}$, $\text{Max}$, and $\text{Mean}$ metrics.
-- **Throughput:** Calculates operations per second (TPS) and data transfer rates under closed-loop TCP backpressure.
-
----
-
-## 8. `raqim-console`: Next.js 16 / React 19 Observability Deck
-
-`raqim-console` is an administrative dashboard built with Next.js 16, React 19, Tailwind CSS, Zustand, and XYFlow.
-
-```
-raqim-console Navigation & Layout
-  |-- / (Command Deck)        -> Hardware vitals, live semantic firehose, key metrics
-  |-- /topology               -> Interactive XYFlow graph of CRDT shards & live A2A beams
-  |-- /router & /replay       -> Step scrubber, WASM state hypervisor, effect diff inspector
-  |-- /aegis & /firewall      -> Token bucket gauges, quarantine table, remediation drawer, CA minting
-  `-- /vault & /audit-vault   -> Unified hybrid search workbench, Merkle proof inspector
-```
-
-### Core Architecture & State Management
-- **`src/lib/store/useSwarmStore.ts` (Zustand Store):**
-  - Manages real-time state for thoughts, active transaction selections, rolling TPS histories, hardware vitals, and topology nodes/edges.
-  - Subscribes to SSE streams (`/v1/system/firehose`, `/v1/system/health/live`, `/v1/time-travel/stream`) and processes UI events.
-- **`src/lib/api.ts` (Authoritative Client API):**
-  - Type-safe fetch bindings for all `raqim-core` HTTP endpoints with structured error handling.
-- **Key UI Modules:**
-  - **`DagCanvas` & `TopologyCanvas`:** Visualizes CRDT namespace shards and renders animated A2A message routing edges using XYFlow.
-  - **`TemporalRouter` (`StepScrubberDeck`, `PhantomTerminal`, `WasmHypervisorPanel`):** Provides step-by-step timeline scrubbing, state diffing, and execution controls for `phantom_` simulation branches.
-  - **`AegisClientLayout` (`TokenBucketGauges`, `QuarantineTable`, `CaMintStation`):** Displays live rate-limiting token levels and manages quarantined agents.
-  - **`VaultClientLayout` (`MerkleProofInspector`, `UnifiedSearchWorkbench`):** Supports interactive verification of Merkle proofs and semantic search exploration across storage tiers.
-
----
-
-## 9. End-to-End Execution Lifecycles
-
-### 9.1 Ingress to Cascade Lifecycle
-
-```
-[Agent / SDK]
-      | (rkyv IngressEnvelope: intent_path, public_key, signature, state_bytes, cert)
-      v
-[TCP Server (Port 8080)]
-      |
-      v
-[Aegis GateKeeper]
-      |-- 1. Verify Session Lineage against Master Public Key
-      |-- 2. Verify Anti-Replay Timestamp (|T_p - T_s| <= 30s)
-      |-- 3. Verify Ed25519 Packet Signature
-      |-- 4. Check Group Policy Namespace Access Rules
-      `-- 5. Consume Rate Limiter Token (AtomicTokenBucket CAS)
-      |
-      v (Authorization Passed)
-[execute_raqim_cascade]
-      |
-      +---> 1. Loro CRDT Shard: Append thought to namespace timeline map & export delta
-      +---> 2. Axon Merkle DAG: Hash leaf (BLAKE3) & append to active tree buffer
-      +---> 3. Nucleus WAL: Send OpLog to background group-commit queue (2ms / 6k batch)
-      +---> 4. Iceoryx2 Cortex: Publish rkyv bytes to shared-memory zero-copy IPC
-      +---> 5. Zenoh Network: Broadcast OpLog across P2P mesh
-      `---> 6. Axum API: Emit ThoughtCommitted event to SSE Firehose
++==================================================================================================+
+|                                    RAQIM SIEGE PIPELINE FLOW                                     |
++==================================================================================================+
+|                                                                                                  |
+|  [Master Swarm CA] ---> Mint 50 Virtual Agents (Ed25519 Keypairs + Blake3 IDs + Signed Passports)|
+|                                                        |                                         |
+|                                                        v                                         |
+|  [50 Tokio Workers] ---> Connect 50 Dedicated TCP Sockets to Kernel (127.0.0.1:8080)             |
+|                                                        |                                         |
+|                                                        v                                         |
+|  [tokio::sync::Barrier(51)] ---> Synchronize All Sockets at the Starting Gate                   |
+|                                                        |                                         |
+|                                                        v  (Simultaneous Firehose)                |
+|  +--------------------------------------------------------------------------------------------+  |
+|  | Per-Worker Execution Loop (10,000 Rounds / Worker = 500,000 Total Thoughts)               |  |
+|  |                                                                                            |  |
+|  |   1. Generate 128-bit UUIDv7 (now_v7) + Current UNIX Timestamp                             |  |
+|  |   2. Construct AgentState { agent_id, tx_id, timestamp, namespace, text }                  |  |
+|  |   3. Serialize AgentState to rkyv zero-copy byte buffer                                    |  |
+|  |   4. Compute Ed25519 signature over state bytes                                            |  |
+|  |   5. Pack IngressEnvelope { intent_path, public_key, signature, state_bytes, cert }        |  |
+|  |   6. Serialize IngressEnvelope to rkyv buffer                                              |  |
+|  |   7. Measure Instant::now() -> Write [4B Length] + [Payload] -> Record latency (µs)        |  |
+|  +--------------------------------------------------------------------------------------------+  |
+|                                                        |                                         |
+|                                                        v                                         |
+|  [Join All Workers] ---> Aggregate 500,000 Latency Samples -> sort_unstable()                   |
+|                                                        |                                         |
+|                                                        v                                         |
+|  [Statistical Reduction] ---> Compute Throughput (TPS), Mean, P50, P90, P95, P99, P99.9, Max     |
++==================================================================================================+
 ```
 
 ---
 
-### 9.2 Agent-to-Agent (A2A) RPC Query Flow
+### 4.1 Benchmark Concurrency & Sharding Architecture
 
-```
-[Agent A (Requester)]                    [raqim-core Daemon]                  [Agent B (Responder)]
-        |                                         |                                     |
-        |--- 1. AskQuestion (WS /v1/mcp/ws) ---->|                                     |
-        |    (Signed question + cert)             |                                     |
-        |                                         |-- 2. Aegis Verification             |
-        |                                         |-- 3. Seal Tx_ask in WAL/Merkle      |
-        |                                         |-- 4. Dispatch Zenoh Query --------->|
-        |                                         |      (Key: .../a2a/{capability})    |
-        |                                         |                                     |-- 5. Execute AI logic
-        |                                         |<-- 6. Reply over Zenoh Queryable --|
-        |                                         |      (Signed answer)                |
-        |                                         |-- 7. Seal Tx_reply in WAL/Merkle    |
-        |                                         |-- 8. Emit A2aMessageRouted to SSE   |
-        |<-- 9. QuestionAnswered (WebSocket) ----|                                     |
-        |    (Coroutines resume execution)        |                                     |
-```
+* **Total Ingestion Volume:** 500,000 thoughts.
+* **Concurrent TCP Streams:** 50 dedicated async worker tasks (`concurrency = 50`).
+* **Partitioned Swarm Shards:** 50 distinct namespaces (`/siege/shard_00` to `/siege/shard_49`).
+* **Rounds per Worker:** 10,000 serial requests per socket.
+* **Socket Tuning:** `TCP_NODELAY` is enabled on all streams to disable Nagle's algorithm and ensure immediate packet transmission.
 
 ---
 
-### 9.3 Deterministic Replay & Universe Branching
+### 4.2 Synchronization & Measurement Methodology
 
-```
-[Replay Run: @raqim.trace]
-            |
-            v
-[CanonicalSerializer: Extract Function Signature + Canonical JSON Arguments]
-            |
-            v
-[Compute 32-Byte BLAKE3 Signature Hash (Context: raqim.effect.v1.signature)]
-            |
-            v
-[Query Daemon: POST /v1/effect/get (agent_hex, step_ordinal, call_signature_hex)]
-            |
-    +-------+-------+
-    |               |
-(Found in WAL)   (Missing / Code Changed)
-    |               |
-    v               v
-[Return Cached]  [Trigger Divergence Handling: on_divergence="fork"]
-[$0 API Cost]       |
-                    v
-                 [Switch Agent Mode: REPLAY -> LIVE]
-                 [Branch Namespace: phantom_{namespace}_{agent_hex}_step{step}]
-                 [Restore Memory Snapshot via Wasmtime Linear Memory Injection]
-                 [Execute Modified Code Live]
-                 [Commit New Branch to WAL, Axon Merkle DAG & SSE Streams]
-```
+1. **Pre-Bench Calibration Barrier:**
+   Workers initialize and establish TCP sockets *before* timing begins. A `tokio::sync::Barrier(51)` holds all 50 workers and the coordinator thread. Once all sockets are open, the barrier drops, releasing all 50 workers simultaneously.
+2. **Individual Operation Latency:**
+   Each worker records high-resolution elapsed time around each frame write:
+   ```rust
+   let op_start = Instant::now();
+   stream.write_all(&len_prefix).await?;
+   stream.write_all(&envelope_bytes).await?;
+   let op_micros = op_start.elapsed().as_micros() as u64;
+   latency_samples_micros.push(op_micros);
+   ```
 
 ---
 
-### 9.4 Autonomous 2PC Compaction & WORM Witness Anchoring
+### 4.3 Throughput (TPS) & Statistical Latency Calculations
 
-```
-[Background Compactor Loop]
-            | (Triggered by 1GB WAL threshold or 24h timer)
-            v
-[1. Send WalCommand::Rotate to WalEngine]
-            | (WalEngine seals active file -> renames to production.wal.<timestamp>)
-            v
-[2. Write CompactionManifest (State: PENDING)]
-            |
-            v
-[3. Decode 16-byte Aligned OpLog Batches + Verify CRC32 Checksums]
-            |
-            v
-[4. Compute Vector Embeddings (FastEmbed BGE-Base / OpenAI Large)]
-            |
-            v
-[5. Ingest RecordBatch into LanceDB agent_history Table]
-            |
-            v
-[6. Write CompactionManifest (State: COMMITTED)]
-            |
-            +---> Delete Rotated WAL Segment & Clear Manifest
-            +---> Evict Archived Entries from HotVectorBuffer Ring Buffer
-            `---> Emit SystemEvent::CompactionTriggered
-            |
-            v
-[7. WormWitnessEngine: Anchor Crystallized Merkle Root (1,024 leaves)]
-            |
-            +---> Sign Witness Payload with Master Private Key (Ed25519)
-            +---> Write Bundle Block to ./vault/witnesses/batch_{id}.json
-            +---> Apply Linux Kernel Immutability (chattr +i)
-            `---> Replicate to Cloud WORM Bucket (Optional)
-```
+1. **Real Throughput (TPS):**
+   $$\text{TPS} = \frac{N_{\text{total\_processed}}}{\Delta t_{\text{bench\_elapsed}}}$$
+   Where $N_{\text{total\_processed}} = 500{,}000$ and $\Delta t_{\text{bench\_elapsed}}$ is the total wall-clock duration from barrier release to the final worker join.
+
+2. **Data Volume Transferred:**
+   $$\text{Volume (MB)} = \frac{N_{\text{total\_processed}} \times 250\text{ bytes}}{1024 \times 1024}$$
+
+3. **Latency Percentile Analysis:**
+   All 500,000 latency measurements are aggregated into a single vector and sorted using cache-efficient in-place sorting (`sort_unstable()`):
+   * **P50 (Median):** Index $\lfloor 0.50 \times N \rfloor$
+   * **P90:** Index $\lfloor 0.90 \times N \rfloor$
+   * **P95:** Index $\lfloor 0.95 \times N \rfloor$
+   * **P99 (Tail Latency):** Index $\lfloor 0.99 \times N \rfloor$
+   * **P99.9 (Worst Tail):** Index $\min(\lfloor 0.999 \times N \rfloor, N - 1)$
+   * **Arithmetic Mean:** $\bar{x} = \frac{1}{N} \sum_{i=1}^{N} x_i$
 
 ---
 
-## 10. Architectural Invariants & Engineering Reference
+## 5. Architectural Invariants & Specification Summary
 
-| Layer / Invariant | Technical Rule / Standard | Primary Code Implementation |
+| Subsystem | Core Primitive / Guarantee | Failure Mode if Broken |
 | :--- | :--- | :--- |
-| **Zero-Copy Memory Alignment** | `rkyv` structs containing 128-bit fields (`transaction_id: u128`) require 16-byte alignment (`rkyv::util::AlignedVec<16>`) before deserialization. | [`lib.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/lib.rs), [`nucleus.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/nucleus.rs), [`compactor.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/compactor.rs) |
-| **Domain-Separated Cryptography** | Distinct BLAKE3 contexts for identity (`raqim.agent.v1.identity`), Merkle leaves (`raqim.axon.v1.leaf`), nodes (`raqim.axon.v1.node`), and effect signatures (`raqim.effect.v1.signature`). | [`axon.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/axon.rs), [`api.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/api.rs), [`client.py`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-py/raqim/client.py) |
-| **Lock-Free Rate Limiting** | `AtomicTokenBucket` relies on relaxed atomic loads and compare-and-swap (CAS) loops on `AtomicU64` to prevent lock poisoning and eliminate thread blocking. | [`aegis.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/aegis.rs) |
-| **Zero Lock Contention CRDTs** | `SwarmStateRegistry` uses two-pass speculative allocation to manage Loro document shards without holding global write locks during document allocation. | [`state.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/state.rs) |
-| **Group Commit Durability** | `WalEngine` batches up to 6,000 entries (or flushes after 2ms), using CRC32 checksums and physical `file.sync_data()` calls to protect against torn frames. | [`nucleus.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/nucleus.rs) |
-| **2PC Storage Boundary** | `WalCompactor` tracks segment transitions via atomic manifest writes (`Pending` $\rightarrow$ `Committed`) to guarantee crash resilience during WAL-to-LanceDB migration. | [`compactor.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/compactor.rs) |
-| **Immutable Proof Anchoring** | 1,024-leaf Merkle roots are signed with Ed25519 master keys, written to append-only storage, and locked with Linux kernel `chattr +i` attributes. | [`witness.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/witness.rs), [`axon.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/axon.rs) |
-| **Deterministic Side-Effect Replay** | Tool executions are cached by signature hash. Deterministic replays bypass external API invocations ($0 cost), auto-branching into `phantom_` namespaces on code divergence. | [`memory_router.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/memory_router.rs), [`client.py`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-py/raqim/client.py) |
-| **Zero-Trust Network Perimeter** | All A2A queries verify lineage certificates, validate anti-replay timestamps ($\pm 30\text{s}$), check Ed25519 signatures, and log causal Merkle links for asks and replies. | [`network.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/network.rs), [`aegis.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/aegis.rs), [`api.rs`](file:///wsl.localhost/Ubuntu-22.04/home/muhammad/projects/raqim/synapse/raqim-core/src/api.rs) |
+| **Aegis Gateway** | Zero-trust Ed25519 lineage verification + Anti-replay window ($\pm 30\text{s}$). | Forged state injection / Replay attacks. |
+| **Loro CRDT** | Deterministic conflict-free timeline merging across isolated namespaces. | State divergence across swarm nodes. |
+| **Axon GateKeeper** | BLAKE3 Merkle DAG sealing with 1,024-leaf batch crystallization. | Loss of cryptographic auditability. |
+| **Nucleus WAL** | CRC32-framed, group-committed append-only binary log with 2ms hardware sync. | Torn frames / Silent state loss on power failure. |
+| **WalCompactor** | 2PC manifest-driven segment rotation and LanceDB vector ingestion. | Unbounded disk growth / WAL compaction failure. |
+| **WORM Engine** | Append-only Ed25519-signed witness blocks with Linux `chattr +i` immutability. | Historical record tampering. |
+| **Memory Router** | Hybrid RRF ($k=60$) search with exponential recency decay. | Amnesia / Inability to recall historical context. |
+| **Raqim Trace** | Deterministic signature-hashed effect replay with automatic universe branching. | Non-deterministic agent loops / Redundant API costs. |
+
+---
+
+## 6. Next-Step Engineering Roadmap for AI Research Agents
+
+When initiating the next development phase, execute fixes in the following strict order:
+
+1. **Patch Compactor Offset:** Update `compactor.rs:238` from `offset += entry_len;` to `offset += 8 + entry_len;`.
+2. **Fix WAL Startup Seek:** Ensure `active_file` in `nucleus.rs:65` seeks to `clean_offset` or is opened with `.append(true)`.
+3. **Fix Aegis Wildcard Slicing:** Correct `aegis.rs:200` from `blocked.len() + 1` to `blocked.len() - 1`.
+4. **Harden `AtomicTokenBucket`:** Replace relaxed load-and-subtract with a `compare_exchange_weak` CAS loop to prevent integer underflow.
+5. **Align Memory Router WAL Scanner:** Fix `memory_router.rs:115` to advance 8 bytes past the frame header and access `Archived<Vec<OpLog>>`.
+6. **Harmonize WORM Filenames:** Align `witness.rs:114` to search for `batch_{:08}.json`.
+7. **Store 128-bit UUIDs in CRDT:** Encode `tx_id` as hex strings or two 64-bit integers in `state.rs:69`.
