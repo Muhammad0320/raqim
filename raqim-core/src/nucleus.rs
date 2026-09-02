@@ -31,6 +31,14 @@ pub struct WalEngine {
     pub index: Arc<RwLock<BTreeMap<u128, u64>>>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum WalError {
+    #[error("WAL channel saturated oro worker thread dead: {0}")]
+    IngressQueueFull(String),
+    #[error("I/O error during  WAL operation: {0}")]
+    Io(#[from] std::io::Error)
+}
+
 pub enum WalCommand {
     Rotate(oneshot::Sender<String>),
     Shutdown,
@@ -340,8 +348,8 @@ impl WalEngine {
     }
 
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
-    pub async fn append(&self, log: OpLog) {
-        let _ = self.sender.send(log).await;
+    pub async fn append(&self, log: OpLog) -> Result<(), WalError> {
+        self.sender.send(log).await.map_err(|e| WalError::IngressQueueFull(e.to_string()) );
     }
 
     /// Extremely fast binary scan of the active WAL for a specific substring
