@@ -113,25 +113,38 @@ impl MemoryRouter {
         if let Ok(file) = File::open(&self.config.wal_path) {
             if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
                 let mut offset = 0;
-                while offset < mmap.len() {
-                    if offset + 4 > mmap.len() {
+                let mut aligned_buff = rkyv::util::AlignedVec::<16>::();
+
+                while offset + 8 <= mmap.len() {
+                    let entry_len = u32::from_le_bytes( mmap[offset..offset+4].try_into().unwrap()) as usize;
+                    let expected_crc = u32::from_le_bytes( mmap[offset + 4..offset + 8].try_into().unwrap());
+                    let frame_total = 8 + entry_len;
+
+                    if offset + frame_total > mmap.len() {
                         break;
                     }
 
-                    let mut len_bytes = [0u8; 4];
-                    len_bytes.copy_from_slice(&mmap[offset..offset + 4]);
-                    let entry_len = u32::from_le_bytes(len_bytes) as usize;
-                    offset += 4;
-                    let entry_slice = &mmap[offset..offset + entry_len];
+                    let entry_slice = &mmap[ offset + 8..offset + frame_total  ]
 
-                    //  TRUE ZERO-COPY: We cast a pointer. No mem allocation. No deserialization
-                    let archived_log = unsafe {
-                        rkyv::access_unchecked::<<OpLog as Archive>::Archived>(entry_slice)
-                    };
+                    // Hardware CRC32 checksum 
+                    if crc32fast::hash(entry_slice) != expected_crc {
+                        offset += frame_total;
+                        continue;
+                    }
 
-                    callback(archived_log);
+                    // Realign to 16-byte boundary to prevent SIMD alignment traps
+                    aligned_buf.clear();
+                    aligned_buf.extend_from_slice(entry_slice);
 
-                    offset += entry_len;
+                    
+                    if let Ok(archived_batch) =  rkyv::access::<< Vec<OpLog> as rkyv::Archive >::Archived, rkyv::rancor::Error>(&aligned_buf) {
+
+                        for log in archive_batch.as_slice() {
+                            callback (archived_log);
+                        }
+                    }
+
+                    offset += frame_total;
                 }
             }
         }
