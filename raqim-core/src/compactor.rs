@@ -272,7 +272,7 @@ impl WalCompactor {
                 }
             }
 
-            offset += entry_len;
+            offset += frame_total;
         }
 
         if logs_to_archive.is_empty() {

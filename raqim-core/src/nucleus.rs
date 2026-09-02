@@ -20,6 +20,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::{
     sync::{RwLock, mpsc, oneshot},
     time::interval,
+    io::AsyncSeekExt
 };
 
 pub struct WalEngine {
@@ -49,7 +50,7 @@ impl WalEngine {
         })
     }
 
-    /// Bootstraps the enterprise crash-safe WAL with automatic torn-frame recovery
+    /// Bootstraps the crash-safe WAL with automatic torn-frame recovery
     pub async fn start(file_path: String) -> (Arc<Self>, tokio::task::JoinHandle<()>) {
         println!("Bismillah. Booting Portable Nucleus Crash-Safe WAL Engine...");
 
@@ -70,10 +71,14 @@ impl WalEngine {
                 .create(true)
                 .read(true)
                 .write(true)
+                .append(true)
                 .open(&file_path)
                 .await
-                .expect("Failed to open  WAL file");
+                .expect("Failed to open crash-safe WAL file");
 
+            // Explicit hardware seek to guarantee alignment with recovered index. 
+            active_file.seek(std::io::SeekFrom::Start(clean_offset)).await.expect("FATAL: Failed to seek WAL writes cursor to clean_offset");
+            
             let mut current_offset = clean_offset;
             let mut batch: Vec<OpLog> = Vec::with_capacity(6_000);
 
@@ -131,7 +136,7 @@ impl WalEngine {
 
                             // Generate archived filename based on unix timestamp
                             let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
-                            let archived_name = format!("{fp_clone}_{timestamp}.wal");
+                            let archived_name = format!("{}_{}.wal", fp_clone, timestamp);
 
                             // Async File rename (non-blocking)
                             if let Err(e) = tokio::fs::rename(&fp_clone, &archived_name).await {
@@ -524,4 +529,5 @@ impl WalEngine {
 
         highest_tx
     }
+
 }
