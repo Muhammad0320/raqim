@@ -59,7 +59,7 @@ class CanonicalSerializer:
             return dataclasses.asdict(obj)
         # Byte support
         if isinstance(obj, (bytes, bytearray)): 
-            return base64.b64decode(obj).decode("ascii")
+            return base64.b16encode(obj).decode("ascii")
         
         # Fallback to string representation
         return str(obj)
@@ -467,7 +467,7 @@ class RaqimClient:
             "capability": capability,
             "question": list(question),
             "sender_hex": sender_hex,
-            "public_key": list(self.crypto_core.public_key_bytes),
+            "public_key": list(self.crypto_core.pub_key_bytes),
             "signature": list(signature),
             "capability_cert": ""
         }
