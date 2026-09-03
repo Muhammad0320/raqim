@@ -765,7 +765,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn the hardware interrupt loop
     let health_pause_rx = pause_rx.clone();
     HealthMonitor::spawn_telemetry_loop(health_tx.clone(), health_pause_rx);
-
+    
     let api_state = ApiState {
         config: config.clone(),
         aegis: aegis.clone(),
@@ -829,7 +829,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
 
                 println!("External Agent connected from: {}", addr);
-
+                    
                 let task_axon = axon.clone();
                 let task_cortex_tx = cortex_tx.clone();
                 let task_wal = wal.clone();
@@ -983,7 +983,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             // spawn the heave lancedb/wal lookup in the bg os thread
                             tokio::spawn(async move {
-
+                                
                                 println!("[JIT HYDRATION] Waking up agent {} from cold storage.", agent_hex_clone);
 
                                 if let Err(e) = router_clone.rebuild_agent_timeline(&agent_hex_clone, u128::MAX, wal_clone).await {
@@ -1006,7 +1006,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // --- The Raqim Cascade ---
                     // If the WAL or the Publisher channel are full, the .await creates a healthy backppressure rather than panicking.
-                    let res = execute_raqim_cascade(
+                    match execute_raqim_cascade(
                         &archived_state,
                         task_axon.clone(),
                         task_wal.clone(),
@@ -1017,7 +1017,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Vec::new(),
                         Vec::new(),
                     )
-                    .await;
+                    .await {
+
+                        Ok(res) => {
+                                let tx_id = match res {
+                                Ok(id) => id,
+                                Err(e) => {
+                                    eprintln!("[CASCADE ERROR]: Processing failed: {:?}", e);
+                                    continue;
+                                }
+                            };
+
+                            let _ = task_ui_tx.send(UiEvent::ThoughtCommitted {
+                                agent_hex: agent_hex.clone(),
+                                intent_path: path_intent.to_string(),
+                                tx_id: format!("{:032x}", tx_id),
+                                text,
+                            });
+                     } 
+                     Err(e) => {
+                        eprintln!("[TCP INGRESS REJECTED] Hardware Backpressure: {} ", e);
+                     
+                        break;
+                    }
+
+
+                    }
 
                     // Update RAM process Table (O(1) nanoseconds lock)
                     task_registry.touch_agent(
@@ -1027,20 +1052,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         &alias,
                     );
 
-                    let tx_id = match res {
-                        Ok(id) => id,
-                        Err(e) => {
-                            eprintln!("[CASCADE ERROR]: Processing failed: {:?}", e);
-                            continue;
-                        }
-                    };
 
-                    let _ = task_ui_tx.send(UiEvent::ThoughtCommitted {
-                        agent_hex: agent_hex.clone(),
-                        intent_path: path_intent.to_string(),
-                        tx_id: format!("{:032x}", tx_id),
-                        text,
-                    });
 
                  }
 

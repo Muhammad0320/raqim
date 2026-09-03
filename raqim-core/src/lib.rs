@@ -188,7 +188,7 @@ pub async fn execute_raqim_cascade(
     let delta = shard_brain
         .get_or_create_brain(&enriched_state.namespace.clone())
         .append_agent_thought(&agent_hex, &enriched_state)
-        .unwrap();
+        .map_err(|e| anyhow::anyhow!("CRDT allocation failed: {}", e))?;
 
     // telemetry.record_crdt_merge();
 
@@ -212,7 +212,7 @@ pub async fn execute_raqim_cascade(
     }
 
     // 4. Fire to wal (Durability)
-    wal.append(sealed_log.clone()).await;
+    wal.append(sealed_log.clone()).await.map_err(|e| anyhow::anyhow!("Durability Breach / WAL Saturated: {}", e))?;
 
     // 5. Fire to Local Cortex (Zero-Copy IPC )
     let serialized_log = rkyv::to_bytes::<rkyv::rancor::Error>(&sealed_log).unwrap();
