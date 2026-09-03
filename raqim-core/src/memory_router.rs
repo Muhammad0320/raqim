@@ -106,7 +106,7 @@ impl MemoryRouter {
     }
 
     /// : Scans the WAL and executes a closure on the Zero-Copy Archived data
-    pub fn scan_wal_zero_copy<F>(&self, mut callback: F)
+    pub fn scan_wal_zero_copy<F>(&self, mut callback: F) -> Result<(), anyhow::Error>
     where
         F: FnMut(&Archived<OpLog>),
     {
@@ -148,6 +148,8 @@ impl MemoryRouter {
                 }
             }
         }
+
+        Ok(())
     }
 
     // RAG CONTEXT: Prioritize the hot WAL, fills the rest with semantic lanceDB
