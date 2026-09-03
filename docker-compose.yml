@@ -5,6 +5,7 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
+    image: raqim/core:v1.0.0
     container_name: raqim-core-daemon
     restart: unless-stopped
     ports: 
@@ -24,3 +25,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+    # The Frontend
+    raqim-console: 
+      build: 
+        context: ./raqim-console
+        dockerfile: Dockerfile
+      image: raqim/console:v1.0.0
+      container_name: raqim-console-ui
+      restart: unless-stopped
+      ports: 
+      - "3000:3000"
+      environment: 
+        - NEXT_PUBLIC_RAQIM_DAEMON_URL=http://localhost:8081
+      depends_on: 
+        raqim-daemon: 
+          condition: service_healthy

@@ -8,15 +8,19 @@ FROM rust:1.80-bookworm AS builder
 WORKDIR /usr/src/raqim
 
 # Intall native C toolchain & build dependencies
-RUN apt-get update && apt-get intall -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     build-essential \
-    clang \
-    && rm -rf /var/lib/api/lists/*
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the entire repo into a clean room
-COPY . .
+# Copy the workspace manifest and spurce tree
+COPY Cargo.toml Cargo.lock ./
+COPY raqim-core ./raqim-core
+COPY raqim-cli ./raqim-cli
+COPY raqim-mcp ./raqim-mcp
+COPY raqim-siege ./raqim-siege
 
 # Compile optimizeed binaries with stripped debug symbols
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
@@ -40,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Create non-root unprivileged service user
 RUN groupadd -g 10001 raqim && \
-    useradd -u -10001 -g raqim -d /var/lib/raqim -m -s /sbin/nologin raqim
+    useradd -u 10001 -g raqim -d /var/lib/raqim -m -s /sbin/nologin raqim
 
 # Establish persistent storage diirectories with non-root ownership 
 WORKDIR /var/lib/raqim 
@@ -68,4 +72,4 @@ ENV RAQIM_WAL_PATH=/var/lib/raqim/data/production.wal
 ENV RAQIM_LANCE_PATH=/var/lib/raqim/data/production_semantic.lancedb
 
 # The container execute the binary directly 
-ENTRYPOINT ["/usr/local/bin/raqim-core"]
+ENTRYPOINT ["/usr/local/bin/raqim-core"] 
