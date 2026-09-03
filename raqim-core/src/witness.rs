@@ -136,7 +136,7 @@ impl WormWitnessEngine {
         &self,
         batch_id: u64,
     ) -> Result<CertifiedBundleBlock, anyhow::Error> {
-        let file_path = format!("{}/bundle_{:08}.json", self.witness_dir, batch_id);
+        let file_path = format!("{}/batch_{:08}.json", self.witness_dir, batch_id);
 
         if Path::new(&file_path).exists() {
             let content = fs::read_to_string(&file_path)?;
@@ -162,13 +162,18 @@ impl WormWitnessEngine {
         ))
     }
 
-    /// Read all local witness record chronologically for startup validation
+    /// Read all local witness record chronologically for boot verification
     pub fn load_local_witness(&self) -> Vec<AnchoredRootWitness> {
         let mut witnesses = Vec::new();
+        let path = std::path::Path::new(&self.witness_dir);
 
+        if !path.exists() {
+            return Ok(witness);
+        }
+        
         if let Ok(entries) = fs::read_dir(&self.witness_dir) {
             for entry in entries.flatten() {
-                if entry.path().extension().and_then(|s| s.to_str()) == Some(".json") {
+                if entry.path().extension().and_then(|s| s.to_str()) == Some("json") {
                     if let Ok(content) = fs::read_to_string(entry.path()) {
                         if let Ok(bundle) = serde_json::from_str::<CertifiedBundleBlock>(&content) {
                             witnesses.push(bundle.witness);
