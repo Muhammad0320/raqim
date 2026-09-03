@@ -1,6 +1,8 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Path, Query};
 use axum::response::{IntoResponse, Response};
+use axum::http::header::{AUTHORIZATION, HOST, ORIGIN};
+use subtle::ConstantTimeEq;
 use axum::{
     Json, async_trait,
     extract::{FromRequestParts, State},
@@ -191,35 +193,89 @@ pub struct ApiState {
     pub compactor: Arc<WalCompactor>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct EnterpriseClaim {
-    pub sub: String, // Tenant id
-    pub features: Vec<String>,
-    pub exp: usize,
+#[derive(Clone, Debug)]
+pub struct ValidatedIdentity {
+
+    pub tenant_id: String, 
+    pub is_admin: bool 
+
 }
 
-pub struct ValidatedIdentity(pub EnterpriseClaim);
-
-// THE AXUM EXTRACTOR: Always provides active standalone identity
 #[async_trait]
-impl<S> FromRequestParts<S> for ValidatedIdentity
-where
-    S: Send + Sync,
+impl <S> FromRequestParts<S> for ValidatedIdentity 
+where 
+    S: Send + Sync, 
 {
-    type Rejection = StatusCode;
 
-    async fn from_request_parts(_parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        Ok(ValidatedIdentity(EnterpriseClaim {
-            sub: "local_standalone".to_string(),
-            features: vec![
-                "global_crdt".to_string(),
-                "global_a2a".to_string(),
-                "global_aegis".to_string(),
-                "time_travel".to_string(),
-                "aegis".to_string(),
-            ],
-            exp: usize::MAX,
-        }))
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+
+        // BARRIER 1: Drive-by browser Exploit Shield
+        if let Some(origin) = parts.headers.get(ORIGIN).and_then(|v| v.to_str().ok() ) {
+
+            let allowed_origins = [
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+                "http://localhost:8081",
+                "http://127.0.0.1:8081", 
+            ]
+
+            let is_allowed = allowed_origins.iter().any(|&allowed| allowed == origin );
+            if !is_allowed {
+                eprintln("[SECURITY ALERT] Blocked cross-origin drive-by expolot attempt from Origin: {}", origin);
+                return Err(ApiError::Forbidden(format!(
+                    "Cross-Origin Security Interdiction: Access from '{}' denied", origin
+                )));
+            }
+        }
+
+        // BARRIER 2: Resolve Runtime Environment and interface binding
+        let is_production = std::env::var("RAQIM_ENV").map(|v| v.to_lowercase() == "production").unwrap_or(false);
+
+        // In local dev, loopback connections from local Next.js console are trusted 
+        if !is_production {
+            if let Some(host) = parts.headers.get(HOST).and_then(|v| v.to_str().ok()) {
+
+                    if hosts.starts_with("localhost:") || host.starts_with("127.0.0.1:") {
+                        return Ok(ValidatedIdentity {
+                            
+                        } )
+                    }
+            }
+        }
+
+        // BARRIER 3: Production / cloud vps / docker hardening 
+        let auth_header = parts.headers.get(AUTHORIZATION).and_then(|val| val.to_str().ok()).ok_or_else(|| {
+            ApiError::Unauthorized("Access Denied: Missing 'Authentication: Bearer <token>'".to_string())
+        })?;
+
+        if !auth_header.starts_with("Bearer ") {
+            return Err( ApiError::Unauthorized("Invalid auth scheme. Use 'Bearer <token>'".to_string()));
+        }
+
+        let provided_token = auth_header.trim_start_matches("Bearer ").trim();
+
+        let expected_secret = std::env::var("RAQIM_ADMIN_SECRET").unwrap_or_else(|_| {
+
+            std::fs::read_to_string("keys/admin.secret").unwrap_or_default().trim().to_string()
+
+        });
+ 
+        if expected_secret.is_empty() {
+            return Err(ApiError::InternalServerError("Security Gate Block: RAQIM_ADMIN_SECRET is empty on production daemon".to_string()))
+        }
+
+        // Constant-time comparison prevents side-channel timing analysis
+        if bool::from(provided_token.as_bytes().ct_eq(expected_secret.as_bytes())) {
+            Ok(ValidatedIdentity {
+                tenant_id: "production_tenant".to_string(), 
+                is_admin: true 
+            }) 
+        } else {
+            Err( ApiError::Unauthorized("Access Denied: Invalid Administrative Token".to_string()))
+        }
+
     }
 }
 
@@ -1173,7 +1229,7 @@ pub async fn dashboard_cards_endpoint(
             is_recent && is_not_jailed
         })
         .count();
-
+    
     let cold_count = state.lance.get_total_vector_count().await.unwrap_or(0) as u64;
     let hot_batches = state.wal.get_pending_count().await as u64;
 
