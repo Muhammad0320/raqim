@@ -108,6 +108,14 @@ impl RaqimCryptoCore {
         Ok(PyBytes::new(py, &signature))
     }
 
+    /// Exposes the active capability certificate to the python runtime
+    #[getter]
+    fn capability_cert_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+
+        PyBytes::new(py, &self.capability_cert_bytes);
+
+    }
+
     /// Converts Python strings directly into zero-copy TCP payload
     fn generate_tcp_payload<'py>(
         &self,

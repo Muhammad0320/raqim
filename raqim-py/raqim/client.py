@@ -107,6 +107,8 @@ class RaqimClient:
         self.alias = alias 
         self.tenant = tenant 
         self.crypto_core = RaqimCryptoCore(private_key_path, cert_path)
+        self.cert_bytes = bytes(self.crypto_core.capability_cert_bytes)
+        self.cert_hex = self.cert_bytes.hex()
 
        # Mathematically derive 16-byte Agent ID via Blake3 Domain Separation
         public_key_bytes = bytes(self.crypto_core.pub_key_bytes)
@@ -469,7 +471,7 @@ class RaqimClient:
             "sender_hex": sender_hex,
             "public_key": list(self.crypto_core.pub_key_bytes),
             "signature": list(signature),
-            "capability_cert": ""
+            "capability_cert": self.cert_hex
         }
 
         await self._ws_connection.send(json.dumps(ask_msg))
