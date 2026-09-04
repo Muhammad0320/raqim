@@ -35,8 +35,6 @@ use crate::axon::AxonGateKeeper;
 use crate::generate_uuidv7_txid;
 use crate::hot_memory::HotVectorBuffer;
 use crate::network::GlobalNetworkBridge;
-use crate::sandbox::SandboxContent;
-use crate::sandbox::WasmEngine;
 use crate::state::SwarmStateRegistry;
 use crate::{
     OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
@@ -53,7 +51,6 @@ pub struct MemoryRouter {
     axon: Arc<AxonGateKeeper>,
     brain: Arc<SwarmStateRegistry>,
     lance_engine: Arc<LanceEngine>,
-    wasm_engine: Arc<WasmEngine>,
     wal_engine: Arc<WalEngine>,
     cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
@@ -80,7 +77,6 @@ impl MemoryRouter {
         axon: Arc<AxonGateKeeper>,
         brain: Arc<SwarmStateRegistry>,
         lance_engine: Arc<LanceEngine>,
-        wasm_engine: Arc<WasmEngine>,
         wal_engine: Arc<WalEngine>,
         cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
         global_net: Arc<GlobalNetworkBridge>,
@@ -94,7 +90,6 @@ impl MemoryRouter {
             axon,
             brain,
             lance_engine,
-            wasm_engine,
             wal_engine,
             cortex_tx,
             global_net,
@@ -657,7 +652,6 @@ impl MemoryRouter {
             }
         }
 
-        let wasi_ctx = WasmEngine::build_wasi_context(fork_config);
 
         // SERVE THE OS TIES DEBUGGING
         let active_wal = if is_isolated_debug {
@@ -670,69 +664,6 @@ impl MemoryRouter {
         } else {
             self.global_net.clone()
         };
-
-        // 6. Construct the Sandbox Content
-        let content = SandboxContent {
-            axon: self.axon.clone(),
-            aegis: self.aegis.clone(),
-            wal: active_wal.clone(),
-            shard: self.brain.clone(),
-            cortex_tx: self.cortex_tx.clone(),
-            global_net: active_net.clone(),
-            event_tx: actual_tx.clone(),
-            wasi: wasi_ctx,
-            lance: self.lance_engine.clone(),
-            agent_hex: sandbox_agent_hex.clone().to_string(),
-
-            agent_private_key,
-            capability_cert_bytes,
-
-            // Live queue start empty
-            live_responses: Vec::new(),
-            live_seeds: Vec::new(),
-            live_timestamps: Vec::new(),
-
-            // Relay queues loaded with history + admin overrides
-            replay_seeds: recovered_seeds,
-            replay_responses: recovered_networks,
-            replay_timestamps: recovered_timestamps,
-
-            a2a_receiver: None,
-            a2a_reply_channel: None,
-            a2a_response_cache: Vec::new(),
-            http_response_cache: Vec::new(),
-            a2a_incoming_cache: Vec::new(),
-        };
-
-        // 7. Boot the Forked reality into the OS thread.
-        let engine = self.wasm_engine.clone();
-        let agent_id_clone = agent_hex.to_string();
-
-        // If we're time travelling the agent starts from the target_tx_id
-        // If Resurrection, we pass in the CURRENT global counter so it resumes at the tip of reality
-        let execution_start_tx = target_tx_id.unwrap_or(snapshot_tx);
-
-        tokio::spawn(async move {
-            // Read the WASM binary from the disk
-            let archive_batch = format!("./plugins_archive/{}.wasm.running", &agent_id_clone);
-            let wasm_bytes = std::fs::read(&archive_batch).unwrap_or_default();
-
-            let mut tracker = crate::sandbox::CheckPointTracker {
-                last_snapshot_time: snapshot_timestamp,
-                last_snapshot_tx: snapshot_tx,
-            };
-
-            // Execute the agent, injecting the snapshot first
-            if let Err(e) = engine.execute_agent(
-                &wasm_bytes,
-                content,
-                &mut tracker,
-                execution_start_tx,
-                Some(memory_blob),
-            ) {
-                eprintln!("[TIME MACHINE]  Agent {} crashed: {} ", agent_id_clone, e)
-            }
-        });
 
         self.brain.purge_phantom_shards();
 
