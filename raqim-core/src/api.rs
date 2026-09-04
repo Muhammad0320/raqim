@@ -255,7 +255,7 @@ where
         }
 
         let provided_token = auth_header.trim_start_matches("Bearer ").trim();
-
+        
         let expected_secret = std::env::var("RAQIM_ADMIN_SECRET").unwrap_or_else(|_| {
 
             std::fs::read_to_string("keys/admin.secret").unwrap_or_default().trim().to_string()
@@ -1013,52 +1013,6 @@ async fn time_travel_endpoint(
     }
 }
 
-pub async fn upload_wasm_endpoint(
-    _auth: ValidatedIdentity,
-    State(_): State<ApiState>,
-    mut multipart: Multipart,
-) -> Result<Json<Value>, ApiError> {
-    while let Some(mut field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| ApiError::BadRequest(format!("Multipart read failed: {}", e)))?
-    {
-        let file_name = field.file_name().unwrap_or("").to_string();
-
-        // Strict Hex Validation
-        let hex_str = file_name.trim_end_matches(".wasm");
-        if utils::parse_agent_id(hex_str).is_err() {
-            eprintln!("[SECURITY] Rejected WASM upload: Invalid Agent ID Hex");
-            return Err(ApiError::BadRequest(
-                "Invalid Agent ID Hex format in file".to_string(),
-            ));
-        }
-
-        let filepath = format!("./plugins/{}", file_name);
-        let mut file = tokio::fs::File::create(&filepath)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Failed to create file: {}", e)))?;
-
-        // RAM-SAFE CHUNK STREAMING
-        while let Some(chunk) = field
-            .chunk()
-            .await
-            .map_err(|e| ApiError::BadRequest(format!("Chunk stream error: {}", e)))?
-        {
-            if let Err(e) = file.write_all(&chunk).await {
-                let _ = tokio::fs::remove_file(&filepath).await;
-                return Err(ApiError::InternalServerError(format!(
-                    "File write failed: {}",
-                    e
-                )));
-            }
-        }
-    }
-
-    Ok(Json(
-        json!({"success": true, "message": "WASM module uploaded successfully"}),
-    ))
-}
 
 // THE ZERO-COPY HTTP INGRESS: The endpoint expects raw binary `rkyv` bytes, Not JSON.
 pub async fn http_ingress_endpoint(
@@ -1765,7 +1719,6 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
             post(trigger_compaction_endpoint),
         )
         // System & Agent Deployment endpoints
-        .route("/v1/system/boot_agent", post(upload_wasm_endpoint))
         .route("/v1/system/health/live", get(sse_health_endpoint))
         .route("/v1/system/firehose", get(sse_firehose_endpoint))
         .route("/v1/time-travel/stream", get(sse_phantom_endpoint))

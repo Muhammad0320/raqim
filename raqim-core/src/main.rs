@@ -8,7 +8,6 @@ use raqim_core::axon::AxonGateKeeper;
 use axum::http::Method;
 use raqim_core::compactor::WalCompactor;
 use raqim_core::config::RaqimConfig;
-use raqim_core::cortex::CortexDataPlane;
 use raqim_core::embedding::{EmbeddingProvider, LocalBgeProvider, OpenAIProvider};
 use raqim_core::health::{HealthMonitor, SystemHealth};
 use raqim_core::hot_memory::{HotVectorBuffer, HotVectorEntry};
@@ -17,7 +16,6 @@ use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
 use raqim_core::nucleus::{WalCommand, WalEngine};
 use raqim_core::registry::SwarmRegistry;
-use raqim_core::sandbox::{CheckPointTracker, SandboxContent, WasmEngine};
 use raqim_core::state::SwarmStateRegistry;
 use raqim_core::witness::WormWitnessEngine;
 use raqim_core::{
@@ -37,7 +35,6 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-use wasmtime_wasi::WasiCtxBuilder;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -148,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600)).expect("FATAL: Failed to enforce 0600 permissions on master key");
         } 
     }
-    
+
     let key_bytes = fs::read(&key_path).expect("FATAL: Failed to read master_key from disk");
     let key_array: [u8; 32] = key_bytes
         .as_slice()
@@ -541,231 +538,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start Autonomous Daemon
     compactor.clone().start_daemon();
-
-    // Channel to talk to the publisher safely accross threads
-    let (cortex_tx, mut cortex_rx) = mpsc::unbounded_channel::<Vec<u8>>();
-    let topic_clone = config.topic.clone();
-
-    // The WASM plugign Orchestrator
-    let plugin_dir = "./plugins";
-    fs::create_dir_all(plugin_dir).expect("Failed to create plugins dir");
-
-    let mem_router = Arc::new(MemoryRouter::new(
-        config.clone(),
-        aegis.clone(),
-        axon.clone(),
-        brain_shard.clone(),
-        lance_engine.clone(),
-        wasm_engine.clone(),
-        wal.clone(),
-        cortex_tx.clone(),
-        global_net.clone(),
-        event_tx.clone(),
-        master_signing_key.clone(),
-        security_flags.allow_time_travel.clone(),
-    ));
-
-    // Initialize global tracker ONCE outside the loop
-    let global_tracker: Arc<Mutex<HashMap<String, CheckPointTracker>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-
-    let w_axon = axon.clone();
-    let w_wal = wal.clone();
-    let w_lance = lance_engine.clone();
-    let w_cortex_tx = cortex_tx.clone();
-    let w_global_net = global_net.clone();
-    let w_wasm_engine = wasm_engine.clone();
-    let w_event_tx = event_tx.clone();
-    let w_aegis = aegis.clone();
-    let w_brain_shard = brain_shard.clone();
-
-    // Spawns a dedicated background thread to monitor the plugins folder
-    tokio::spawn(async move {
-        println!(
-            "WASM Orchestrator monitoring {} for a new edge plugins...",
-            plugin_dir
-        );
-
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
-
-        loop {
-            interval.tick().await;
-
-            if let Ok(entries) = fs::read_dir(plugin_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-
-                    if path.extension().and_then(|s| s.to_str()) == Some("wasm") {
-                        println!("Discovered a new WASM Plugin: {:?}", path);
-                        let file_stem = path.file_stem().unwrap().to_str().unwrap();
-
-                        // Resolve the adjacent secure crptographic files
-                        let key_path = path.with_extension("key");
-                        let cert_path = path.with_extension("cert");
-
-                        if !key_path.exists() || !cert_path.exists() {
-                            eprintln!(
-                                " [ORCHESTRATOR WARNING] Dropped plugin deployment for '{}'. Missing adjacent secure credentials (.key / .cert). ",
-                                file_stem
-                            );
-                            continue;
-                        }
-
-                        println!(
-                            "[ORCHESTRATOR] Initializing secure cryptographic verification for: {}.wasm ",
-                            file_stem
-                        );
-
-                        // Read the raw system component from the disk
-                        let wasm_bytes = fs::read(&path).unwrap();
-                        let private_key_bytes = fs::read(&key_path).unwrap();
-                        let cert_bytes = fs::read(&cert_path).unwrap();
-
-                        // Re-instantiate the authentic cryptographic identity
-                        let agent_private_key = match private_key_bytes.as_slice().try_into() {
-                            Ok(bytes) => SigningKey::from_bytes(bytes),
-                            Err(_) => {
-                                eprintln!(
-                                    "[ORCHESTRATOR FATAL] Private key for '{}' is corrupt. Skipping. ",
-                                    file_stem
-                                );
-                                continue;
-                            }
-                        };
-
-                        // Compute the Agent ID Hex directly from the valid public key bytes
-                        let pub_key_bytes = agent_private_key.verifying_key().to_bytes();
-
-                        // Initialize blake3 key derivation function with Strict Domain Separation
-                        let mut hasher = blake3::Hasher::new_derive_key("raqim.agent.v1.identity");
-                        hasher.update(&pub_key_bytes);
-
-                        let mut agent_id_byte = [0u8; 16];
-                        hasher.finalize_xof().fill(&mut agent_id_byte);
-
-                        let agent_hex = hex::encode(agent_id_byte);
-
-                        println!(
-                            "[ORCHESTRATOR] Deploying Certified Identity Node: [Hex: {}] [Alias: {}] ",
-                            &agent_hex, file_stem
-                        );
-
-                        let _ = w_event_tx.send(SystemEvent::PluginLoaded {
-                            plugin_name: entry.file_name().to_string_lossy().to_string(),
-                        });
-
-                        // WASI Context Must be built per-execution
-                        let wasi_ctx = WasiCtxBuilder::new().build_p1();
-
-                        // We must clone the layers for the specific execution
-                        let a_clone = w_axon.clone();
-                        let w_clone = w_wal.clone();
-                        let c_clone = w_cortex_tx.clone();
-                        let g_clone = w_global_net.clone();
-                        let tx_clone = w_event_tx.clone();
-                        let lance_clone = w_lance.clone();
-                        let ae_clone = w_aegis.clone();
-                        let shard_clone = w_brain_shard.clone();
-
-                        // When an agent connects or boots, we retreive or initialize its specific tracker
-                        let content = SandboxContent {
-                            axon: a_clone,
-                            wal: w_clone,
-                            shard: shard_clone,
-                            cortex_tx: c_clone,
-                            global_net: g_clone,
-                            event_tx: tx_clone,
-                            wasi: wasi_ctx,
-                            agent_hex: agent_hex.clone(),
-
-                            agent_private_key,
-                            capability_cert_bytes: cert_bytes,
-
-                            lance: lance_clone,
-                            aegis: ae_clone,
-                            live_responses: Vec::new(),
-                            live_seeds: Vec::new(),
-                            live_timestamps: Vec::new(),
-                            replay_responses: Vec::new(),
-                            replay_seeds: Vec::new(),
-                            replay_timestamps: Vec::new(),
-                            a2a_response_cache: Vec::new(),
-                            http_response_cache: Vec::new(),
-                            a2a_incoming_cache: Vec::new(),
-
-                            a2a_receiver: None,
-                            a2a_reply_channel: None,
-                        };
-
-                        // Mutex lifetime enforcement
-                        let mut tracker_lock = global_tracker.lock().unwrap();
-
-                        // Extract an owned, independent clone of the tracker out of the map boundary
-                        let mut agent_tracker =
-                            *tracker_lock
-                                .entry(agent_hex.clone())
-                                .or_insert(CheckPointTracker {
-                                    last_snapshot_tx: 0,
-                                    last_snapshot_time: 0,
-                                });
-
-                        // Drop the lock instantly to prevent hot path thread starvation
-                        drop(tracker_lock);
-
-                        // Get the exact current Transaction ID
-                        let current_tx = generate_uuidv7_txid();
-                        let w_engine_clone = w_wasm_engine.clone();
-                        let wasm_bytes_clone = wasm_bytes.clone();
-
-                        // Execute the untrusted logic in the safe WASM execution cell
-                        tokio::spawn(async move {
-                            if let Err(e) = w_engine_clone.execute_agent(
-                                &wasm_bytes_clone,
-                                content,
-                                &mut agent_tracker,
-                                current_tx,
-                                None,
-                            ) {
-                                eprintln!("[SANDBOX TRAPPED] Plugin engine failure: {}", e);
-                            }
-                        });
-
-                        // Secure Forensic Footprint Archive Transition
-                        let archive_dir = "./plugins_archive";
-                        let _ = fs::create_dir_all(archive_dir);
-
-                        let _ = fs::rename(
-                            &key_path,
-                            format!("{}/{}.key.running", archive_dir, &agent_hex),
-                        );
-                        let _ = fs::rename(
-                            &cert_path,
-                            format!("{}/{}.cert.running", archive_dir, &agent_hex),
-                        );
-                        let _ = fs::rename(
-                            &path,
-                            format!("{}/{}.wasm.running", archive_dir, agent_hex),
-                        );
-                    }
-                }
-            }
-        }
-    });
-
-    // Dedicated physical thread !Send publisher.
-    let cortex = CortexDataPlane::new(&topic_clone);
-    std::thread::spawn(move || {
-        // Initialize publisher inside the thread
-        let local_publisher = Arc::new(cortex.create_publisher().expect("Failed to map publisher"));
-
-        // blocking_rev() halts the thread until data arrives, no yield_now() needed
-        while let Some(bytes) = cortex_rx.blocking_recv() {
-            // Loan exactly the numbe rof bytes we need
-            if let Ok(sample) = local_publisher.loan_slice_uninit(bytes.len()) {
-                let _ = sample.write_from_slice(&bytes).send();
-            }
-        }
-    });
 
     // 2 Background Listeners (Zenoh Global network)
     let global_net_clone = global_net.clone();
