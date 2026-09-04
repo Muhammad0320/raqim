@@ -604,6 +604,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // JoinSet automatically tracks all spawned TCP worker tasks.
     let mut tcp_workers = JoinSet::new();
 
+    // Limit max concurrent live TCP agent sockets. 
+    let connection_semaphore = Arc::new( tokio::sync::Semaphore:::new(512));
+
     loop {
         tokio::select! {
                     // If cancelled is triggered, break the infinite loop.
@@ -619,24 +622,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         Err(_) => continue
                     };
 
-                println!("External Agent connected from: {}", addr);
-                    
-                let task_axon = axon.clone();
-                let task_cortex_tx = cortex_tx.clone();
-                let task_wal = wal.clone();
-                let global_publisher = global_net.clone();
-                let task_event_tx = event_tx.clone();
-                let task_aegis = aegis.clone();
-                let task_ui_tx = ui_tx.clone();
-                let task_registry = registry.clone();
-                let task_brain = brain_shard.clone();
-                let task_mem_router = mem_router.clone();
-                let task_pause_rx = pause_rx.clone();
+
+                    let permit = match connection_semaphore.clone().try_acquire_owned() {
+
+                        Ok(p) => p,
+                        Err(_) => {
+                            eprintln!("[INGRESS THROTTLED] Connectiton limit (512) reached. Dropping socket from {}", addr);
+                            drop(socket);
+                            continue;
+                        }
+
+                    }
+
+
+                    println!("External Agent connected from: {}", addr);
+                        
+                    let task_axon = axon.clone();
+                    let task_cortex_tx = cortex_tx.clone();
+                    let task_wal = wal.clone();
+                    let global_publisher = global_net.clone();
+                    let task_event_tx = event_tx.clone();
+                    let task_aegis = aegis.clone();
+                    let task_ui_tx = ui_tx.clone();
+                    let task_registry = registry.clone();
+                    let task_brain = brain_shard.clone();
+                    let task_mem_router = mem_router.clone();
+                    let task_pause_rx = pause_rx.clone();
 
 
                 // Spawn into the joinset
             tcp_workers.spawn(async move {
-
+                let _permit = permit; 
                 //  Syscall Amortization: Wrap the socket in a 1mb BufReader to eliminate kernel context switches
                 let mut reader = tokio::io::BufReader::with_capacity(1024 * 1024, socket);
 
@@ -849,6 +865,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 });
 
+            
+            
             }
         }
     }
