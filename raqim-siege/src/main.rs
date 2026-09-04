@@ -28,9 +28,9 @@ struct VirtualAgent {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("===================================");
+    println!("==================================================================");
     println!("Bismillah. Initializing Hardened Raqim Siege Benchmark Suite v1.0.0");
-    println!("=====================================");
+    println!("===================================================================");
 
     // Benchmark parameter & harware profiling
     let total_rounds: usize = 500_000;
@@ -162,7 +162,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Disable Nagle's algorith for low-latency packet streaming
             let _ = stream.set_nodelay(true);
+            
+            let (read_half, mut write_half) = stream.into_split();
+            let mut reader = tokio::io::BufReader::with_capacity(64 * 1024, read_half);
+            let mut ack_buf  = [0u8; 20];
             let mut latency_samples_micros: Vec<u64> = Vec::with_capacity(rounds_per_worker);
+            
 
             // Sync all workers at the starting gate before benchmarking starts
             barrier_ref.wait().await;
@@ -212,11 +217,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Pack 4-byte Little-Endian length prefix
                 let len_prefix = (envelope_bytes.len() as u32).to_le_bytes();
 
-                // Measure individual packet write & transport latency
+                // Measure full round-trip from dispatch to server commitement
                 let op_start = Instant::now();
 
                 // Send frame.
-                if let Err(e) = stream.write_all(&len_prefix).await {
+                if let Err(e) = write_half.write_all(&len_prefix).await {
                     eprintln!(
                         "[WORKER {} ERROR] Length prefix write failed: {}",
                         worker_id, e
@@ -224,8 +229,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     break;
                 }
 
-                if let Err(e) = stream.write_all(&envelope_bytes).await {
+                if let Err(e) = write_half.write_all(&envelope_bytes).await {
                     eprintln!("[WORKER {} ERROR] Payload write failed: {}", worker_id, e);
+                    break;
+                }
+
+                // Await server ack frame
+                if tokio::io::AsyncReadExt::read_exactt(&mut reader, &mut ack_buf).await.is_err() {
+                    eprintln!("[WORKER {}] Server closed socket before ACK", worker_id);
+                    break;
+                }
+
+
+                let status = u32::from_le_bytes(ack_buf[0..4].try_into().unwrap());
+                if status != 0 {
+                    eprintln!("[WORKER {}] Server rejected transaction wit backpresssure!", worker_id); 
                     break;
                 }
 
