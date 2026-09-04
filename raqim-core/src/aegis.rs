@@ -69,7 +69,6 @@ impl AtomicTokenBucket {
             // update last_refill_nanos atomically
             match self.last_refill_nanos.compare_exchange_weak(last, now, std::sync::atomic::Ordering::AcqRel, std::sync::atomic::Ordering::Relaxed) {
                 Ok(_) => {
-
                     // Refill timestamp won; update token counter safely
                     let mut curr_tokens = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
                     loop {
@@ -94,7 +93,7 @@ impl AtomicTokenBucket {
 
     }
 
-    /// HARDENED: Atomic CAS consumption loop. Immute to underflows. 
+        /// HARDENED: Atomic CAS consumption loop. Immute to underflows. 
     pub fn check_and_consume(&self) -> bool {
 
         self.refill();
@@ -111,8 +110,8 @@ impl AtomicTokenBucket {
                 Err(actual) => current = actual 
             }
         }
+    }
 
-   
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -465,6 +464,6 @@ impl AegisGateKeeper {
         }
 
         Ok((cert.agent_hex, cert.group_name))
-    }
 
+    }
 }

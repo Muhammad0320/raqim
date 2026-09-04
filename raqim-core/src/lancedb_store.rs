@@ -606,11 +606,18 @@ impl LanceEngine {
         // 2. Open the table
         let table = self.db.open_table(&self.history_table).execute().await?;
 
+        let filter_clause = if namespace.ends_with("*") {
+            let prefix = namespace.trim_end_matches("*");
+            format!("namespace >= '{}' AND namespace < '{}~'", prefix, prefix)
+        } else {
+            format!("namespace = '{}'", namespace)
+        }
+
         // 3. Execute High-Speed vector search (IVF-PQ Algorithm)
         let mut stream = table
             .query()
             .nearest_to(query_vector)?
-            .only_if(format!("namespace LIKE '{}'", namespace))
+            .only_if( filter_clause )
             .limit(limit)
             .execute()
             .await?;
@@ -762,7 +769,7 @@ impl LanceEngine {
         Ok(table.count_rows(None).await?)
     }
 
-    /// Executes a DataFusion SQL Aggregation over the Apache Arrow Memory Layout
+    /// Executes a SQL Aggregation over the Apache Arrow Memory Layout
     pub async fn get_densest_namespace(&self) -> Result<String, anyhow::Error> {
         let table_res = self.db.open_table(&self.history_table).execute().await;
 
