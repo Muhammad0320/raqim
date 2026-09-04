@@ -100,20 +100,21 @@ impl WormWitnessEngine {
         let witness_file_path = format!("{}/batch_{:08}.json", self.witness_dir, batch.batch_id);
 
         let mut file = OpenOptions::new()
-            .create(true)
+            .create_new(true)
             .write(true)
-            .truncate(true)
-            .open(&witness_file_path)?;
+            .open(&witness_file_path)
+            .map_err(|e| anyhow::anyhow!("WORM Violation: Cannot overwrite exiisting witness file '{}': {} ", witness_file_path, e) )?;
+
         file.write_all(&bundle_bytes)?;
         file.sync_all()?;
 
         // Apply Linux Kernel Immutable Attribute
-        #[cfg(target_os = "linux")]
+        #[cfg(unix)]
         {
-            let _ = std::process::Command::new("chattr")
-                .arg("+i")
-                .arg(&witness_file_path)
-                .status();
+            
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&witness_file_path, fs::Permissions::from_mode(0o400));
+
         }
 
         println!(

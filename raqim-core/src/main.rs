@@ -653,6 +653,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Spawn into the joinset
             tcp_workers.spawn(async move {
                 let _permit = permit; 
+
+                // split socket into independent read and write halves
+                let (read_half, mut write_half) = socket.into_split(); 
+
                 //  Syscall Amortization: Wrap the socket in a 1mb BufReader to eliminate kernel context switches
                 let mut reader = tokio::io::BufReader::with_capacity(1024 * 1024, socket);
 
@@ -669,7 +673,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 loop {
                     // ZERO-CPU ASYNC SUSPENSION:
                     if *worker_pause_rx.borrow() {
-
                         if worker_pause_rx.changed().await.is_err() {
                             break;
                         }
@@ -835,6 +838,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             };
 
+                                     // Emit 20 byte server ack frame [4 bytes: Status] + [16 bytes: Little-Endian u128 TxID]
+                                    let mut ack_buf = [0u8; 20];
+                                    ack_buf[0..4].copy_from_slice(&0u32.to_le_bytes());
+                                    ack_buf[4..20].copy_from_slice(&tx_id.to_le_bytes());
+
+                                    if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut write_half, &ack_buf).await {
+                                        eprintln("[TCP EDGE] Failed to deliver ACK frame: {} ", e);
+                                        break;
+                                    }
+
                             let _ = task_ui_tx.send(UiEvent::ThoughtCommitted {
                                 agent_hex: agent_hex.clone(),
                                 intent_path: path_intent.to_string(),
@@ -844,6 +857,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                      } 
                      Err(e) => {
                         eprintln!("[TCP INGRESS REJECTED] Hardware Backpressure: {} ", e);
+
+                        let mut err_buf = [0u8; 20];
+                        err_buf[0..4].copy_from_slice(&1u32.to_le_bytes());
+
+                        let _ = tokio::io::AsyncWriteExt::write_all(&mut write_half, &err_buf).await;
+                        break;
+                                
                      
                         break;
                     }
@@ -858,8 +878,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "Active",
                         &alias,
                     );
-
-
 
                  }
 
