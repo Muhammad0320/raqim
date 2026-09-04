@@ -120,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         fs::write(&key_path, signing_key.to_bytes()).expect("Failed to write Master Key");
 
-        // Lock down Unix permissions
+        // Lock down Unix permissions  
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -129,7 +129,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Memory Load Phase
+    // Memory Load & Security Audit Phase 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let metadata = fs::metadata(&key_path).expect("FATAL: Failed to read master_key metadata");
+        let permissions = metadata.permissions();
+        let mode = permissions.mode();
+
+        // Check if group or otthers have read/write/execute permission 
+        if move & 0o77 != 0 {
+            eprintln!(
+                "[SECURITY HAZARD] Master key file '{:?}' has insecure permissions: {:o} (Expected 0600).", key_path, mode & 0o77
+            );
+            eprintln!(
+                "[SECURITY] Remedying file permission to 0600 (User read/write only)..."
+            );
+            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600)).expect("FATAL: Failed to enforce 0600 permissions on master key");
+        } 
+    }
+    
     let key_bytes = fs::read(&key_path).expect("FATAL: Failed to read master_key from disk");
     let key_array: [u8; 32] = key_bytes
         .as_slice()
