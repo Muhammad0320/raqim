@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     protobuf-compiler \
+    libprotobuf-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the workspace manifest and spurce tree
