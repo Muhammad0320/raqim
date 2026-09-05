@@ -8,7 +8,7 @@ use raqim_core::{AgentState, AgentStatus, OpLog, memory_router::MemoryRouter, nu
 async fn test_wal_scanner_reads_batch_frames_without_ub() {
 
     let test_wal = "test_deep_scan.wal";
-    if Path::new(test_wal).exist() {
+    if Path::new(test_wal).exists() {
         let _ = std::fs::remove_file(test_wal);
     }
 

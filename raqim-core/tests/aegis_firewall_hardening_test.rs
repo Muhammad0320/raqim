@@ -11,9 +11,7 @@ fn test_atomic_token_bucket_never_underflow_under_massive_concurrency() {
     // Spawn 100 concurrent threads competing for only 10 tokens
     for _ in 0..100 {
         let bucket_clone = bucket.clone();
-        handles.push(std::thread::spawn(move || {
-            bucket_clone.check_and_consume();
-        }));
+        handles.push(std::thread::spawn(move || bucket_clone.check_and_consume()));
     }
 
     let mut successful_consumption = 0;

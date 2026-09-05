@@ -52,11 +52,9 @@ pub struct MemoryRouter {
     brain: Arc<SwarmStateRegistry>,
     lance_engine: Arc<LanceEngine>,
     wal_engine: Arc<WalEngine>,
-    cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
     global_net: Arc<GlobalNetworkBridge>,
     event_tx: Sender<SystemEvent>,
     master_signing_key: SigningKey,
-    allow_time_travel: Arc<AtomicBool>,
     effect_index: DashMap<EffectKey, EffectRecord>,
 }
 
@@ -78,11 +76,9 @@ impl MemoryRouter {
         brain: Arc<SwarmStateRegistry>,
         lance_engine: Arc<LanceEngine>,
         wal_engine: Arc<WalEngine>,
-        cortex_tx: mpsc::UnboundedSender<Vec<u8>>,
         global_net: Arc<GlobalNetworkBridge>,
         event_tx: Sender<SystemEvent>,
         master_signing_key: SigningKey,
-        allow_time_travel: Arc<AtomicBool>,
     ) -> Self {
         Self {
             config,
@@ -91,14 +87,13 @@ impl MemoryRouter {
             brain,
             lance_engine,
             wal_engine,
-            cortex_tx,
             global_net,
             event_tx,
             master_signing_key,
-            allow_time_travel,
             effect_index: DashMap::new(),
         }
     }
+    
 
     /// : Scans the WAL and executes a closure on the Zero-Copy Archived data
     pub fn scan_wal_zero_copy<F>(&self, mut callback: F) -> Result<(), anyhow::Error>
@@ -161,14 +156,14 @@ impl MemoryRouter {
         let mut final_context = Vec::new();
 
         // 1. HOT MEMORY (WAL): Zero-Copy Semantic Filtering
-        self.scan_wal_zero_copy(|archived| {
+         self.scan_wal_zero_copy(|archived| {
             // PHYSICS: We read the name_space as a string slice without allocating mem
             let log_namespace = archived.state.namespace.as_str();
 
             if log_namespace.starts_with(namespace) {
                 final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
             }
-        });
+        }).map_err(|e| anyhow::anyhow!("Error scanning wal file") )?;
 
         // 2. Supplement with Deep Semantic search
         let mut deep_memories = self
@@ -195,7 +190,8 @@ impl MemoryRouter {
                     archievd.state.text.as_str()
                 ))
             }
-        });
+        }).map_err(|e| anyhow::anyhow!("Error scanning wal file") )?;
+
 
         if let Some(res) = result {
             return Ok(res);
@@ -489,13 +485,6 @@ impl MemoryRouter {
         is_isolated_debug: bool,
         phantom_ui_tx: tokio::sync::broadcast::Sender<UiEvent>,
     ) -> Result<(), anyhow::Error> {
-        // Zero-overhead dynamic atomic inspection safely checks the states across hypervisor calls
-        if is_isolated_debug && !self.allow_time_travel.load(Ordering::Relaxed) {
-            return Err(anyhow::anyhow!(
-                "LICENCE VIOLATION: Agent {} attempted to initiate a Temporal Reality Fork. Enterprise 'time_travel' claim required.",
-                agent_hex
-            ));
-        }
 
         let fetch_target = target_tx_id.unwrap_or(u128::MAX);
 
@@ -540,13 +529,6 @@ impl MemoryRouter {
         }
 
         let sandbox_agent_hex = hex::encode(phantom_bytes);
-
-        // 2. IDENTITY AND CERTIFICATE RESOLUTION SUBLOGIC
-        let (agent_private_key, capability_cert_bytes) = if is_isolated_debug {
-            println!(
-                "[TIME MACHINE] Generating Ephemeral Sandbox Credentials for Phantom: {} ",
-                sandbox_agent_hex
-            );
 
             // Generate a completely isolated cryptographic keypair for the simulation context
             let mut csprng = OsRng;
