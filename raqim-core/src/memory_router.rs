@@ -93,7 +93,25 @@ impl MemoryRouter {
             effect_index: DashMap::new(),
         }
     }
-    
+
+    pub fn new_dummy() -> Self {
+        let mut csprng = OsRng;
+        let master_signing_key = SigningKey::generate(&mut csprng);
+        let (event_tx, _) = tokio::sync::broadcast::channel(100);
+
+        Self {
+            config: Arc::new(RaqimConfig::default()),
+            aegis: Arc::new(AegisGateKeeper::new_dummy()),
+            axon: Arc::new(AxonGateKeeper::new_dummy()),
+            brain: Arc::new(SwarmStateRegistry::new()),
+            lance_engine: Arc::new(LanceEngine::new_dummy()),
+            wal_engine: WalEngine::start_dummy_sync(),
+            global_net: Arc::new(GlobalNetworkBridge::new_dummy()),
+            event_tx,
+            master_signing_key,
+            effect_index: DashMap::new(),
+        }
+    }
 
     /// : Scans the WAL and executes a closure on the Zero-Copy Archived data
     pub fn scan_wal_zero_copy<F>(&self, mut callback: F) -> Result<(), anyhow::Error>
@@ -156,14 +174,15 @@ impl MemoryRouter {
         let mut final_context = Vec::new();
 
         // 1. HOT MEMORY (WAL): Zero-Copy Semantic Filtering
-         self.scan_wal_zero_copy(|archived| {
+        self.scan_wal_zero_copy(|archived| {
             // PHYSICS: We read the name_space as a string slice without allocating mem
             let log_namespace = archived.state.namespace.as_str();
 
             if log_namespace.starts_with(namespace) {
                 final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
             }
-        }).map_err(|e| anyhow::anyhow!("Error scanning wal file") )?;
+        })
+        .map_err(|e| anyhow::anyhow!("Error scanning wal file"))?;
 
         // 2. Supplement with Deep Semantic search
         let mut deep_memories = self
@@ -190,8 +209,8 @@ impl MemoryRouter {
                     archievd.state.text.as_str()
                 ))
             }
-        }).map_err(|e| anyhow::anyhow!("Error scanning wal file") )?;
-
+        })
+        .map_err(|e| anyhow::anyhow!("Error scanning wal file"))?;
 
         if let Some(res) = result {
             return Ok(res);
@@ -485,43 +504,35 @@ impl MemoryRouter {
         is_isolated_debug: bool,
         phantom_ui_tx: tokio::sync::broadcast::Sender<UiEvent>,
     ) -> Result<(), anyhow::Error> {
-
         let fetch_target = target_tx_id.unwrap_or(u128::MAX);
 
         let (_memory_blob, historical_oplog, _snapshot_tx, _snapshot_timestamp) = self
             .rebuild_agent_timeline(agent_hex, fetch_target, self.wal_engine.clone())
             .await?;
 
-        // Fallback boundary: if there's no history on history on disk, this operation is invalid.
         if historical_oplog.is_empty() {
             return Err(anyhow::anyhow!(
-                "CRITICAL: Agent {} has no immutable memory on disk. Rollback aborted.",
+                "CRITICAL: Agent {} has no immutable memory on disk. Rebuild aborted.",
                 agent_hex
             ));
         }
 
-        // Dynamic namespace discovery
         let real_namespace = &historical_oplog[0].state.namespace;
 
-        // Extract flight recorded data
-        let mut recovered_seeds = Vec::new();
-        let mut recovered_networks = Vec::new();
-        let mut recovered_timestamps = Vec::new();
-
-        // The phantom brain initialization
-        // The XOR Cryptographic Mutation.
-        let original_bytes = hex::decode(agent_hex).expect("Invalid agent hex");
+        // Deterministic Phantom Salt Derivation
+        let original_bytes =
+            hex::decode(agent_hex).map_err(|e| anyhow::anyhow!("Invalid agent hex: {}", e))?;
         let mut phantom_bytes = [0u8; 16];
-        phantom_bytes.copy_from_slice(&original_bytes);
+        if original_bytes.len() == 16 {
+            phantom_bytes.copy_from_slice(&original_bytes);
+        }
 
         if is_isolated_debug {
-            // Deriving a deterministic salt from target_tx_id
             let tx_id_bytes = target_tx_id.unwrap_or(0).to_be_bytes();
             let mut salt = [0u8; 16];
             salt[0..8].copy_from_slice(&tx_id_bytes);
             salt[8..16].copy_from_slice(&tx_id_bytes);
 
-            // Apply the cryptograhic XOR mutation
             for i in 0..16 {
                 phantom_bytes[i] ^= salt[i];
                 phantom_bytes[i] ^= 0xFF;
@@ -530,126 +541,53 @@ impl MemoryRouter {
 
         let sandbox_agent_hex = hex::encode(phantom_bytes);
 
-            // Generate a completely isolated cryptographic keypair for the simulation context
-            let mut csprng = OsRng;
-            let phantom_signing_key = SigningKey::generate(&mut csprng);
-
-            // Forge a valid CapabilityCertificate template mimicking our new role layout
-            let mut mock_certificate = CapabilityCertificate {
-                agent_hex: sandbox_agent_hex.clone(),
-                group_name: "simulation_sandbox".to_string(),
-                expiration_timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    + 3600,
-                master_signature: vec![0u8; 64],
-            };
-
-            // Sign the mock passport using the server's Master Private key to bypass forewall boundaries
-            let serialized_raw = postcard::to_allocvec(&mock_certificate)?;
-            let master_signature = self.master_signing_key.sign(&serialized_raw);
-            mock_certificate.master_signature = master_signature.to_bytes().to_vec();
-
-            (
-                phantom_signing_key,
-                postcard::to_allocvec(&mock_certificate)?,
-            )
-        } else {
-            // Production Resurrection: Pull the immutable production keys from secure vault backup directory
-            let key_bytes = fs::read(format!("./plugins_archive/{}.key.running", agent_hex))?;
-            let cert_bytes = fs::read(format!("./plugins_archive/{}.cert.running", agent_hex))?;
-            let key_array: &[u8; 32] = key_bytes.as_slice().try_into()?;
-
-            (SigningKey::from_bytes(key_array), cert_bytes)
-        };
-
-        // Isolated Infrastructure (The Quarantine Sandbox)
-        let (dummy_wal, _) =
-            WalEngine::start(format!("phamtom_{}", sandbox_agent_hex).to_string()).await;
-        let dummy_net = Arc::new(
-            GlobalNetworkBridge::new(
-                "phantom_tenant",
-                format!("phamtom_{}", sandbox_agent_hex).as_str(),
-                self.aegis.clone(),
-                format!("phantom_{}", sandbox_agent_hex).to_string(),
-            )
-            .await,
-        );
-        let (dummy_tx, mut dummy_event_rx) = broadcast::channel(100);
-
-        // We must route the dummy events to the React UI so the Admin can watch the fork!
-        let ui_tx_clone = phantom_ui_tx.clone();
-
-        if is_isolated_debug {
-            tokio::spawn(async move {
-                while let Ok(event) = dummy_event_rx.recv().await {
-                    if let SystemEvent::ThoughtCommitted {
-                        agent_id,
-                        tx_id,
-                        namespace,
-                        text,
-                    } = event
-                    {
-                        let ui_event = UiEvent::ThoughtCommitted {
-                            agent_hex: agent_id,
-                            intent_path: namespace,
-                            tx_id,
-                            text,
-                        };
-                        let _ = ui_tx_clone.send(ui_event);
-                    }
-                }
-            });
-        }
-
-        let actual_tx = if is_isolated_debug {
-            dummy_tx.clone()
-        } else {
-            self.event_tx.clone()
-        };
-
+        // Resolve Target CRDT Hive-Mind Shard
         let target_brain = if is_isolated_debug {
             let phantom_namespace = format!("phantom_{}_{}", real_namespace, sandbox_agent_hex);
+            println!(
+                "[TIME MACHINE] Branching into isolated CRDT shard: {}",
+                phantom_namespace
+            );
             self.brain.get_or_create_brain(&phantom_namespace)
         } else {
+            println!(
+                "[RESURRECTION] Re-synchronizing canonical CRDT shard: {}",
+                real_namespace
+            );
             self.brain.get_or_create_brain(real_namespace)
         };
 
-        // 3. Cure Schizophrenia ( Syncing the CRDT )
-        for log in historical_oplog {
-            recovered_seeds.extend(log.entropy_seeds);
-            recovered_networks.extend(log.network_responses);
-            recovered_timestamps.push(log.state.timestamp);
-
-            // Physically rebuild the LORO CRDT Memory
+        // Replay historical deltas into the CRDT Hive-Mind
+        for log in &historical_oplog {
             if let Err(e) = target_brain.assimilate_foreign_thought(&log.delta) {
                 eprintln!("[WARNING] Failed to assimilate historical delta: {}", e);
             }
         }
 
-        // APPLY REALITY FORK OVERRIDES
+        // Apply reality fork overrides if specified
         if let Some(fork) = &fork_config {
-            if let Some(seed) = fork.override_seed {
-                recovered_seeds.push(seed);
-            }
-            if let Some(network) = &fork.inject_network {
-                recovered_networks.push(network.clone());
-            }
+            println!(
+                "[TIME MACHINE] Applied {} reality fork overrides",
+                fork.env_overrides.len()
+            );
         }
 
-        // SERVE THE OS TIES DEBUGGING
-        let active_wal = if is_isolated_debug {
-            dummy_wal.clone()
-        } else {
-            self.wal_engine.clone()
-        };
-        let active_net = if is_isolated_debug {
-            dummy_net.clone()
-        } else {
-            self.global_net.clone()
-        };
+        // Broadcast glass UI event for the temporal scrubber
+        let _ = phantom_ui_tx.send(UiEvent::ThoughtCommitted {
+            agent_hex: if is_isolated_debug {
+                sandbox_agent_hex
+            } else {
+                agent_hex.to_string()
+            },
+            intent_path: real_namespace.clone(),
+            tx_id: format!("{:032x}", fetch_target),
+            text: format!(
+                "[TEMPORAL FORK] State restored up to TxID 0x{:032x}",
+                fetch_target
+            ),
+        });
 
+        // Cleanup dead simulation shards
         self.brain.purge_phantom_shards();
 
         Ok(())

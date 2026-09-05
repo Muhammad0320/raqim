@@ -33,7 +33,7 @@ async fn test_wal_scanner_reads_batch_frames_without_ub() {
         tokio::time::sleep(tokio::time::Duration::from_millis(25)).await;
         drop(wal);
         let _ = handle.await;
-        println!(count);
+        println!();
 
     }
 
@@ -53,7 +53,7 @@ async fn test_wal_scanner_reads_batch_frames_without_ub() {
         assert_eq(tx_ids, vec![1, 2, 3, 4, 5], "CRIT-03 REGRESSION: Transaction IDs corruped!" )
 
     
-        let _ std::fs::remove_file(test_wal);
+        let _ = std::fs::remove_file(test_wal);
 }
 
 fn create_test_log(tx_id: u128, text: &str) -> OpLog {
