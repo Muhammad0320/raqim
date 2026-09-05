@@ -40,14 +40,11 @@ pub enum RebuildMode {
 
 pub struct MemoryRouter {
     config: Arc<RaqimConfig>,
-    aegis: Arc<AegisGateKeeper>,
     axon: Arc<AxonGateKeeper>,
     brain: Arc<SwarmStateRegistry>,
     lance_engine: Arc<LanceEngine>,
     wal_engine: Arc<WalEngine>,
-    global_net: Arc<GlobalNetworkBridge>,
     event_tx: Sender<SystemEvent>,
-    master_signing_key: SigningKey,
     effect_index: DashMap<EffectKey, EffectRecord>,
 }
 
@@ -64,25 +61,19 @@ pub struct UnifiedSearchResult {
 impl MemoryRouter {
     pub fn new(
         config: Arc<RaqimConfig>,
-        aegis: Arc<AegisGateKeeper>,
         axon: Arc<AxonGateKeeper>,
         brain: Arc<SwarmStateRegistry>,
         lance_engine: Arc<LanceEngine>,
         wal_engine: Arc<WalEngine>,
-        global_net: Arc<GlobalNetworkBridge>,
         event_tx: Sender<SystemEvent>,
-        master_signing_key: SigningKey,
     ) -> Self {
         Self {
             config,
-            aegis,
             axon,
             brain,
             lance_engine,
             wal_engine,
-            global_net,
             event_tx,
-            master_signing_key,
             effect_index: DashMap::new(),
         }
     }

@@ -273,14 +273,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mem_router = Arc::new(MemoryRouter::new(
         config.clone(),
-        aegis.clone(),
         axon.clone(),
         brain_shard.clone(),
         lance_engine.clone(),
         wal.clone(),
-        global_net.clone(),
         event_tx.clone(),
-        master_signing_key.clone(),
     ));
 
     // 2. Wire SystemEvent subscriber loop for outbound local quarantine events
