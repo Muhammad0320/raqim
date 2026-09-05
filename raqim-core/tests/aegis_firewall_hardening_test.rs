@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use raqim_core::aegis::AtomicTokenBucket;
+use std::sync::Arc;
 
 #[test]
 fn test_atomic_token_bucket_never_underflow_under_massive_concurrency() {

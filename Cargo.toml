@@ -8,3 +8,10 @@ members = [
 [patch.crates-io]
 # This must be the full path to the repository
 chrono = { git = "https://github.com/chronotope/chrono", tag = "v0.4.38" }
+
+[profile.release]
+opt-level = "z"       # Optimize aggressively for binary size
+lto = "fat"           # Perform aggressive Link-Time Optimization across all crates
+codegen-units = 1     # Maximize dead-code elimination across crate boundaries
+panic = "abort"       # Remove unwinding landing pads and stack traceback tables
+strip = true          # Automatically strip all debug symbols and symbol tables

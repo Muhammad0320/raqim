@@ -21,6 +21,7 @@ COPY raqim-core ./raqim-core
 COPY raqim-cli ./raqim-cli
 COPY raqim-mcp ./raqim-mcp
 COPY raqim-siege ./raqim-siege
+COPY raqim-py ./raqim-py
 
 # Compile optimizeed binaries with stripped debug symbols
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
