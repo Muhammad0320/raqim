@@ -235,7 +235,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 // Await server ack frame
-                if tokio::io::AsyncReadExt::read_exactt(&mut reader, &mut ack_buf).await.is_err() {
+                if tokio::io::AsyncReadExt::read_exact(&mut reader, &mut ack_buf).await.is_err() {
                     eprintln!("[WORKER {}] Server closed socket before ACK", worker_id);
                     break;
                 }
@@ -252,7 +252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Flush remaining socket bytes
-            let _ = stream.flush().await;
+            let _ = write_half.flush().await;
             latency_samples_micros
         });
 

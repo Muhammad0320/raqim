@@ -45,7 +45,7 @@ impl AtomicTokenBucket {
     }
 
     /// Atomically refills tokens based on elapsed nanoseconds
-    pub refill(&self) {
+    pub fn refill(&self) {
 
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
 
@@ -97,6 +97,7 @@ impl AtomicTokenBucket {
     pub fn check_and_consume(&self) -> bool {
 
         self.refill();
+        
         let mut current = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
         loop {
 

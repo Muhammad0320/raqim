@@ -169,7 +169,7 @@ impl WormWitnessEngine {
         let path = std::path::Path::new(&self.witness_dir);
 
         if !path.exists() {
-            return Ok(witness);
+            return witnesses;
         }
         
         if let Ok(entries) = fs::read_dir(&self.witness_dir) {

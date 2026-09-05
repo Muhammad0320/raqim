@@ -31,12 +31,34 @@ pub struct WalEngine {
     pub index: Arc<RwLock<BTreeMap<u128, u64>>>,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum WalError {
-    #[error("WAL channel saturated oro worker thread dead: {0}")]
     IngressQueueFull(String),
-    #[error("I/O error during  WAL operation: {0}")]
-    Io(#[from] std::io::Error)
+    Io(std::io::Error)
+}
+
+impl std::fmt::Display for WalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WalError::IngressQueueFull(msg) => write!(f, "WAL channel saturated: {}", msg),
+            WalError::Io(e) => write!(f, "I/O error during WAL operation: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for WalError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            WalError::IngressQueueFull(_) => None,
+            WalError::Io(e) => Some(e),
+        }
+    }
+}
+
+impl From<std::io::Error> for WalError {
+    fn from(err: std::io::Error) -> Self {
+        WalError::Io(err)
+    }
 }
 
 pub enum WalCommand {

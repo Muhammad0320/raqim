@@ -108,20 +108,22 @@ impl MemoryRouter {
         if let Ok(file) = File::open(&self.config.wal_path) {
             if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
                 let mut offset = 0;
-                let mut aligned_buff = rkyv::util::AlignedVec::<16>::();
+                let mut aligned_buff: rkyv::util::AlignedVec<16> = rkyv::util::AlignedVec::new();
 
                 while offset + 8 <= mmap.len() {
-                    let entry_len = u32::from_le_bytes( mmap[offset..offset+4].try_into().unwrap()) as usize;
-                    let expected_crc = u32::from_le_bytes( mmap[offset + 4..offset + 8].try_into().unwrap());
+                    let entry_len =
+                        u32::from_le_bytes(mmap[offset..offset + 4].try_into().unwrap()) as usize;
+                    let expected_crc =
+                        u32::from_le_bytes(mmap[offset + 4..offset + 8].try_into().unwrap());
                     let frame_total = 8 + entry_len;
 
                     if offset + frame_total > mmap.len() {
                         break;
                     }
 
-                    let entry_slice = &mmap[ offset + 8..offset + frame_total  ]
+                    let entry_slice = &mmap[offset + 8..offset + frame_total];
 
-                    // Hardware CRC32 checksum 
+                    // Hardware CRC32 checksum
                     if crc32fast::hash(entry_slice) != expected_crc {
                         offset += frame_total;
                         continue;
@@ -131,11 +133,13 @@ impl MemoryRouter {
                     aligned_buf.clear();
                     aligned_buf.extend_from_slice(entry_slice);
 
-                    
-                    if let Ok(archived_batch) =  rkyv::access::<< Vec<OpLog> as rkyv::Archive >::Archived, rkyv::rancor::Error>(&aligned_buf) {
-
+                    if let Ok(archived_batch) = rkyv::access::<
+                        <Vec<OpLog> as rkyv::Archive>::Archived,
+                        rkyv::rancor::Error,
+                    >(&aligned_buf)
+                    {
                         for log in archive_batch.as_slice() {
-                            callback (archived_log);
+                            callback(archived_log);
                         }
                     }
 
@@ -495,7 +499,7 @@ impl MemoryRouter {
 
         let fetch_target = target_tx_id.unwrap_or(u128::MAX);
 
-        let (memory_blob, historical_oplog, snapshot_tx, snapshot_timestamp) = self
+        let (_memory_blob, historical_oplog, snapshot_tx, snapshot_timestamp) = self
             .rebuild_agent_timeline(agent_hex, fetch_target, self.wal_engine.clone())
             .await?;
 
@@ -651,7 +655,6 @@ impl MemoryRouter {
                 recovered_networks.push(network.clone());
             }
         }
-
 
         // SERVE THE OS TIES DEBUGGING
         let active_wal = if is_isolated_debug {

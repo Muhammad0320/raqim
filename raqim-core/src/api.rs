@@ -2,7 +2,6 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Path, Query};
 use axum::response::{IntoResponse, Response};
 use axum::http::header::{AUTHORIZATION, HOST, ORIGIN};
-use subtle::ConstantTimeEq;
 use axum::{
     Json, async_trait,
     extract::{FromRequestParts, State},
@@ -50,6 +49,7 @@ use crate::{
 };
 use crate::{AgentState, IngressEnvelope, OpLog, SystemEvent, execute_raqim_cascade, utils};
 
+
 // Strongly typed api error system (Zero-Panic Guarantee)
 #[derive(Debug)]
 pub enum ApiError {
@@ -90,7 +90,6 @@ impl IntoResponse for ApiError {
 }
 
 // Websocket Message Types & UI Event Schemas
-
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")] // Enables json parsing {"type": "AskQuestion", }
 pub enum WsMessage {
@@ -195,87 +194,99 @@ pub struct ApiState {
 
 #[derive(Clone, Debug)]
 pub struct ValidatedIdentity {
-
-    pub tenant_id: String, 
-    pub is_admin: bool 
-
+    pub tenant_id: String,
+    pub is_admin: bool,
 }
 
-#[async_trait]
-impl <S> FromRequestParts<S> for ValidatedIdentity 
-where 
-    S: Send + Sync, 
+#[axum::async_trait]
+impl<S> FromRequestParts<S> for ValidatedIdentity
+where
+    S: Send + Sync,
 {
-
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-
-        // BARRIER 1: Drive-by browser Exploit Shield
-        if let Some(origin) = parts.headers.get(ORIGIN).and_then(|v| v.to_str().ok() ) {
-
+        // BARRIER 1: Drive-By Browser Exploit Shield (Cross-Origin Protection)
+        if let Some(origin) = parts.headers.get(ORIGIN).and_then(|v| v.to_str().ok()) {
             let allowed_origins = [
                 "http://localhost:3000",
                 "http://127.0.0.1:3000",
                 "http://localhost:8081",
-                "http://127.0.0.1:8081", 
-            ]
+                "http://127.0.0.1:8081",
+            ];
 
-            let is_allowed = allowed_origins.iter().any(|&allowed| allowed == origin );
+            let is_allowed = allowed_origins.iter().any(|&allowed| allowed == origin);
             if !is_allowed {
-                eprintln("[SECURITY ALERT] Blocked cross-origin drive-by expolot attempt from Origin: {}", origin);
+                eprintln!(
+                    "[SECURITY ALERT] Blocked cross-origin drive-by attempt from Origin: {}",
+                    origin
+                );
                 return Err(ApiError::Forbidden(format!(
-                    "Cross-Origin Security Interdiction: Access from '{}' denied", origin
+                    "Cross-Origin Security Interdiction: Access from '{}' denied",
+                    origin
                 )));
             }
         }
 
-        // BARRIER 2: Resolve Runtime Environment and interface binding
-        let is_production = std::env::var("RAQIM_ENV").map(|v| v.to_lowercase() == "production").unwrap_or(false);
+        // BARRIER 2: Resolve Runtime Environment & Loopback Bypass
+        let is_production = std::env::var("RAQIM_ENV")
+            .map(|v| v.to_lowercase() == "production")
+            .unwrap_or(false);
 
-        // In local dev, loopback connections from local Next.js console are trusted 
+        // In local development, loopback requests from Next.js console are admitted
         if !is_production {
             if let Some(host) = parts.headers.get(HOST).and_then(|v| v.to_str().ok()) {
-
-                    if hosts.starts_with("localhost:") || host.starts_with("127.0.0.1:") {
-                        return Ok(ValidatedIdentity {
-                            
-                        } )
-                    }
+                if host.starts_with("localhost:") || host.starts_with("127.0.0.1:") {
+                    return Ok(ValidatedIdentity {
+                        tenant_id: "local_open_core".to_string(),
+                        is_admin: true,
+                    });
+                }
             }
         }
 
-        // BARRIER 3: Production / cloud vps / docker hardening 
-        let auth_header = parts.headers.get(AUTHORIZATION).and_then(|val| val.to_str().ok()).ok_or_else(|| {
-            ApiError::Unauthorized("Access Denied: Missing 'Authentication: Bearer <token>'".to_string())
-        })?;
+        // BARRIER 3: Production / Cloud VPS / Docker Hardening
+        let auth_header = match parts.headers.get(AUTHORIZATION).and_then(|val| val.to_str().ok()) {
+            Some(hdr) => hdr,
+            None => {
+                return Err(ApiError::Unauthorized(
+                    "Missing 'Authorization: Bearer <token>' header".to_string(),
+                ));
+            }
+        };
 
         if !auth_header.starts_with("Bearer ") {
-            return Err( ApiError::Unauthorized("Invalid auth scheme. Use 'Bearer <token>'".to_string()));
+            return Err(ApiError::Unauthorized(
+                "Invalid auth scheme. Use 'Bearer <token>'".to_string(),
+            ));
         }
 
         let provided_token = auth_header.trim_start_matches("Bearer ").trim();
-        
+
         let expected_secret = std::env::var("RAQIM_ADMIN_SECRET").unwrap_or_else(|_| {
-
-            std::fs::read_to_string("keys/admin.secret").unwrap_or_default().trim().to_string()
-
+            std::fs::read_to_string("keys/admin.secret")
+                .unwrap_or_default()
+                .trim()
+                .to_string()
         });
- 
+
         if expected_secret.is_empty() {
-            return Err(ApiError::InternalServerError("Security Gate Block: RAQIM_ADMIN_SECRET is empty on production daemon".to_string()))
+            return Err(ApiError::InternalServerError(
+                "Security Gate Block: RAQIM_ADMIN_SECRET is empty on production daemon".to_string(),
+            ));
         }
 
-        // Constant-time comparison prevents side-channel timing analysis
-        if bool::from(provided_token.as_bytes().ct_eq(expected_secret.as_bytes())) {
+        // Constant-time byte comparison mitigates timing attacks
+        if constant_time_compare(provided_token.as_bytes(), expected_secret.as_bytes()) {
             Ok(ValidatedIdentity {
-                tenant_id: "production_tenant".to_string(), 
-                is_admin: true 
-            }) 
+                tenant_id: "production_tenant".to_string(),
+                is_admin: true,
+            })
         } else {
-            Err( ApiError::Unauthorized("Access Denied: Invalid Administrative Token".to_string()))
+            Err(ApiError::Unauthorized(
+                "Access Denied: Invalid Administrative Token".to_string(),
+            ))
         }
-
     }
 }
 
@@ -891,7 +902,7 @@ struct ResurrectPayload {
 }
 
 async fn lift_qurantine_and_resurrect(
-    _identity: ValidatedIdentity,
+    _auth: ValidatedIdentity,
     State(state): State<ApiState>,
     Json(payload): Json<ResurrectPayload>,
 ) -> Result<Json<Value>, ApiError> {
@@ -1731,4 +1742,17 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .route("/v1/vault/telemetry", get(vault_telemetry_endpoint))
         .layer(CatchPanicLayer::new())
         .with_state(state)
+}
+
+
+/// Pure standard-library constant-time byte comparison (Mitigates timing analysis)
+fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }

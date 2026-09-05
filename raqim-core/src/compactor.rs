@@ -157,7 +157,7 @@ impl WalCompactor {
     }
 
     /// Executes on-demand or automated safe WAL rotatiton and LanceDB assimilation
-    pub async fn trigger_safe_compaction(self: Arc<Self>) -> Result<(usize), anyhow::Error> {
+    pub async fn trigger_safe_compaction(self: Arc<Self>) -> Result<usize, anyhow::Error> {
         // Ask the WAL engine to rotate the file and give us the archived filename
         let (reply_tx, reply_rx) = oneshot::channel::<String>();
 
