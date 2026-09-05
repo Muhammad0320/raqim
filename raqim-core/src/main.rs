@@ -12,6 +12,7 @@ use raqim_core::embedding::{EmbeddingProvider, LocalBgeProvider, OpenAIProvider}
 use raqim_core::health::{HealthMonitor, SystemHealth};
 use raqim_core::hot_memory::{HotVectorBuffer, HotVectorEntry};
 use raqim_core::lancedb_store::LanceEngine;
+use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
 use raqim_core::nucleus::{WalCommand, WalEngine};
 use raqim_core::registry::SwarmRegistry;
@@ -28,7 +29,7 @@ use std::{eprintln, fs, println};
 
 use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -73,30 +74,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (phantom_ui_tx, _phanom_ui_rx) = broadcast::channel::<UiEvent>(100);
 
     let telemetry_topic = format!("{}_telemetry", config.topic);
-
-    // 2. Spawns a dedicated Zero-copy telemetry thread ( Forwarding Internal events to iceoryx 2 )
-    std::thread::spawn(move || {
-        println!(
-            "Bismillah. Booting IPC Telemetry Emitter on topic: {} ",
-            telemetry_topic
-        );
-
-        //  Initialize Publisher INSIDE thread ( !Send Compliance )
-        let cortex = CortexDataPlane::new(&telemetry_topic);
-        let publisher = cortex
-            .create_publisher()
-            .expect("Failed to create telemetry pub");
-
-        // Listen to internal tokio events and publish them to zero-copy memory
-        while let Ok(event) = event_rx.blocking_recv() {
-            let serialized_event = rkyv::to_bytes::<rkyv::rancor::Error>(&event).unwrap();
-
-            if let Ok(sample) = publisher.loan_slice_uninit(serialized_event.len()) {
-                let sample = sample.write_from_slice(&serialized_event);
-                let _ = sample.send();
-            }
-        }
-    });
 
     let security_flags = RuntimeSecurityFlags::new();
 
@@ -275,7 +252,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await,
     );
-    let wasm_engine = Arc::new(WasmEngine::new());
     let hot_buffer = Arc::new(HotVectorBuffer::new(10_0000));
 
     let embedder: Arc<dyn EmbeddingProvider> = match config.embedder_type.as_str() {
@@ -296,6 +272,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1. Boot global Quarantine network subscriber
     global_net.listen_for_global_quarantine(aegis.clone()).await;
+
+    let mem_router = Arc::new(MemoryRouter::new(
+        config.clone(),
+        aegis.clone(),
+        axon.clone(),
+        brain_shard.clone(),
+        lance_engine.clone(),
+        wal.clone(),
+        global_net.clone(),
+        event_tx.clone(),
+        master_signing_key,
+    ));
 
     // 2. Wire SystemEvent subscriber loop for outbound local quarantine events
     let mut system_rx = event_tx.subscribe();
@@ -630,13 +618,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
 
-                    }
+                    };
 
 
                     println!("External Agent connected from: {}", addr);
 
                     let task_axon = axon.clone();
-                    let task_cortex_tx = cortex_tx.clone();
                     let task_wal = wal.clone();
                     let global_publisher = global_net.clone();
                     let task_event_tx = event_tx.clone();
@@ -819,7 +806,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         task_axon.clone(),
                         task_wal.clone(),
                         task_brain.clone(),
-                        task_cortex_tx.clone(),
                         global_publisher.clone(),
                         task_event_tx.clone(),
                         Vec::new(),
@@ -827,24 +813,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )
                     .await {
 
-                        Ok(res) => {
-                                let tx_id = match res {
-                                Ok(id) => id,
-                                Err(e) => {
-                                    eprintln!("[CASCADE ERROR]: Processing failed: {:?}", e);
-                                    continue;
-                                }
-                            };
+                        Ok(tx_id) => {
 
-                                     // Emit 20 byte server ack frame [4 bytes: Status] + [16 bytes: Little-Endian u128 TxID]
-                                    let mut ack_buf = [0u8; 20];
-                                    ack_buf[0..4].copy_from_slice(&0u32.to_le_bytes());
-                                    ack_buf[4..20].copy_from_slice(&tx_id.to_le_bytes());
+                                // Emit 20 byte server ack frame [4 bytes: Status] + [16 bytes: Little-Endian u128 TxID]
+                            let mut ack_buf = [0u8; 20];
+                            ack_buf[0..4].copy_from_slice(&0u32.to_le_bytes());
+                            ack_buf[4..20].copy_from_slice(&tx_id.to_le_bytes());
 
-                                    if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut write_half, &ack_buf).await {
-                                        eprintln("[TCP EDGE] Failed to deliver ACK frame: {} ", e);
-                                        break;
-                                    }
+                            if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut write_half, &ack_buf).await {
+                                eprintln!("[TCP EDGE] Failed to deliver ACK frame: {} ", e);
+                                break;
+                            }
 
                             let _ = task_ui_tx.send(UiEvent::ThoughtCommitted {
                                 agent_hex: agent_hex.clone(),
@@ -863,7 +842,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         break;
 
 
-                        break;
                     }
 
 
