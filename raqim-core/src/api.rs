@@ -1,9 +1,9 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Multipart, Path, Query};
-use axum::response::{IntoResponse, Response};
+use axum::extract::{Path, Query};
 use axum::http::header::{AUTHORIZATION, HOST, ORIGIN};
+use axum::response::{IntoResponse, Response};
 use axum::{
-    Json, async_trait,
+    Json,
     extract::{FromRequestParts, State},
     http::{StatusCode, request::Parts},
     routing::{get, post},
@@ -27,7 +27,6 @@ use tokio_stream::wrappers::BroadcastStream;
 use serde::{Deserialize, Serialize};
 use std::result::Result::{Err, Ok};
 use std::{collections::HashMap, sync::Arc};
-use tokio::io::AsyncWriteExt;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, oneshot};
@@ -47,8 +46,7 @@ use crate::{
     A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
     network::GlobalNetworkBridge,
 };
-use crate::{AgentState, IngressEnvelope, OpLog, SystemEvent, execute_raqim_cascade, utils};
-
+use crate::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
 
 // Strongly typed api error system (Zero-Panic Guarantee)
 #[derive(Debug)]
@@ -175,7 +173,6 @@ pub struct ApiState {
     pub brain: Arc<SwarmStateRegistry>,
     pub aegis: Arc<AegisGateKeeper>,
     pub global_net: Arc<GlobalNetworkBridge>,
-    pub cortex_tx: UnboundedSender<Vec<u8>>,
     pub wal: Arc<WalEngine>,
     pub lance: Arc<LanceEngine>,
 
@@ -246,7 +243,11 @@ where
         }
 
         // BARRIER 3: Production / Cloud VPS / Docker Hardening
-        let auth_header = match parts.headers.get(AUTHORIZATION).and_then(|val| val.to_str().ok()) {
+        let auth_header = match parts
+            .headers
+            .get(AUTHORIZATION)
+            .and_then(|val| val.to_str().ok())
+        {
             Some(hdr) => hdr,
             None => {
                 return Err(ApiError::Unauthorized(
@@ -527,7 +528,6 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                         os_state_clone.axon.clone(),
                         os_state_clone.wal.clone(),
                         os_state_clone.brain.clone(),
-                        os_state_clone.cortex_tx.clone(),
                         os_state_clone.global_net.clone(),
                         os_state_clone.event_tx.clone(),
                         Vec::new(),
@@ -600,7 +600,6 @@ async fn process_ws_message(msg: WsMessage, conn: Arc<WsConnectionstate>, os_sta
                                 os_state_clone.axon.clone(),
                                 os_state_clone.wal.clone(),
                                 os_state_clone.brain.clone(),
-                                os_state_clone.cortex_tx.clone(),
                                 os_state_clone.global_net.clone(),
                                 os_state_clone.event_tx.clone(),
                                 Vec::new(),
@@ -1024,7 +1023,6 @@ async fn time_travel_endpoint(
     }
 }
 
-
 // THE ZERO-COPY HTTP INGRESS: The endpoint expects raw binary `rkyv` bytes, Not JSON.
 pub async fn http_ingress_endpoint(
     State(state): State<ApiState>,
@@ -1083,7 +1081,6 @@ pub async fn http_ingress_endpoint(
     let task_event = state.event_tx.clone();
     let task_axon = state.axon.clone();
     let task_wal = state.wal.clone();
-    let task_cortex = state.cortex_tx.clone();
     let task_net = state.global_net.clone();
     let task_brain = state.brain.clone();
 
@@ -1105,7 +1102,6 @@ pub async fn http_ingress_endpoint(
             task_axon,
             task_wal,
             task_brain,
-            task_cortex,
             task_net,
             task_event,
             Vec::new(),
@@ -1194,7 +1190,7 @@ pub async fn dashboard_cards_endpoint(
             is_recent && is_not_jailed
         })
         .count();
-    
+
     let cold_count = state.lance.get_total_vector_count().await.unwrap_or(0) as u64;
     let hot_batches = state.wal.get_pending_count().await as u64;
 
@@ -1224,7 +1220,7 @@ pub async fn toggle_ingress_endpoint(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let prev = *state.pause_tx.borrow();
     let new_state = !prev;
-    
+
     // Broadcasts state change across all worker tasks
     let _ = state.pause_tx.send(new_state);
 
@@ -1743,7 +1739,6 @@ pub fn build_admin_router(state: ApiState) -> axum::Router {
         .layer(CatchPanicLayer::new())
         .with_state(state)
 }
-
 
 /// Pure standard-library constant-time byte comparison (Mitigates timing analysis)
 fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {

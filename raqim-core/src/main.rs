@@ -66,14 +66,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // THE INTERNAL EVENT BUS
-    let (event_tx, mut event_rx) = broadcast::channel::<SystemEvent>(50_000);
+    let (event_tx, _event_rx) = broadcast::channel::<SystemEvent>(50_000);
     let (ui_tx, _ui_rx) = broadcast::channel::<UiEvent>(10_000);
 
     let registry = Arc::new(SwarmRegistry::new());
     let (health_tx, _health_rx) = broadcast::channel::<SystemHealth>(100);
     let (phantom_ui_tx, _phanom_ui_rx) = broadcast::channel::<UiEvent>(100);
-
-    let telemetry_topic = format!("{}_telemetry", config.topic);
 
     let security_flags = RuntimeSecurityFlags::new();
 
@@ -282,7 +280,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         wal.clone(),
         global_net.clone(),
         event_tx.clone(),
-        master_signing_key,
+        master_signing_key.clone(),
     ));
 
     // 2. Wire SystemEvent subscriber loop for outbound local quarantine events
@@ -551,7 +549,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         axon: axon.clone(),
         brain: brain_shard.clone(),
         lance: lance_engine.clone(),
-        cortex_tx: cortex_tx.clone(),
         wal: wal.clone(),
         event_tx: event_tx.clone(),
 
@@ -643,7 +640,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (read_half, mut write_half) = socket.into_split();
 
                 //  Syscall Amortization: Wrap the socket in a 1mb BufReader to eliminate kernel context switches
-                let mut reader = tokio::io::BufReader::with_capacity(1024 * 1024, socket);
+                let mut reader = tokio::io::BufReader::with_capacity(1024 * 1024, read_half);
 
                 // Heap Allocation Amortization: pre-allocate a 1mb scratch buffer ONCE to eliminate dynamic heap allocation.
                 let mut payload_scratch_buf = vec![0u8; 1024* 1024];
