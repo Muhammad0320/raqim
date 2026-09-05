@@ -2,12 +2,12 @@
 # STAGE 1: The Builder (Isolated Cargo Clean Room )
 # ====================================
 # The official, heavy Rust image to compile the OS.
-FROM rust:1.80-bookworm AS builder
+FROM rust:bookworm AS builder
 
 # Create a sterile working Dir
 WORKDIR /usr/src/raqim
 
-# Intall native C toolchain & build dependencies
+# Intall native C toolchain & build dependenciesp
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
