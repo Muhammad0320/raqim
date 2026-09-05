@@ -46,12 +46,15 @@ impl AtomicTokenBucket {
 
     /// Atomically refills tokens based on elapsed nanoseconds
     pub fn refill(&self) {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
 
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
-
-        let mut last_refill_nanos = self.last_refill_nanos.load(std::sync::atomic::Ordering::Relaxed);
+        let mut last = self
+            .last_refill_nanos
+            .load(std::sync::atomic::Ordering::Relaxed);
         loop {
-
             if now <= last {
                 // Monotoic protection
                 break;
@@ -60,59 +63,64 @@ impl AtomicTokenBucket {
             let elapsed_nanos = now - last;
 
             // Tokens to add = (elapsed_nanos * max_tps) / 1,000,000,000
-            let tokens_to_add = (elapsed_nanos as u128 * self.max_tps as u128 / 1_000_000_000) as u64;
+            let tokens_to_add =
+                (elapsed_nanos as u128 * self.max_tps as u128 / 1_000_000_000) as u64;
 
             if tokens_to_add == 0 {
                 break;
             }
 
             // update last_refill_nanos atomically
-            match self.last_refill_nanos.compare_exchange_weak(last, now, std::sync::atomic::Ordering::AcqRel, std::sync::atomic::Ordering::Relaxed) {
+            match self.last_refill_nanos.compare_exchange_weak(
+                last,
+                now,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Relaxed,
+            ) {
                 Ok(_) => {
                     // Refill timestamp won; update token counter safely
                     let mut curr_tokens = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
                     loop {
-
-                        let new_total = (curr_tokens + tokens_to_add).min(self.burst_capacity); 
-                        match seld.tojebs.compare_exchange_weak(
-                            curr_tokens, 
-                            new_total, 
-                            std::sync::atomic::Ordering::Release, 
-                            std::sync::atomic::Ordering::Relaxed, 
+                        let new_total = (curr_tokens + tokens_to_add).min(self.burst_capacity);
+                        match self.tokens.compare_exchange_weak(
+                            curr_tokens,
+                            new_total,
+                            std::sync::atomic::Ordering::Release,
+                            std::sync::atomic::Ordering::Relaxed,
                         ) {
-                            Ok(_) => break, 
-                            Err(actual) => curr_tokens = actual, 
+                            Ok(_) => break,
+                            Err(actual) => curr_tokens = actual,
                         }
                     }
                     break;
                 }
-            Err(actual) => last = actual 
+                Err(actual) => last = actual,
             }
-
         }
-
     }
 
-        /// HARDENED: Atomic CAS consumption loop. Immute to underflows. 
+    /// HARDENED: Atomic CAS consumption loop. Immute to underflows.
     pub fn check_and_consume(&self) -> bool {
-
         self.refill();
-        
+
         let mut current = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
         loop {
-
             if current == 0 {
                 return false;
             }
 
-            // Atomic CAS 
-            match self.token.compare_exchange_weak(current, current - 1, std::sync::atomic::Ordering::AcqRel, std::sync::atomic::Ordering::Relaxed ) {
-                Ok(_) => return true, 
-                Err(actual) => current = actual 
+            // Atomic CAS
+            match self.tokens.compare_exchange_weak(
+                current,
+                current - 1,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => current = actual,
             }
         }
     }
-
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -382,7 +390,7 @@ impl AegisGateKeeper {
             agent_hex,
             intent_path,
             "NAMESPACE_BREACH",
-            "No explicit allowance match withing token permissions",
+            "No explicit allowance match within token permissions",
         );
         Err(anyhow::anyhow!(
             "Access Denied: Default Deny Policy Tripped"
@@ -465,6 +473,5 @@ impl AegisGateKeeper {
         }
 
         Ok((cert.agent_hex, cert.group_name))
-
     }
 }
