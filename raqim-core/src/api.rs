@@ -3,10 +3,10 @@ use axum::extract::{Path, Query};
 use axum::http::header::{AUTHORIZATION, HOST, ORIGIN};
 use axum::response::{IntoResponse, Response};
 use axum::{
-    Json,
     extract::{FromRequestParts, State},
-    http::{StatusCode, request::Parts},
+    http::{request::Parts, StatusCode},
     routing::{get, post},
+    Json,
 };
 use base64::Engine;
 use tokio::sync::watch;
@@ -17,8 +17,8 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use dashmap::DashMap;
 use ed25519_dalek::{Signer, SigningKey};
 use futures_util::stream::Stream;
-use futures_util::{SinkExt, stream::StreamExt};
-use serde_json::{Value, json};
+use futures_util::{stream::StreamExt, SinkExt};
+use serde_json::{json, Value};
 use std::convert::Infallible;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{eprintln, format, println};
@@ -28,9 +28,8 @@ use serde::{Deserialize, Serialize};
 use std::result::Result::{Err, Ok};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::broadcast::Sender;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::{Duration, timeout};
+use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
 use crate::aegis::{CapabilityCertificate, QuarantineRecord};
@@ -43,10 +42,10 @@ use crate::nucleus::WalEngine;
 use crate::registry::SwarmRegistry;
 use crate::state::SwarmStateRegistry;
 use crate::{
-    A2AEnvelope, aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
-    network::GlobalNetworkBridge,
+    aegis::AegisGateKeeper, config::RaqimConfig, memory_router::MemoryRouter,
+    network::GlobalNetworkBridge, A2AEnvelope,
 };
-use crate::{AgentState, IngressEnvelope, SystemEvent, execute_raqim_cascade};
+use crate::{execute_raqim_cascade, AgentState, IngressEnvelope, SystemEvent};
 
 // Strongly typed api error system (Zero-Panic Guarantee)
 #[derive(Debug)]

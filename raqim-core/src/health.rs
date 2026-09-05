@@ -1,7 +1,6 @@
 use serde::Serialize;
 use std::time::Duration;
 
-use std::sync::Arc;
 use sysinfo::{Components, CpuRefreshKind, MemoryRefreshKind, Pid, RefreshKind, System};
 use tokio::sync::{broadcast, watch};
 
