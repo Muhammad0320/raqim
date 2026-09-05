@@ -1,12 +1,12 @@
 use arrow_array::Array;
 use dashmap::DashMap;
-use ed25519_dalek::SigningKey;
 use futures::StreamExt;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
 use rkyv::{Archive, Archived};
 use std::collections::HashMap;
+use std::eprintln;
 use std::format;
 use std::io::{Read, Seek, SeekFrom};
 use std::println;
@@ -21,13 +21,11 @@ use crate::AgentState;
 use crate::AgentStatus;
 use crate::EffectKey;
 use crate::EffectRecord;
-use crate::aegis::AegisGateKeeper;
 use crate::api::ForkConfig;
 use crate::api::UiEvent;
 use crate::axon::AxonGateKeeper;
 use crate::generate_uuidv7_txid;
 use crate::hot_memory::HotVectorBuffer;
-use crate::network::GlobalNetworkBridge;
 use crate::state::SwarmStateRegistry;
 use crate::{
     OpLog, SystemEvent, config::RaqimConfig, lancedb_store::LanceEngine, nucleus::WalEngine,
@@ -153,7 +151,7 @@ impl MemoryRouter {
                 final_context.push(format!("[Recent] {} ", archived.state.text.as_str()));
             }
         })
-        .map_err(|e| anyhow::anyhow!("Error scanning wal file"))?;
+        .map_err(|e| anyhow::anyhow!("Error scanning wal file: {}", e))?;
 
         // 2. Supplement with Deep Semantic search
         let mut deep_memories = self
@@ -181,7 +179,7 @@ impl MemoryRouter {
                 ))
             }
         })
-        .map_err(|e| anyhow::anyhow!("Error scanning wal file"))?;
+        .map_err(|e| anyhow::anyhow!("Error scanning wal file: {}", e))?;
 
         if let Some(res) = result {
             return Ok(res);
@@ -725,7 +723,11 @@ impl MemoryRouter {
                 .send(SystemEvent::MarkleBatchCrystallized { batch });
         }
 
-        self.wal_engine.append(sealed_log).await;
+        let scan_res = self.wal_engine.append(sealed_log).await;
+
+        if let Err(e) = scan_res {
+            eprintln!("[WAL ERROR] Failed to append thought to WalEngine: {}  ", e);
+        }
 
         println!(
             " [EFFECT ENGINE] Recorded Side-Effect for Agent: {} at Step: {} [TxID: {:032x}] ",
