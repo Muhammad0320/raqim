@@ -12,7 +12,6 @@ use raqim_core::embedding::{EmbeddingProvider, LocalBgeProvider, OpenAIProvider}
 use raqim_core::health::{HealthMonitor, SystemHealth};
 use raqim_core::hot_memory::{HotVectorBuffer, HotVectorEntry};
 use raqim_core::lancedb_store::LanceEngine;
-use raqim_core::memory_router::MemoryRouter;
 use raqim_core::network::GlobalNetworkBridge;
 use raqim_core::nucleus::{WalCommand, WalEngine};
 use raqim_core::registry::SwarmRegistry;
@@ -20,13 +19,11 @@ use raqim_core::state::SwarmStateRegistry;
 use raqim_core::witness::WormWitnessEngine;
 use raqim_core::{
     AgentState, IngressEnvelope, OpLog, RuntimeSecurityFlags, SystemEvent, execute_raqim_cascade,
-    generate_uuidv7_txid,
 };
 use tower_http::cors::{Any, CorsLayer};
 
-use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::{eprintln, fs, println};
 
 use tokio::net::TcpListener;

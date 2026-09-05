@@ -108,7 +108,7 @@ impl MemoryRouter {
         if let Ok(file) = File::open(&self.config.wal_path) {
             if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
                 let mut offset = 0;
-                let mut aligned_buff: rkyv::util::AlignedVec<16> = rkyv::util::AlignedVec::new();
+                let mut aligned_buf: rkyv::util::AlignedVec<16> = rkyv::util::AlignedVec::new();
 
                 while offset + 8 <= mmap.len() {
                     let entry_len =
@@ -138,8 +138,8 @@ impl MemoryRouter {
                         rkyv::rancor::Error,
                     >(&aligned_buf)
                     {
-                        for log in archive_batch.as_slice() {
-                            callback(archived_log);
+                        for log in archived_batch.as_slice() {
+                            callback(log);
                         }
                     }
 
@@ -499,7 +499,7 @@ impl MemoryRouter {
 
         let fetch_target = target_tx_id.unwrap_or(u128::MAX);
 
-        let (_memory_blob, historical_oplog, snapshot_tx, snapshot_timestamp) = self
+        let (_memory_blob, historical_oplog, _snapshot_tx, _snapshot_timestamp) = self
             .rebuild_agent_timeline(agent_hex, fetch_target, self.wal_engine.clone())
             .await?;
 

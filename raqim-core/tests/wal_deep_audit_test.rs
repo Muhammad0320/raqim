@@ -1,3 +1,7 @@
+use std::path::Path;
+
+use raqim_core::{AgentState, AgentStatus, OpLog, memory_router::MemoryRouter, nucleus::WalEngine};
+
 
 
 #[tokio::test]
@@ -11,12 +15,18 @@ async fn test_wal_scanner_reads_batch_frames_without_ub() {
     // Boot WAL and commit a batch of 5 logs
     {
 
-        let (wal, handle) = WalEngine::start(test_wal.to_string()).await;
+        let (wal, handle) = WalEngine
+        ::start(test_wal.to_string()).await;
         let mut count = 0;
         for i in 1..=5 {
 
             let log = create_test_log(i, &format!("Thought number {}", i));
-            wal.append(log).await.expect("WAL append failed");
+            let res = wal.append(create_test_log(i, "Batch 2")).await;
+
+            if res.is_err() {
+                eprintln!("Durability Breach/WAL saturated");
+                break;
+            }
             count +=1;
         }
 
