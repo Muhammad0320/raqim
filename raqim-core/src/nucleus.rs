@@ -18,9 +18,9 @@ use std::{
 };
 use tokio::io::AsyncWriteExt;
 use tokio::{
+    io::AsyncSeekExt,
     sync::{RwLock, mpsc, oneshot},
     time::interval,
-    io::AsyncSeekExt
 };
 
 pub struct WalEngine {
@@ -34,7 +34,7 @@ pub struct WalEngine {
 #[derive(Debug)]
 pub enum WalError {
     IngressQueueFull(String),
-    Io(std::io::Error)
+    Io(std::io::Error),
 }
 
 impl std::fmt::Display for WalError {
@@ -106,9 +106,12 @@ impl WalEngine {
                 .await
                 .expect("Failed to open crash-safe WAL file");
 
-            // Explicit hardware seek to guarantee alignment with recovered index. 
-            active_file.seek(std::io::SeekFrom::Start(clean_offset)).await.expect("FATAL: Failed to seek WAL writes cursor to clean_offset");
-            
+            // Explicit hardware seek to guarantee alignment with recovered index.
+            active_file
+                .seek(std::io::SeekFrom::Start(clean_offset))
+                .await
+                .expect("FATAL: Failed to seek WAL writes cursor to clean_offset");
+
             let mut current_offset = clean_offset;
             let mut batch: Vec<OpLog> = Vec::with_capacity(6_000);
 
@@ -371,7 +374,10 @@ impl WalEngine {
 
     /// Fire and forget. The TCP/Agent networking layer NEVER blocks here.
     pub async fn append(&self, log: OpLog) -> Result<(), WalError> {
-        self.sender.send(log).await.map_err(|e| WalError::IngressQueueFull(e.to_string()) );
+        self.sender
+            .send(log)
+            .await
+            .map_err(|e| WalError::IngressQueueFull(e.to_string()))
     }
 
     /// Extremely fast binary scan of the active WAL for a specific substring
@@ -559,5 +565,4 @@ impl WalEngine {
 
         highest_tx
     }
-
 }

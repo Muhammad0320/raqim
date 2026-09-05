@@ -117,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         fs::write(&key_path, signing_key.to_bytes()).expect("Failed to write Master Key");
 
-        // Lock down Unix permissions  
+        // Lock down Unix permissions
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -126,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Memory Load & Security Audit Phase 
+    // Memory Load & Security Audit Phase
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -134,16 +134,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let permissions = metadata.permissions();
         let mode = permissions.mode();
 
-        // Check if group or otthers have read/write/execute permission 
-        if move & 0o77 != 0 {
+        // Check if group or otthers have read/write/execute permission
+        if mode & 0o77 != 0 {
             eprintln!(
-                "[SECURITY HAZARD] Master key file '{:?}' has insecure permissions: {:o} (Expected 0600).", key_path, mode & 0o77
+                "[SECURITY HAZARD] Master key file '{:?}' has insecure permissions: {:o} (Expected 0600).",
+                key_path,
+                mode & 0o77
             );
-            eprintln!(
-                "[SECURITY] Remedying file permission to 0600 (User read/write only)..."
-            );
-            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600)).expect("FATAL: Failed to enforce 0600 permissions on master key");
-        } 
+            eprintln!("[SECURITY] Remedying file permission to 0600 (User read/write only)...");
+            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))
+                .expect("FATAL: Failed to enforce 0600 permissions on master key");
+        }
     }
 
     let key_bytes = fs::read(&key_path).expect("FATAL: Failed to read master_key from disk");
@@ -556,7 +557,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn the hardware interrupt loop
     let health_pause_rx = pause_rx.clone();
     HealthMonitor::spawn_telemetry_loop(health_tx.clone(), health_pause_rx);
-    
+
     let api_state = ApiState {
         config: config.clone(),
         aegis: aegis.clone(),
@@ -604,8 +605,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // JoinSet automatically tracks all spawned TCP worker tasks.
     let mut tcp_workers = JoinSet::new();
 
-    // Limit max concurrent live TCP agent sockets. 
-    let connection_semaphore = Arc::new( tokio::sync::Semaphore:::new(512));
+    // Limit max concurrent live TCP agent sockets.
+    let connection_semaphore = Arc::new(tokio::sync::Semaphore::new(512));
 
     loop {
         tokio::select! {
@@ -636,7 +637,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
                     println!("External Agent connected from: {}", addr);
-                        
+
                     let task_axon = axon.clone();
                     let task_cortex_tx = cortex_tx.clone();
                     let task_wal = wal.clone();
@@ -652,10 +653,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Spawn into the joinset
             tcp_workers.spawn(async move {
-                let _permit = permit; 
+                let _permit = permit;
 
                 // split socket into independent read and write halves
-                let (read_half, mut write_half) = socket.into_split(); 
+                let (read_half, mut write_half) = socket.into_split();
 
                 //  Syscall Amortization: Wrap the socket in a 1mb BufReader to eliminate kernel context switches
                 let mut reader = tokio::io::BufReader::with_capacity(1024 * 1024, socket);
@@ -793,7 +794,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             // spawn the heave lancedb/wal lookup in the bg os thread
                             tokio::spawn(async move {
-                                
+
                                 println!("[JIT HYDRATION] Waking up agent {} from cold storage.", agent_hex_clone);
 
                                 if let Err(e) = router_clone.rebuild_agent_timeline(&agent_hex_clone, u128::MAX, wal_clone).await {
@@ -854,7 +855,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 tx_id: format!("{:032x}", tx_id),
                                 text,
                             });
-                     } 
+                     }
                      Err(e) => {
                         eprintln!("[TCP INGRESS REJECTED] Hardware Backpressure: {} ", e);
 
@@ -863,8 +864,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         let _ = tokio::io::AsyncWriteExt::write_all(&mut write_half, &err_buf).await;
                         break;
-                                
-                     
+
+
                         break;
                     }
 
@@ -883,8 +884,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 });
 
-            
-            
+
+
             }
         }
     }

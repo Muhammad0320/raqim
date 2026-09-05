@@ -611,13 +611,13 @@ impl LanceEngine {
             format!("namespace >= '{}' AND namespace < '{}~'", prefix, prefix)
         } else {
             format!("namespace = '{}'", namespace)
-        }
+        };
 
         // 3. Execute High-Speed vector search (IVF-PQ Algorithm)
         let mut stream = table
             .query()
             .nearest_to(query_vector)?
-            .only_if( filter_clause )
+            .only_if(filter_clause)
             .limit(limit)
             .execute()
             .await?;
