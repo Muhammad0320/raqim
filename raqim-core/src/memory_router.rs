@@ -1,34 +1,27 @@
 use arrow_array::Array;
 use dashmap::DashMap;
-use ed25519_dalek::Signer;
 use ed25519_dalek::SigningKey;
 use futures::StreamExt;
 use lancedb::query::ExecutableQuery;
 use lancedb::query::QueryBase;
 use memmap2::MmapOptions;
-use rand_core::OsRng;
 use rkyv::{Archive, Archived};
 use std::collections::HashMap;
 use std::format;
-use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::println;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use std::u64;
 use std::{fs::File, sync::Arc};
-use tokio::sync::broadcast;
 use tokio::sync::broadcast::Sender;
-use tokio::sync::mpsc;
 
 use crate::AgentState;
 use crate::AgentStatus;
 use crate::EffectKey;
 use crate::EffectRecord;
 use crate::aegis::AegisGateKeeper;
-use crate::aegis::CapabilityCertificate;
 use crate::api::ForkConfig;
 use crate::api::UiEvent;
 use crate::axon::AxonGateKeeper;
@@ -94,76 +87,63 @@ impl MemoryRouter {
         }
     }
 
-    pub fn new_dummy() -> Self {
-        let mut csprng = OsRng;
-        let master_signing_key = SigningKey::generate(&mut csprng);
-        let (event_tx, _) = tokio::sync::broadcast::channel(100);
-
-        Self {
-            config: Arc::new(RaqimConfig::default()),
-            aegis: Arc::new(AegisGateKeeper::new_dummy()),
-            axon: Arc::new(AxonGateKeeper::new_dummy()),
-            brain: Arc::new(SwarmStateRegistry::new()),
-            lance_engine: Arc::new(LanceEngine::new_dummy()),
-            wal_engine: WalEngine::start_dummy_sync(),
-            global_net: Arc::new(GlobalNetworkBridge::new_dummy()),
-            event_tx,
-            master_signing_key,
-            effect_index: DashMap::new(),
-        }
-    }
-
-    /// : Scans the WAL and executes a closure on the Zero-Copy Archived data
-    pub fn scan_wal_zero_copy<F>(&self, mut callback: F) -> Result<(), anyhow::Error>
+    /// STATIC ZERO-COPY SCANNER: Scans any WAL segment with 8-byte frame header validation
+    pub fn scan_wal_file<F>(wal_path: &str, mut callback: F) -> Result<(), anyhow::Error>
     where
         F: FnMut(&Archived<OpLog>),
     {
-        if let Ok(file) = File::open(&self.config.wal_path) {
-            if let Ok(mmap) = unsafe { MmapOptions::new().map(&file) } {
-                let mut offset = 0;
-                let mut aligned_buf: rkyv::util::AlignedVec<16> = rkyv::util::AlignedVec::new();
+        let file = match File::open(wal_path) {
+            Ok(f) => f,
+            Err(_) => return Ok(()), // File not created yet; clean return
+        };
 
-                while offset + 8 <= mmap.len() {
-                    let entry_len =
-                        u32::from_le_bytes(mmap[offset..offset + 4].try_into().unwrap()) as usize;
-                    let expected_crc =
-                        u32::from_le_bytes(mmap[offset + 4..offset + 8].try_into().unwrap());
-                    let frame_total = 8 + entry_len;
+        let mmap = unsafe { MmapOptions::new().map(&file)? };
+        let mut offset = 0;
+        let mut aligned_buf = rkyv::util::AlignedVec::<16>::new();
 
-                    if offset + frame_total > mmap.len() {
-                        break;
-                    }
+        while offset + 8 <= mmap.len() {
+            let entry_len =
+                u32::from_le_bytes(mmap[offset..offset + 4].try_into().unwrap()) as usize;
+            let expected_crc = u32::from_le_bytes(mmap[offset + 4..offset + 8].try_into().unwrap());
+            let frame_total = 8 + entry_len;
 
-                    let entry_slice = &mmap[offset + 8..offset + frame_total];
+            if offset + frame_total > mmap.len() {
+                break; // Incomplete or torn frame at EOF
+            }
 
-                    // Hardware CRC32 checksum
-                    if crc32fast::hash(entry_slice) != expected_crc {
-                        offset += frame_total;
-                        continue;
-                    }
+            let entry_slice = &mmap[offset + 8..offset + frame_total];
 
-                    // Realign to 16-byte boundary to prevent SIMD alignment traps
-                    aligned_buf.clear();
-                    aligned_buf.extend_from_slice(entry_slice);
+            // Hardware CRC32 verification
+            if crc32fast::hash(entry_slice) != expected_crc {
+                offset += frame_total;
+                continue;
+            }
 
-                    if let Ok(archived_batch) = rkyv::access::<
-                        <Vec<OpLog> as rkyv::Archive>::Archived,
-                        rkyv::rancor::Error,
-                    >(&aligned_buf)
-                    {
-                        for log in archived_batch.as_slice() {
-                            callback(log);
-                        }
-                    }
+            aligned_buf.clear();
+            aligned_buf.extend_from_slice(entry_slice);
 
-                    offset += frame_total;
+            // Safe, verified deserialization of Vec<OpLog> batch
+            if let Ok(archived_batch) =
+                rkyv::access::<<Vec<OpLog> as Archive>::Archived, rkyv::rancor::Error>(&aligned_buf)
+            {
+                for log in archived_batch.as_slice() {
+                    callback(log);
                 }
             }
+
+            offset += frame_total;
         }
 
         Ok(())
     }
 
+    /// Scans the active WAL path configured on the router
+    pub fn scan_wal_zero_copy<F>(&self, callback: F) -> Result<(), anyhow::Error>
+    where
+        F: FnMut(&Archived<OpLog>),
+    {
+        Self::scan_wal_file(&self.config.wal_path, callback)
+    }
     // RAG CONTEXT: Prioritize the hot WAL, fills the rest with semantic lanceDB
     pub async fn semantic_search_with_context(
         &self,
