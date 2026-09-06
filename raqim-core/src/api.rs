@@ -1536,6 +1536,22 @@ pub async fn record_effect_handler(
         .await
     {
         Ok(tx_id) => {
+            let tx_id_hex = format!("{:032x}", tx_id);
+            let original_ns = payload.namespace.clone().replace("phantom_", "");
+
+            // Broadcast to semantic firehose
+            let _ = state.ui_tx.send(UiEvent::ThoughtCommitted {
+                agent_hex: payload.agent_hex.clone(),
+                intent_path: original_ns,
+                tx_id: tx_id_hex,
+                text: format!(
+                    "[STEP {} EFFECT] Ordinal: {} | Hash: {}...",
+                    payload.step_ordinal,
+                    payload.step_ordinal,
+                    &payload.call_signature_hex[..8]
+                ),
+            });
+
             if is_forked {
                 let tx_id = format!("{:032x}", tx_id);
                 let timestamp = std::time::SystemTime::now()

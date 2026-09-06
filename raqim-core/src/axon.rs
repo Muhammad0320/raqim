@@ -94,7 +94,7 @@ impl AxonGateKeeper {
 
         (log, batch)
     }
-
+    
     /// Internal Engine loop: Condenses an arbitrary array of leaf hashes into a single Markle Root
     pub fn compute_markle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
         if leaves.is_empty() {
