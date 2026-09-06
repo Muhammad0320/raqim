@@ -489,36 +489,34 @@ class RaqimClient:
         await self._ws_connection.send(json.dumps(msg))
 
 # Zero Dependency Offline merkle proof verifier
-def verify_state_proof_offline(payload_bytes: bytes, agent_id_str: str, proof_dict: dict) -> bool: 
-    """ 
-    OFFLINE MERKLE VERIFIER 
-    Recomputes the Blake3 Merkle path offline with ZERO networkk calls. 
-    And as expected returns True if the transaction is mathematically bound to the Public Merkle root
-    """
+def verify_state_proof_offline(payload_bytes: bytes, agent_id_str: str, proof_dict: dict) -> bool:
     agent_id_bytes = bytes.fromhex(agent_id_str)
     
-    # Recompute leaf hash 
     hasher = blake3.blake3(derive_key_context="raqim.axon.v1.leaf")
     hasher.update(payload_bytes)
     hasher.update(agent_id_bytes)
     current_hash = hasher.digest(length=32)
     
-    index = proof_dict["leaf_index"]
+    # Handle both snake_case and camelCase JSON keys
+    index = proof_dict.get("leaf_index")
+    if index is None:
+        index = proof_dict.get("leafIndex", 0)
+        
+    sibling_hashes = proof_dict.get("sibling_hashes_hex") or proof_dict.get("siblingHashesHex", [])
+    merkle_root = proof_dict.get("merkle_root_hex") or proof_dict.get("merkleRootHex", "")
     
-    # Recompute path up the binary tre 
-    for sibling_hex in proof_dict["sibling_hashes_hex"]: 
-        sibling_bytes = bytes.fromhex(sibling_hex) 
-        
+    for sibling_hex in sibling_hashes:
+        sibling_bytes = bytes.fromhex(sibling_hex)
         node_hasher = blake3.blake3(derive_key_context="raqim.axon.v1.node")
-        if index % 2 == 0: 
+        
+        if index % 2 == 0:
             node_hasher.update(current_hash)
             node_hasher.update(sibling_bytes)
-        else: 
+        else:
             node_hasher.update(sibling_bytes)
             node_hasher.update(current_hash)
+            
+        current_hash = node_hasher.digest(length=32)
+        index //= 2
         
-        current_hash = node_hasher.digest(length = 32)
-        index //=2
-        
-    return current_hash.hex() == proof_dict["merkle_root_hex"]
-
+    return current_hash.hex() == merkle_root

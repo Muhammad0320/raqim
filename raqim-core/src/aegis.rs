@@ -1,5 +1,5 @@
-use crate::SystemEvent;
 use crate::api::UiEvent;
+use crate::SystemEvent;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use parking_lot::RwLock;
@@ -473,5 +473,76 @@ impl AegisGateKeeper {
         }
 
         Ok((cert.agent_hex, cert.group_name))
+    }
+
+    pub fn authorize_namespace_only(
+        &self,
+        agent_hex: &str,
+        group_name: &str,
+        intent_path: &str,
+    ) -> Result<(), anyhow::Error> {
+        // 1. Short-circuit check if agent is quarantined
+        if self.is_quarantined(agent_hex) {
+            return Err(anyhow::anyhow!(
+                "Security Violation: Agent '{}' is actively quarantined",
+                agent_hex
+            ));
+        }
+
+        // 2. Fetch live policy guard
+        let policies_guard = self.group_policies.read();
+        let live_policy = policies_guard.get(group_name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Group Policy mapping '{}' not defined in aegis.toml",
+                group_name
+            )
+        })?;
+
+        // 3. Evaluate Blocked Namespaces (Deny rules have absolute priority)
+        for blocked in &live_policy.blocked_namespaces {
+            let match_found = if blocked.ends_with('*') {
+                intent_path.starts_with(&blocked[..blocked.len() - 1])
+            } else {
+                intent_path == blocked
+            };
+
+            if match_found {
+                self.trigger_quarantine(
+                    agent_hex,
+                    intent_path,
+                    "NAMESPACE_BREACH",
+                    "Attempted interaction inside explicitly blocked domain",
+                );
+                return Err(anyhow::anyhow!(
+                    "Access Denied: Namespace '{}' is explicitly blocked for group '{}'",
+                    intent_path,
+                    group_name
+                ));
+            }
+        }
+
+        // 4. Evaluate Allowed Namespaces
+        for allowed in &live_policy.allowed_namespaces {
+            let match_found = if allowed.ends_with('*') {
+                intent_path.starts_with(&allowed[..allowed.len() - 1])
+            } else {
+                allowed == intent_path
+            };
+
+            if match_found {
+                return Ok(());
+            }
+        }
+
+        // 5. Default Deny Fallback
+        self.trigger_quarantine(
+            agent_hex,
+            intent_path,
+            "NAMESPACE_BREACH",
+            "No explicit allowance match within token permissions",
+        );
+        Err(anyhow::anyhow!(
+            "Access Denied: Default Deny Policy Tripped"
+        ))
     }
 }

@@ -1512,7 +1512,7 @@ pub async fn record_effect_handler(
         .try_into()
         .map_err(|_| ApiError::BadRequest("agent_hex must be exactly 16 bytes".to_string()))?;
 
-    let call_signature_bytes = hex::decode(payload.call_signature_hex)
+    let call_signature_bytes = hex::decode(payload.call_signature_hex.clone())
         .map_err(|_| ApiError::BadRequest("Invalid call_signature_hex format".to_string()))?;
     let call_signature_hash: [u8; 32] = call_signature_bytes.try_into().map_err(|_| {
         ApiError::BadRequest("call_signature_hex must be eactly 32 bytes".to_string())
