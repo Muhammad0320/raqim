@@ -1,5 +1,5 @@
-use crate::SystemEvent;
 use crate::api::UiEvent;
+use crate::SystemEvent;
 use dashmap::DashMap;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use parking_lot::RwLock;
@@ -44,42 +44,81 @@ impl AtomicTokenBucket {
         }
     }
 
-    /// Checks if a request is allowed. Returns true if permiitted asnd false if limit is exceeded.
-    pub fn check_and_consume(&self) -> bool {
-        let now_nanos = SystemTime::now()
+    /// Atomically refills tokens based on elapsed nanoseconds
+    pub fn refill(&self) {
+        let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64;
 
-        let last_refill = self
+        let mut last = self
             .last_refill_nanos
             .load(std::sync::atomic::Ordering::Relaxed);
-        let elapsed_nanos = now_nanos.saturating_sub(last_refill);
+        loop {
+            if now <= last {
+                // Monotoic protection
+                break;
+            }
 
-        // Refill tokens based on elapsed nanoseconds: (elapsed_secs * max_tps)
-        let new_tokens = (elapsed_nanos as u128 * self.max_tps as u128 / 1_000_000_000) as u64;
+            let elapsed_nanos = now - last;
 
-        if new_tokens > 0 {
-            // Update last refill time
-            self.last_refill_nanos
-                .store(now_nanos, std::sync::atomic::Ordering::Relaxed);
+            // Tokens to add = (elapsed_nanos * max_tps) / 1,000,000,000
+            let tokens_to_add =
+                (elapsed_nanos as u128 * self.max_tps as u128 / 1_000_000_000) as u64;
 
-            // Refill bucket but do not exceed burst_capacity
-            let current = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
-            let refilled = (current + new_tokens).min(self.burst_capacity);
-            self.tokens
-                .store(refilled, std::sync::atomic::Ordering::Relaxed);
+            if tokens_to_add == 0 {
+                break;
+            }
+
+            // update last_refill_nanos atomically
+            match self.last_refill_nanos.compare_exchange_weak(
+                last,
+                now,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    // Refill timestamp won; update token counter safely
+                    let mut curr_tokens = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
+                    loop {
+                        let new_total = (curr_tokens + tokens_to_add).min(self.burst_capacity);
+                        match self.tokens.compare_exchange_weak(
+                            curr_tokens,
+                            new_total,
+                            std::sync::atomic::Ordering::Release,
+                            std::sync::atomic::Ordering::Relaxed,
+                        ) {
+                            Ok(_) => break,
+                            Err(actual) => curr_tokens = actual,
+                        }
+                    }
+                    break;
+                }
+                Err(actual) => last = actual,
+            }
         }
+    }
 
-        // Try to take 1 token from the bucket
-        let current_tokens = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
-        if current_tokens > 0 {
-            self.tokens
-                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-            true
-        } else {
-            // Rate limit exceeded
-            false
+    /// HARDENED: Atomic CAS consumption loop. Immute to underflows.
+    pub fn check_and_consume(&self) -> bool {
+        self.refill();
+
+        let mut current = self.tokens.load(std::sync::atomic::Ordering::Relaxed);
+        loop {
+            if current == 0 {
+                return false;
+            }
+
+            // Atomic CAS
+            match self.tokens.compare_exchange_weak(
+                current,
+                current - 1,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => current = actual,
+            }
         }
     }
 }
@@ -316,7 +355,7 @@ impl AegisGateKeeper {
 
         for blocked in &live_policy.blocked_namespaces {
             let match_found = if blocked.ends_with("*") {
-                intent_path.starts_with(&blocked[..blocked.len() + 1])
+                intent_path.starts_with(&blocked[..blocked.len() - 1])
             } else {
                 intent_path == blocked
             };
@@ -351,7 +390,7 @@ impl AegisGateKeeper {
             agent_hex,
             intent_path,
             "NAMESPACE_BREACH",
-            "No explicit allowance match withing token permissions",
+            "No explicit allowance match within token permissions",
         );
         Err(anyhow::anyhow!(
             "Access Denied: Default Deny Policy Tripped"
@@ -434,5 +473,76 @@ impl AegisGateKeeper {
         }
 
         Ok((cert.agent_hex, cert.group_name))
+    }
+
+    pub fn authorize_namespace_only(
+        &self,
+        agent_hex: &str,
+        group_name: &str,
+        intent_path: &str,
+    ) -> Result<(), anyhow::Error> {
+        // 1. Short-circuit check if agent is quarantined
+        if self.is_quarantined(agent_hex) {
+            return Err(anyhow::anyhow!(
+                "Security Violation: Agent '{}' is actively quarantined",
+                agent_hex
+            ));
+        }
+
+        // 2. Fetch live policy guard
+        let policies_guard = self.group_policies.read();
+        let live_policy = policies_guard.get(group_name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Group Policy mapping '{}' not defined in aegis.toml",
+                group_name
+            )
+        })?;
+
+        // 3. Evaluate Blocked Namespaces (Deny rules have absolute priority)
+        for blocked in &live_policy.blocked_namespaces {
+            let match_found = if blocked.ends_with('*') {
+                intent_path.starts_with(&blocked[..blocked.len() - 1])
+            } else {
+                intent_path == blocked
+            };
+
+            if match_found {
+                self.trigger_quarantine(
+                    agent_hex,
+                    intent_path,
+                    "NAMESPACE_BREACH",
+                    "Attempted interaction inside explicitly blocked domain",
+                );
+                return Err(anyhow::anyhow!(
+                    "Access Denied: Namespace '{}' is explicitly blocked for group '{}'",
+                    intent_path,
+                    group_name
+                ));
+            }
+        }
+
+        // 4. Evaluate Allowed Namespaces
+        for allowed in &live_policy.allowed_namespaces {
+            let match_found = if allowed.ends_with('*') {
+                intent_path.starts_with(&allowed[..allowed.len() - 1])
+            } else {
+                allowed == intent_path
+            };
+
+            if match_found {
+                return Ok(());
+            }
+        }
+
+        // 5. Default Deny Fallback
+        self.trigger_quarantine(
+            agent_hex,
+            intent_path,
+            "NAMESPACE_BREACH",
+            "No explicit allowance match within token permissions",
+        );
+        Err(anyhow::anyhow!(
+            "Access Denied: Default Deny Policy Tripped"
+        ))
     }
 }
