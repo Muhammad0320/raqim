@@ -200,12 +200,8 @@ export function VaultClientLayout({
       headerAction={compactionHeaderAction}
     >
       <div className="flex flex-col h-full w-full bg-zinc-950 overflow-hidden p-3 gap-3">
-        {/* 1. Vault Telemetry Ribbon with Compaction Trigger */}
-        <VaultTelemetryRibbon
-          telemetry={telemetry}
-          onTriggerCompaction={handleTriggerCompaction}
-          isCompacting={isCompacting}
-        />
+        {/* 1. Vault Telemetry Ribbon */}
+        <VaultTelemetryRibbon telemetry={telemetry} />
 
         {/* 2. 2-Column Tactical Workspace */}
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-0 overflow-hidden">

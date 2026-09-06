@@ -25,7 +25,6 @@ import zenoh
 from raqim_core import RaqimCryptoCore  
 
 # ASYNC CONTEXT PROPAGATION & ERROR SCHEMAS
-
 class ReplayDivergedError(Exception): 
     """Raised when replay Python code diverges from recorded WAL history."""
     pass
@@ -98,6 +97,7 @@ class CanonicalSerializer:
         
 
 class RaqimClient:
+    
     def __init__(
         self, alias: str, tenant: str, private_key_path: str, cert_path: Optional[str] = None,
         daemon_host: str = "127.0.0.1", tcp_port: int = 8080, http_port: int = 8081, 
@@ -106,9 +106,9 @@ class RaqimClient:
         ):
         self.alias = alias 
         self.tenant = tenant 
-        self.crypto_core = RaqimCryptoCore(private_key_path, cert_path)
-        self.cert_bytes = bytes(self.crypto_core.capability_cert_bytes)
-        self.cert_hex = self.cert_bytes.hex()
+        self.crypto_core = RaqimCryptoCore(private_key_path, cert_path) 
+        self.cert_bytes = bytes(self.crypto_core.capability_cert_bytes) 
+        self.cert_hex = self.cert_bytes.hex() 
 
        # Mathematically derive 16-byte Agent ID via Blake3 Domain Separation
         public_key_bytes = bytes(self.crypto_core.pub_key_bytes)
@@ -337,7 +337,7 @@ class RaqimClient:
                 return sync_wrapper
 
         return decorator
-   
+    
     # Internal Effect Engine Helpers
     async def _fetch_recorded_effect(self, step_ordinal: int, call_sig_hex  : str) -> Optional[Any]:
         """Fetches recorded effect from daemon. Returns None if signature diverged."""

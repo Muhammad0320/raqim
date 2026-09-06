@@ -2,19 +2,13 @@
 
 import React from 'react';
 import { VaultTelemetry } from '../../lib/api';
-import { Database, HardDrive, Zap, Layers, Loader2 } from 'lucide-react';
+import { Database, HardDrive, Zap, Layers } from 'lucide-react';
 
 interface VaultTelemetryRibbonProps {
   telemetry: VaultTelemetry | null;
-  onTriggerCompaction?: () => Promise<void>;
-  isCompacting?: boolean;
 }
 
-export function VaultTelemetryRibbon({
-  telemetry,
-  onTriggerCompaction,
-  isCompacting = false,
-}: VaultTelemetryRibbonProps) {
+export function VaultTelemetryRibbon({ telemetry }: VaultTelemetryRibbonProps) {
   const totalVectors = telemetry?.indexed_vectors ?? telemetry?.total_vectors ?? 0;
   const indexSizeMb = telemetry?.cold_storage_size_mb ?? telemetry?.index_size_mb ?? 0;
   const walPending = telemetry?.hot_wal_buffer_count ?? telemetry?.wal_pending_count ?? 0;
@@ -24,40 +18,7 @@ export function VaultTelemetryRibbon({
   const embedderDims = telemetry?.embeder_dim ?? telemetry?.embedder_dims ?? 768;
 
   return (
-    <div className="flex flex-col gap-3 w-full shrink-0 select-none">
-      {/* Top Action Bar */}
-      <div className="flex items-center justify-between gap-3 bg-zinc-950/60 border border-zinc-800/80 rounded-sm px-3.5 py-2">
-        <div className="flex items-center gap-2 font-mono text-xs text-zinc-400">
-          <Database className="w-4 h-4 text-cyan-400" />
-          <span className="font-sans text-xs uppercase tracking-wider font-bold text-white">
-            Forensic Audit Vault &amp; LanceDB Vector Telemetry
-          </span>
-        </div>
-
-        {/* Trigger WAL Compaction Action Button */}
-        {onTriggerCompaction && (
-          <button
-            onClick={onTriggerCompaction}
-            disabled={isCompacting}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xs border border-cyan-500/30 text-cyan-400 bg-cyan-950/20 hover:bg-cyan-900/40 font-mono text-xs font-bold uppercase transition-all shadow-[0_0_12px_rgba(0,243,255,0.15)] hover:shadow-[0_0_20px_rgba(0,243,255,0.3)] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
-            {isCompacting ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                <span>[⏳ ROTATING &amp; COMPACTING...]</span>
-              </>
-            ) : (
-              <>
-                <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                <span>[⚡ TRIGGER WAL COMPACTION]</span>
-              </>
-            )}
-          </button>
-        )}
-      </div>
-
-      {/* 4 Telemetry Metric Cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full">
+    <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full shrink-0 select-none">
         {/* 1. Indexed Vectors Card */}
         <div className="bg-zinc-950/80 border border-zinc-800/80 rounded-sm p-3 flex flex-col justify-between relative overflow-hidden group hover:border-zinc-700 transition-colors">
           <div className="flex items-center justify-between text-zinc-400 mb-1.5">
@@ -156,6 +117,5 @@ export function VaultTelemetryRibbon({
           </div>
         </div>
       </section>
-    </div>
   );
 }
